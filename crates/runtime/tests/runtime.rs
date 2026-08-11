@@ -83,6 +83,22 @@ async fn supervisor_boots_and_stops_all_territories() {
 }
 
 #[tokio::test]
+async fn supervisor_stops_one_territory() {
+    let manifest = ArenaManifest::parse(MANIFEST).expect("manifest");
+    let plan = NetworkPlan::from_manifest(&manifest, 24000, 23900).expect("network plan");
+    let driver = Arc::new(FakeDriver::default());
+    let mut supervisor = ArenaSupervisor::new(Arc::clone(&driver));
+    supervisor
+        .boot_all(&manifest, &plan)
+        .await
+        .expect("boot all");
+    supervisor.stop("gate").await.expect("stop gate");
+    assert!(!supervisor.handles().contains_key("gate"));
+    assert!(supervisor.handles().contains_key("archive"));
+    assert_eq!(driver.stopped.lock().expect("lock").as_slice(), ["gate"]);
+}
+
+#[tokio::test]
 async fn partial_boot_cleans_up_successful_guests() {
     let manifest = ArenaManifest::parse(MANIFEST).expect("manifest");
     let plan = NetworkPlan::from_manifest(&manifest, 24000, 23900).expect("network plan");

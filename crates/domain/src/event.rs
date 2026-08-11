@@ -18,6 +18,11 @@ pub enum FailureSource {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Event {
+    TerritoryRegistered {
+        territory: String,
+        class: String,
+        agent: String,
+    },
     MatchStateChanged {
         from: MatchState,
         to: MatchState,

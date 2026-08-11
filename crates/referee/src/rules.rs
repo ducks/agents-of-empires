@@ -110,7 +110,8 @@ impl Referee {
             to: MatchState::Running,
         })];
         self.match_state = MatchState::Running;
-        let ids: Vec<_> = self.territories.keys().cloned().collect();
+        let mut ids: Vec<_> = self.territories.keys().cloned().collect();
+        ids.sort();
         for id in ids {
             if let Some(record) = self.territories.get_mut(&id) {
                 record.state = TerritoryState::Healthy;
@@ -244,7 +245,8 @@ impl Referee {
     pub fn tick(&mut self, elapsed_ms: u64) -> Result<Vec<EventEnvelope>, RefereeError> {
         self.ensure_running()?;
         self.ensure_time(elapsed_ms)?;
-        let ids: Vec<_> = self.territories.keys().cloned().collect();
+        let mut ids: Vec<_> = self.territories.keys().cloned().collect();
+        ids.sort();
         let mut events = Vec::new();
         for id in &ids {
             self.account_time(id, elapsed_ms);
@@ -337,6 +339,41 @@ impl Referee {
             source,
             detail: detail.into(),
         }))
+    }
+
+    /// Record a controller-observed event in the referee's canonical sequence.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when event time moves backward.
+    pub fn record(&mut self, event: Event, elapsed_ms: u64) -> Result<EventEnvelope, RefereeError> {
+        self.ensure_time(elapsed_ms)?;
+        Ok(self.emit(event))
+    }
+
+    /// Abort a running match while retaining a replayable terminal event.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for non-monotonic time or a match that is not running.
+    pub fn abort(
+        &mut self,
+        reason: impl Into<String>,
+        elapsed_ms: u64,
+    ) -> Result<Vec<EventEnvelope>, RefereeError> {
+        self.ensure_running()?;
+        self.ensure_time(elapsed_ms)?;
+        self.match_state = MatchState::Aborted;
+        Ok(vec![
+            self.emit(Event::MatchStateChanged {
+                from: MatchState::Running,
+                to: MatchState::Aborted,
+            }),
+            self.emit(Event::MatchFinished {
+                winner: None,
+                reason: reason.into(),
+            }),
+        ])
     }
 
     #[must_use]

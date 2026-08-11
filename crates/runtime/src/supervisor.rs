@@ -137,6 +137,20 @@ impl<D: TerritoryDriver> ArenaSupervisor<D> {
         Ok(())
     }
 
+    /// Stop one running territory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the territory is unknown or the driver cannot
+    /// stop it.
+    pub async fn stop(&mut self, territory: &str) -> Result<(), RuntimeError> {
+        let handle = self
+            .running
+            .remove(territory)
+            .ok_or_else(|| RuntimeError::NotRunning(territory.to_owned()))?;
+        self.driver.stop(&handle).await
+    }
+
     /// Stop all running guests, returning every cleanup error.
     pub async fn stop_all(&mut self) -> Vec<String> {
         let handles: Vec<_> = self.running.drain().map(|(_, handle)| handle).collect();

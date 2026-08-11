@@ -27,6 +27,8 @@ impl NixVmDriver {
     async fn build_runner(&self, territory: &TerritoryConfig) -> Result<PathBuf, RuntimeError> {
         let output = Command::new("nix")
             .args([
+                "--extra-experimental-features",
+                "nix-command flakes",
                 "build",
                 "--no-link",
                 "--print-out-paths",

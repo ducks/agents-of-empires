@@ -1,4 +1,4 @@
-use aoe_domain::{ArenaManifest, Event, FailureSource, TerritoryState};
+use aoe_domain::{ArenaManifest, Event, FailureSource, MatchState, TerritoryState};
 use aoe_referee::{HealthObservation, Referee};
 
 const MANIFEST: &str = include_str!("../../runtime/tests/fixture.toml");
@@ -136,4 +136,32 @@ fn provider_failure_is_not_a_player_loss() {
         referee.territory_state("gate"),
         Some(TerritoryState::Healthy)
     );
+}
+
+#[test]
+fn controller_events_share_the_referee_sequence() {
+    let manifest = ArenaManifest::parse(MANIFEST).expect("manifest");
+    let mut referee = Referee::from_manifest(&manifest);
+    let started = referee.start().expect("start");
+    let next = referee
+        .record(
+            Event::AgentStarted {
+                agent: "agent-gate".into(),
+                territory: "gate".into(),
+                model: "test".into(),
+            },
+            5,
+        )
+        .expect("record");
+    assert_eq!(next.sequence, started.len() as u64);
+
+    let aborted = referee.abort("operator interrupt", 10).expect("abort");
+    assert_eq!(aborted[0].sequence, next.sequence + 1);
+    assert!(matches!(
+        aborted[0].event,
+        Event::MatchStateChanged {
+            to: MatchState::Aborted,
+            ..
+        }
+    ));
 }
