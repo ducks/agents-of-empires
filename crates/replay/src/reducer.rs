@@ -29,6 +29,10 @@ pub struct AgentView {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TerritoryView {
+    #[serde(default)]
+    pub class: Option<String>,
+    #[serde(default)]
+    pub agent: Option<String>,
     pub state: TerritoryState,
     pub resources: u64,
     pub last_health: Option<HealthView>,
@@ -39,6 +43,8 @@ pub struct TerritoryView {
 impl Default for TerritoryView {
     fn default() -> Self {
         Self {
+            class: None,
+            agent: None,
             state: TerritoryState::Provisioning,
             resources: 0,
             last_health: None,
@@ -82,6 +88,11 @@ pub fn reduce(state: &mut WorldState, envelope: &EventEnvelope) {
     state.last_sequence = Some(envelope.sequence);
     state.elapsed_ms = envelope.elapsed_ms;
     match &envelope.event {
+        Event::TerritoryRegistered {
+            territory,
+            class,
+            agent,
+        } => register_territory(state, territory, class, agent),
         Event::MatchStateChanged { to, .. } => state.match_state = *to,
         Event::TerritoryStateChanged { territory, to, .. } => {
             state
@@ -166,11 +177,19 @@ pub fn reduce(state: &mut WorldState, envelope: &EventEnvelope) {
             state.infrastructure_failures = state.infrastructure_failures.saturating_add(1);
         }
         Event::MatchFinished { winner, reason } => {
-            state.match_state = MatchState::Finished;
+            if state.match_state != MatchState::Aborted {
+                state.match_state = MatchState::Finished;
+            }
             state.winner.clone_from(winner);
             state.finish_reason = Some(reason.clone());
         }
     }
+}
+
+fn register_territory(state: &mut WorldState, territory: &str, class: &str, agent: &str) {
+    let view = state.territories.entry(territory.to_owned()).or_default();
+    view.class = Some(class.to_owned());
+    view.agent = Some(agent.to_owned());
 }
 
 fn apply_health(
