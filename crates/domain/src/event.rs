@@ -53,6 +53,12 @@ pub enum Event {
         output_tokens: Option<u64>,
         cost_microusd: Option<u64>,
     },
+    ResourcesChanged {
+        territory: String,
+        delta: i64,
+        remaining: u64,
+        reason: String,
+    },
     TerritoryEliminated {
         territory: String,
         source: FailureSource,
@@ -62,6 +68,10 @@ pub enum Event {
         component: String,
         source: FailureSource,
         detail: String,
+    },
+    MatchFinished {
+        winner: Option<String>,
+        reason: String,
     },
 }
 
