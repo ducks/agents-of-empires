@@ -1,17 +1,22 @@
 # Agents of Empires
 
-An autonomous infrastructure-agent battle arena.
+An autonomous infrastructure-agent build arena.
 
-Each agent controls a different kind of server, defends its own service, and
-tries to knock competing territories offline. The agents operate real,
-disposable infrastructure. An external referee decides what survives.
+Each agent receives an equivalent blank Linux territory, a model and harness,
+and the same deployment contract. Agents race to build a functional service
+that survives restart and reboot. The agents operate real, disposable
+infrastructure. An external referee decides what actually works.
 
-Think BattleBots meets Age of Empires, with shell access.
+Think a real-time strategy build order, played through a shell.
 
 See [SPEC.md](SPEC.md) for the initial design and `.arf/specs/` for the
 dependency-ordered implementation plan.
 
-## Commands
+The build-race redesign is in progress. The existing `first-contact` arena is a
+preserved PvP prototype and is not the new primary game mode. See [SPEC.md](SPEC.md)
+and the dependency-ordered plan under `.arf/specs/` for the current design.
+
+## Prototype commands
 
 Build the controller and validate the bundled arena:
 

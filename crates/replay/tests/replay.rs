@@ -2,7 +2,9 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use aoe_domain::{Event, EventEnvelope, FailureSource, MatchState, TerritoryState};
+use aoe_domain::{
+    CompetitorState, Event, EventEnvelope, FailureSource, MatchState, TerritoryState,
+};
 use aoe_replay::{
     EventLog, EventLogError, Snapshot, WorldState, load_events, load_snapshot, reduce, replay,
     write_snapshot,
@@ -149,4 +151,41 @@ fn snapshot_round_trip_preserves_reduced_state() {
     write_snapshot(&path, &snapshot).expect("write snapshot");
     assert_eq!(load_snapshot(&path).expect("load snapshot"), snapshot);
     fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
+fn milestone_evidence_reduces_and_revokes() {
+    let passed = event(
+        0,
+        100,
+        Event::MilestonePassed {
+            territory: "builder".into(),
+            milestone: "write-read".into(),
+            points: 20,
+            evidence: serde_json::json!({"record": "opaque-17"}),
+        },
+    );
+    let durable = event(
+        1,
+        200,
+        Event::DurableDeploymentCompleted {
+            territory: "builder".into(),
+            elapsed_ms: 200,
+        },
+    );
+    let revoked = event(
+        2,
+        300,
+        Event::MilestoneRevoked {
+            territory: "builder".into(),
+            milestone: "write-read".into(),
+            reason: "record disappeared after reboot".into(),
+        },
+    );
+    let state = replay([&passed, &durable, &revoked]);
+    let builder = state.territories.get("builder").expect("builder");
+    assert_eq!(builder.competitor_state, Some(CompetitorState::Durable));
+    assert_eq!(builder.durable_at_ms, Some(200));
+    assert_eq!(builder.milestone_points, 0);
+    assert!(!builder.milestones["write-read"].passed);
 }

@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
-use aoe_domain::{Event, EventEnvelope, FailureSource, MatchState, TerritoryState};
+use aoe_domain::{
+    CompetitorState, Event, EventEnvelope, FailureSource, MatchState, TerritoryState,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -38,6 +40,25 @@ pub struct TerritoryView {
     pub last_health: Option<HealthView>,
     pub elimination_source: Option<FailureSource>,
     pub elimination_detail: Option<String>,
+    #[serde(default)]
+    pub competitor_state: Option<CompetitorState>,
+    #[serde(default)]
+    pub milestones: BTreeMap<String, MilestoneView>,
+    #[serde(default)]
+    pub milestone_points: u64,
+    #[serde(default)]
+    pub durable_at_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MilestoneView {
+    pub evaluating: bool,
+    pub passed: bool,
+    pub points: u64,
+    pub evidence: Option<serde_json::Value>,
+    pub failure_category: Option<String>,
+    pub failure_detail: Option<String>,
 }
 
 impl Default for TerritoryView {
@@ -50,6 +71,10 @@ impl Default for TerritoryView {
             last_health: None,
             elimination_source: None,
             elimination_detail: None,
+            competitor_state: None,
+            milestones: BTreeMap::new(),
+            milestone_points: 0,
+            durable_at_ms: None,
         }
     }
 }
@@ -151,6 +176,85 @@ pub fn reduce(state: &mut WorldState, envelope: &EventEnvelope) {
                 output_tokens.unwrap_or(0),
                 cost_microusd.unwrap_or(0),
             );
+        }
+        Event::CompetitorStateChanged { territory, to, .. } => {
+            state
+                .territories
+                .entry(territory.clone())
+                .or_default()
+                .competitor_state = Some(*to);
+        }
+        Event::MilestoneEvaluationStarted {
+            territory,
+            milestone,
+        } => {
+            state
+                .territories
+                .entry(territory.clone())
+                .or_default()
+                .milestones
+                .entry(milestone.clone())
+                .or_default()
+                .evaluating = true;
+        }
+        Event::MilestonePassed {
+            territory,
+            milestone,
+            points,
+            evidence,
+        } => {
+            let territory = state.territories.entry(territory.clone()).or_default();
+            let milestone = territory.milestones.entry(milestone.clone()).or_default();
+            if !milestone.passed {
+                territory.milestone_points = territory.milestone_points.saturating_add(*points);
+            }
+            milestone.evaluating = false;
+            milestone.passed = true;
+            milestone.points = *points;
+            milestone.evidence = Some(evidence.clone());
+            milestone.failure_category = None;
+            milestone.failure_detail = None;
+        }
+        Event::MilestoneFailed {
+            territory,
+            milestone,
+            category,
+            detail,
+            ..
+        } => {
+            let milestone = state
+                .territories
+                .entry(territory.clone())
+                .or_default()
+                .milestones
+                .entry(milestone.clone())
+                .or_default();
+            milestone.evaluating = false;
+            milestone.failure_category = Some(category.clone());
+            milestone.failure_detail = Some(detail.clone());
+        }
+        Event::MilestoneRevoked {
+            territory,
+            milestone,
+            ..
+        } => {
+            let territory = state.territories.entry(territory.clone()).or_default();
+            let milestone = territory.milestones.entry(milestone.clone()).or_default();
+            if milestone.passed {
+                territory.milestone_points =
+                    territory.milestone_points.saturating_sub(milestone.points);
+            }
+            milestone.evaluating = false;
+            milestone.passed = false;
+            milestone.evidence = None;
+        }
+        Event::DurableDeploymentCompleted {
+            territory,
+            elapsed_ms,
+        } => {
+            let territory = state.territories.entry(territory.clone()).or_default();
+            territory.competitor_state = Some(CompetitorState::Durable);
+            territory.durable_at_ms = Some(*elapsed_ms);
         }
         Event::ResourcesChanged {
             territory,

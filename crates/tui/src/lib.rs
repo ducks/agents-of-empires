@@ -185,6 +185,37 @@ pub fn event_summary(event: &Event) -> String {
             resource_units,
             ..
         } => format!("{agent} used {resource_units} resources"),
+        Event::CompetitorStateChanged {
+            territory,
+            from,
+            to,
+            reason,
+        } => format!("{territory} {from:?} -> {to:?}: {reason}"),
+        Event::MilestoneEvaluationStarted {
+            territory,
+            milestone,
+        } => format!("{territory} verifying {milestone}"),
+        Event::MilestonePassed {
+            territory,
+            milestone,
+            points,
+            ..
+        } => format!("{territory} passed {milestone} (+{points})"),
+        Event::MilestoneFailed {
+            territory,
+            milestone,
+            category,
+            ..
+        } => format!("{territory} failed {milestone}: {category}"),
+        Event::MilestoneRevoked {
+            territory,
+            milestone,
+            reason,
+        } => format!("{territory} lost {milestone}: {reason}"),
+        Event::DurableDeploymentCompleted {
+            territory,
+            elapsed_ms,
+        } => format!("{territory} completed a durable deployment at {elapsed_ms}ms"),
         Event::ResourcesChanged {
             territory,
             remaining,
