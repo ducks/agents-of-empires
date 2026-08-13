@@ -1,1 +1,1 @@
-Build the service described in CONTRACT.md on this blank host. The external referee decides completion.
+Build the service in the contract appended below on this blank host. Speed matters, but only a durable deployment can win.

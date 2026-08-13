@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
+: "${OPENROUTER_API_KEY:=}"
 root="$(mktemp -d "${TMPDIR:-/var/tmp}/agents-of-empires-build-credentials.XXXXXX")"
 for entry in builder-one:builder-one-race builder-two:builder-two-race builder-three:builder-three-race; do
   territory="${entry%%:*}"
   password="${entry#*:}"
-  printf 'AOE_SSH_PASSWORD=%q\n' "$password" >"$root/$territory.env"
+  printf 'OPENROUTER_API_KEY=%q\nAOE_SSH_PASSWORD=%q\n' \
+    "$OPENROUTER_API_KEY" "$password" >"$root/$territory.env"
   chmod 0600 "$root/$territory.env"
 done
 printf '%s\n' "$root"

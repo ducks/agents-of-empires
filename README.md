@@ -82,6 +82,24 @@ referee awards milestones for service health, opaque write/read behavior,
 service-restart persistence, and host-reboot persistence. The first durable
 deployment wins.
 
+Once the oracle succeeds, race the default real-agent fleet with the same
+guests and verifier:
+
+```bash
+export OPENROUTER_API_KEY=...
+credentials="$(scripts/prepare-first-build-credentials.sh)"
+cargo run --release --bin agents-of-empires -- run \
+  arenas/first-build/agents-real.toml \
+  --adapter claux=adapters/claux.sh \
+  --credential builder-one="$credentials/builder-one.env" \
+  --credential builder-two="$credentials/builder-two.env" \
+  --credential builder-three="$credentials/builder-three.env" \
+  --output "matches/first-build-real-$(date -u +%Y%m%d-%H%M%S)"
+```
+
+The opening fleet is DeepSeek V4 Flash 0731, GPT-5.6 Luna, and GLM 5.2 at
+high reasoning. Model identity is not exposed in the guest instructions.
+
 The match writes an append-only `events.jsonl` and final `world.json`. Live and
 replay views use the same reducer:
 

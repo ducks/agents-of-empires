@@ -725,6 +725,17 @@ fn invocations(
     options: &RunOptions,
 ) -> Result<Vec<AgentInvocation>, RunError> {
     let arena_root = options.manifest.parent().unwrap_or_else(|| Path::new("."));
+    let build_contract = if manifest.arena.mode == MatchMode::BuildRace {
+        let path = arena_root.join("CONTRACT.md");
+        Some(
+            std::fs::read_to_string(&path).map_err(|_| RunError::MissingInstruction {
+                territory: "build contract".into(),
+                path: path.display().to_string(),
+            })?,
+        )
+    } else {
+        None
+    };
     manifest
         .agents
         .iter()
@@ -737,12 +748,18 @@ fn invocations(
             let instruction_path = arena_root
                 .join("instructions")
                 .join(format!("{}.md", agent.territory));
-            let instruction = std::fs::read_to_string(&instruction_path).map_err(|_| {
+            let mut instruction = std::fs::read_to_string(&instruction_path).map_err(|_| {
                 RunError::MissingInstruction {
                     territory: agent.territory.clone(),
                     path: instruction_path.display().to_string(),
                 }
             })?;
+            if let Some(contract) = &build_contract {
+                instruction.push_str(
+                    "\n\nThe controller-owned referee is the only authority on completion. Do not stop after merely describing the work. Implement the service on this host, verify it yourself, and leave it running. You have no access to referee evidence or other competitors.\n\n# Service contract\n\n",
+                );
+                instruction.push_str(contract);
+            }
             Ok(AgentInvocation {
                 config: agent.clone(),
                 territory_host: "127.0.0.1".into(),
@@ -871,7 +888,7 @@ mod tests {
     use aoe_referee::Referee;
     use aoe_replay::{EventLog, WorldState};
 
-    use super::{append, record_agent_results};
+    use super::{RunOptions, append, invocations, record_agent_results};
 
     const MANIFEST: &str = include_str!("../../runtime/tests/fixture.toml");
 
@@ -938,5 +955,35 @@ mod tests {
             Event::ResourcesChanged { ref reason, .. } if reason == "agent inference"
         )));
         std::fs::remove_file(path).expect("cleanup");
+    }
+
+    #[test]
+    fn build_invocations_embed_the_service_contract() {
+        let manifest_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../arenas/first-build/agents-real.toml");
+        let manifest = ArenaManifest::load(&manifest_path).expect("build manifest");
+        let plan =
+            aoe_runtime::NetworkPlan::from_manifest(&manifest, 26000, 23977).expect("network plan");
+        let options = RunOptions {
+            manifest: manifest_path,
+            output: std::path::PathBuf::from("matches/test"),
+            adapters: std::collections::HashMap::new(),
+            credentials: std::collections::HashMap::new(),
+            base_port: 26000,
+            multicast_port: 23977,
+            color: false,
+        };
+        let invocations = invocations(&manifest, &plan, &options).expect("invocations");
+        assert_eq!(invocations.len(), 3);
+        for invocation in invocations {
+            assert!(invocation.instruction.contains("GET /health"));
+            assert!(invocation.instruction.contains("PUT /records/<id>"));
+            assert!(
+                invocation
+                    .instruction
+                    .contains("only authority on completion")
+            );
+            assert!(!invocation.instruction.contains("builder-one-race"));
+        }
     }
 }
