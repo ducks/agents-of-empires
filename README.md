@@ -128,3 +128,21 @@ totals, the complete event timeline, downloadable source artifacts, and any
 agent transcripts captured before or during the post-match drain.
 
 Ctrl-C stops the guests but retains an aborted, inspectable match log.
+
+## Durable job queue race
+
+The second build contract starts with three opaque accepted jobs and requires
+separate API and worker services to recover them exactly once, process new work,
+and survive worker restart plus host reboot. Run its oracle before spending
+model tokens:
+
+```bash
+credentials="$(scripts/prepare-job-queue-credentials.sh)"
+cargo run --release --bin agents-of-empires -- run \
+  arenas/durable-job-queue/arena.toml \
+  --adapter oracle-queue=adapters/oracle-queue.sh \
+  --credential queue-one="$credentials/queue-one.env" \
+  --credential queue-two="$credentials/queue-two.env" \
+  --credential queue-three="$credentials/queue-three.env" \
+  --output "matches/durable-job-queue-oracle-$(date -u +%Y%m%d-%H%M%S)"
+```
