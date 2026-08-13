@@ -64,6 +64,24 @@ Exercise the adapter boundary without model traffic or a VM:
 adapters/test-claux.sh
 ```
 
+Run the deterministic First Build oracle race against three blank NixOS guests:
+
+```bash
+credentials="$(scripts/prepare-first-build-credentials.sh)"
+cargo run --release --bin agents-of-empires -- run \
+  arenas/first-build/arena.toml \
+  --adapter oracle=adapters/oracle-build.sh \
+  --credential builder-one="$credentials/builder-one.env" \
+  --credential builder-two="$credentials/builder-two.env" \
+  --credential builder-three="$credentials/builder-three.env" \
+  --output "matches/first-build-$(date -u +%Y%m%d-%H%M%S)"
+```
+
+Each competitor starts without an application or data. The controller-owned
+referee awards milestones for service health, opaque write/read behavior,
+service-restart persistence, and host-reboot persistence. The first durable
+deployment wins.
+
 The match writes an append-only `events.jsonl` and final `world.json`. Live and
 replay views use the same reducer:
 

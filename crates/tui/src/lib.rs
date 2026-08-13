@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use aoe_domain::{Event, EventEnvelope, MatchState, TerritoryState};
+use aoe_domain::{CompetitorState, Event, EventEnvelope, MatchState, TerritoryState};
 use aoe_replay::WorldState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,6 +67,21 @@ pub fn render_world(
 
 fn render_compact_territories(output: &mut String, state: &WorldState, color: bool) {
     for (id, territory) in &state.territories {
+        if let Some(competitor) = territory.competitor_state {
+            let passed = territory
+                .milestones
+                .values()
+                .filter(|milestone| milestone.passed)
+                .count();
+            let _ = writeln!(
+                output,
+                "{} {id} [{}]: milestones={passed}, points={}",
+                competitor_marker(competitor, color),
+                competitor_label(competitor),
+                territory.milestone_points,
+            );
+            continue;
+        }
         let marker = state_marker(territory.state, color);
         let health = territory
             .last_health
@@ -85,6 +100,14 @@ fn render_compact_territories(output: &mut String, state: &WorldState, color: bo
 }
 
 fn render_territory_table(output: &mut String, state: &WorldState, color: bool) {
+    if state
+        .territories
+        .values()
+        .any(|territory| territory.competitor_state.is_some())
+    {
+        render_build_table(output, state, color);
+        return;
+    }
     let _ = writeln!(
         output,
         "{:<3} {:<16} {:<12} {:<12} {:<10} {:>9}",
@@ -106,6 +129,60 @@ fn render_territory_table(output: &mut String, state: &WorldState, color: bool) 
             state_label(territory.state),
             territory.resources
         );
+    }
+}
+
+fn render_build_table(output: &mut String, state: &WorldState, color: bool) {
+    let _ = writeln!(
+        output,
+        "{:<3} {:<16} {:<12} {:<12} {:>10} {:>8}",
+        "", "territory", "class", "state", "milestones", "points"
+    );
+    for (id, territory) in &state.territories {
+        let competitor = territory
+            .competitor_state
+            .unwrap_or(CompetitorState::Preparing);
+        let passed = territory
+            .milestones
+            .values()
+            .filter(|milestone| milestone.passed)
+            .count();
+        let total = territory.milestones.len();
+        let _ = writeln!(
+            output,
+            "{:<3} {id:<16} {:<12} {:<12} {:>5}/{:<4} {:>8}",
+            competitor_marker(competitor, color),
+            territory.class.as_deref().unwrap_or("unknown"),
+            competitor_label(competitor),
+            passed,
+            total,
+            territory.milestone_points,
+        );
+    }
+}
+
+fn competitor_marker(state: CompetitorState, color: bool) -> &'static str {
+    match (state, color) {
+        (CompetitorState::Durable, true) => "\x1b[32m[+]\x1b[0m",
+        (CompetitorState::Incomplete, true) => "\x1b[31m[x]\x1b[0m",
+        (CompetitorState::Unavailable, true) => "\x1b[90m[?]\x1b[0m",
+        (CompetitorState::Verifying, true) => "\x1b[33m[~]\x1b[0m",
+        (CompetitorState::Durable, false) => "[+]",
+        (CompetitorState::Incomplete, false) => "[x]",
+        (CompetitorState::Unavailable, false) => "[?]",
+        (CompetitorState::Verifying, false) => "[~]",
+        (CompetitorState::Preparing | CompetitorState::Building, _) => "[>]",
+    }
+}
+
+fn competitor_label(state: CompetitorState) -> &'static str {
+    match state {
+        CompetitorState::Preparing => "preparing",
+        CompetitorState::Building => "building",
+        CompetitorState::Verifying => "verifying",
+        CompetitorState::Durable => "durable",
+        CompetitorState::Incomplete => "incomplete",
+        CompetitorState::Unavailable => "unavailable",
     }
 }
 

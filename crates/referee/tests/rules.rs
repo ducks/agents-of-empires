@@ -1,5 +1,5 @@
 use aoe_domain::{ArenaManifest, Event, FailureSource, MatchState, TerritoryState};
-use aoe_referee::{HealthObservation, Referee};
+use aoe_referee::{BuildReferee, HealthObservation, Referee};
 
 const MANIFEST: &str = include_str!("../../runtime/tests/fixture.toml");
 
@@ -164,4 +164,56 @@ fn controller_events_share_the_referee_sequence() {
             ..
         }
     ));
+}
+
+#[test]
+fn first_durable_build_finishes_the_race() {
+    let manifest = ArenaManifest::parse(include_str!("../../../arenas/first-build/arena.toml"))
+        .expect("build manifest");
+    let mut referee = BuildReferee::from_manifest(&manifest);
+    referee.start().expect("start");
+    for (milestone, points) in [
+        ("service-up", 10),
+        ("write-read", 20),
+        ("service-restart", 30),
+        ("host-reboot", 40),
+    ] {
+        referee
+            .begin_milestone("builder-two", milestone, points)
+            .expect("begin milestone");
+        referee
+            .pass_milestone(
+                "builder-two",
+                milestone,
+                points,
+                serde_json::json!({"verified": true}),
+                points,
+            )
+            .expect("pass milestone");
+    }
+    let outcome = referee.outcome().expect("outcome");
+    assert_eq!(outcome.winner.as_deref(), Some("builder-two"));
+    assert_eq!(outcome.standings[0].points, 100);
+}
+
+#[test]
+fn retryable_build_failure_does_not_end_the_match() {
+    let manifest = ArenaManifest::parse(include_str!("../../../arenas/first-build/arena.toml"))
+        .expect("build manifest");
+    let mut referee = BuildReferee::from_manifest(&manifest);
+    referee.start().expect("start");
+    referee
+        .begin_milestone("builder-one", "service-up", 1)
+        .expect("begin milestone");
+    referee
+        .fail_milestone(
+            "builder-one",
+            "service-up",
+            "verification_failed",
+            "connection refused",
+            true,
+            1,
+        )
+        .expect("record failure");
+    assert!(referee.outcome().is_none());
 }

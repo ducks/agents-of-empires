@@ -54,10 +54,20 @@ pub struct MilestoneConfig {
     #[serde(default)]
     pub depends_on: Vec<String>,
     pub verifier: String,
+    #[serde(default)]
+    pub operation: MilestoneOperation,
     pub timeout_seconds: u64,
     pub points: u64,
     #[serde(default = "default_true")]
     pub required: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MilestoneOperation {
+    #[default]
+    Observe,
+    HostReboot,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

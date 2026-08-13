@@ -1,4 +1,4 @@
-use aoe_domain::{Event, EventEnvelope, MatchState, TerritoryState};
+use aoe_domain::{CompetitorState, Event, EventEnvelope, MatchState, TerritoryState};
 use aoe_replay::{WorldState, reduce};
 use aoe_tui::{RenderOptions, render_world};
 
@@ -85,4 +85,52 @@ fn narrow_layout_remains_legible() {
     );
     assert!(rendered.contains("gatekeeper [edge]: up"));
     assert!(!rendered.contains("territory          state"));
+}
+
+#[test]
+fn build_race_renders_milestone_progress() {
+    let events = vec![
+        envelope(
+            0,
+            Event::TerritoryRegistered {
+                territory: "builder-one".into(),
+                class: "builder".into(),
+                agent: "oracle".into(),
+            },
+        ),
+        envelope(
+            1,
+            Event::CompetitorStateChanged {
+                territory: "builder-one".into(),
+                from: CompetitorState::Preparing,
+                to: CompetitorState::Verifying,
+                reason: "checking".into(),
+            },
+        ),
+        envelope(
+            2,
+            Event::MilestonePassed {
+                territory: "builder-one".into(),
+                milestone: "service-up".into(),
+                points: 10,
+                evidence: serde_json::json!({"health": "ready"}),
+            },
+        ),
+    ];
+    let mut state = WorldState::default();
+    for event in &events {
+        reduce(&mut state, event);
+    }
+    let rendered = render_world(
+        &state,
+        &events,
+        RenderOptions {
+            color: false,
+            ..RenderOptions::default()
+        },
+    );
+    assert!(rendered.contains("builder-one"));
+    assert!(rendered.contains("verifying"));
+    assert!(rendered.contains("1/1"));
+    assert!(rendered.contains("10"));
 }
