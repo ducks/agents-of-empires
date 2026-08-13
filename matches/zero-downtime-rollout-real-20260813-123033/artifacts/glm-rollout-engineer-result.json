@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "agent": "glm-rollout-engineer",
+  "territory": "rollout-three",
+  "status": "completed",
+  "summary": "Now I understand the setup. Let me write the v2 service.v2 is up on 8082. Now verify it directly against the contract, including that it serves the existing records from the shared DB.v2 serves all existing records correctly. Let me verify PUT round-trip on v2 with a test record, then confirm the public endpoint is currently on v1 before cutover.v2 fully functional. Public endpoint is on v1. Now the atomic cutover: write `8082` to a temp file and `rename` over the upstream file (atomic on same fs).Public endpoint is now serving v2 with all records preserved. Now verify durability: restart v2 service and confirm everything survives, then confirm services are enabled for reboot.Rollout complete. Summary:\n\n**What was done**\n- Implemented `/opt/rollout/v2.py` — a stateful record service on `127.0.0.1:8082` mirroring v1's SQLite-backed behavior (same `/var/lib/rollout/records.sqlite3`), with `/health`→`ready`, `/version`→`v2`, and `PUT/GET /records/<id>` per contract.\n- Started `rollout-v2.service` (reset its failed state, started, confirmed `active`).\n- Verified v2 directly: health, version, all existing records (`alpha-original`, `beta-original`), 404 for missing, and a PUT round-trip — all correct.\n- Performed atomic cutover by writing `8082` to `upstream.tmp` and `mv`-ing it over `/var/lib/rollout/upstream` (atomic rename on same filesystem). The proxy reads this file per request, so no request ever saw a partial/missing upstream — both v1 (8081) and v2 (8082) stayed running throughout.\n- Verified the public endpoint (`:8080`) immediately served `v2`, `ready`, and all records intact.\n- Did **not** stop or restart `rollout-proxy.service` or `rollout-v1.service` during cutover.\n\n**Durability verified**\n- `systemctl restart rollout-v2.service` → recovered, public endpoint stayed healthy, all records intact.\n- All three services (`rollout-proxy`, `rollout-v1`, `rollout-v2`) are `enabled`, so they come back after a full host reboot. `rollout-v2.service` has `Restart=always`.\n- Records persisted in the SQLite file; v2 reads the same DB, so existing customer state is preserved across restart/reboot.\n\n**Final state**\n- Proxy (`:8080`) → upstream `8082` (v2), running and enabled.\n- v2 (`:8082`) running, enabled, `Restart=always`.\n- v1 (`:8081`) still running (untouched, as required) and enabled.\n- All records present and correct.",
+  "usage": {
+    "rounds": null,
+    "tool_calls": null,
+    "input_tokens": 87780,
+    "output_tokens": 4589,
+    "cost_microusd": 54856,
+    "resource_units": 1
+  },
+  "transcript": "matches/zero-downtime-rollout-real-20260813-123033/agents/glm-rollout-engineer/transcript.json"
+}
