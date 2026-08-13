@@ -125,7 +125,10 @@ agents-of-empires report matches --output site
 Open `site/index.html` locally or publish `site/` with GitHub Pages. Each match
 page includes the frozen outcome, territory and agent results, token and cost
 totals, the complete event timeline, downloadable source artifacts, and any
-agent transcripts captured before or during the post-match drain.
+agent transcripts captured before or during the post-match drain. An interactive
+replay plots each agent on a shared clock with milestone, state, usage, and
+terminal markers. It supports playback speeds, scrubbing, and raw event
+inspection without changing or reinterpreting the referee's result.
 
 Ctrl-C stops the guests but retains an aborted, inspectable match log.
 
