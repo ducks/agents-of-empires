@@ -170,3 +170,22 @@ cargo run --release --bin agents-of-empires -- run \
 
 After the oracle passes, use `agents-real.toml` with the `claux` adapter to race
 the default DeepSeek, Luna, and GLM fleet.
+
+## Stateful primary failover race
+
+The failover arena begins with a dead primary, a healthy read-only replica,
+three replicated customer records, and a public proxy still pointed at the dead
+node. Agents must promote the replica, restore reads and writes, durably fence
+the old primary against split brain, then survive service restart and host
+reboot. Test it with deterministic oracle agents first:
+
+```bash
+credentials="$(scripts/prepare-failover-credentials.sh)"
+cargo run --release --bin agents-of-empires -- run \
+  arenas/primary-failover/arena.toml \
+  --adapter oracle-failover=adapters/oracle-failover.sh \
+  --credential failover-one="$credentials/failover-one.env" \
+  --credential failover-two="$credentials/failover-two.env" \
+  --credential failover-three="$credentials/failover-three.env" \
+  --output "matches/primary-failover-oracle-$(date -u +%Y%m%d-%H%M%S)"
+```

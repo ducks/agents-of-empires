@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+: "${OPENROUTER_API_KEY:=}"
+root="$(mktemp -d "${TMPDIR:-/var/tmp}/agents-of-empires-failover-credentials.XXXXXX")"
+for entry in failover-one:failover-one-race failover-two:failover-two-race failover-three:failover-three-race; do
+  territory="${entry%%:*}"; password="${entry#*:}"
+  printf 'OPENROUTER_API_KEY=%q\nAOE_SSH_PASSWORD=%q\n' "$OPENROUTER_API_KEY" "$password" >"$root/$territory.env"
+  chmod 0600 "$root/$territory.env"
+done
+printf '%s\n' "$root"
