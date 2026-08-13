@@ -62,8 +62,11 @@ fn network_plan_has_unique_restricted_assignments() {
     assert_ne!(plan.assignments[0].arena_ip, plan.assignments[1].arena_ip);
     let options = plan.assignments[0].qemu_net_opts();
     assert!(options.contains("restrict=on"));
-    assert!(options.contains("mcast=230.77.0.1:23900"));
-    assert!(!options.contains("hostfwd=tcp::"));
+    assert!(options.contains("hostfwd=tcp:127.0.0.1:24000-:22"));
+    assert!(!options.contains("-netdev"));
+    let qemu_options = plan.assignments[0].qemu_opts();
+    assert!(qemu_options.contains("mcast=230.77.0.1:23900"));
+    assert!(qemu_options.contains("mac=52:54:00:77:00:0a"));
 }
 
 #[tokio::test]

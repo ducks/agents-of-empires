@@ -16,19 +16,22 @@ pub struct NetworkAssignment {
 }
 
 impl NetworkAssignment {
-    /// QEMU networking arguments for controller management and isolated peers.
+    /// Options appended to the NixOS VM runner's built-in user network.
     #[must_use]
     pub fn qemu_net_opts(&self) -> String {
         format!(
-            "-netdev user,id=mgmt,restrict=on,hostfwd=tcp:127.0.0.1:{}-:22,hostfwd=tcp:127.0.0.1:{}-:{} \
-             -device virtio-net-pci,netdev=mgmt \
-             -netdev socket,id=arena,mcast=230.77.0.1:{} \
+            "restrict=on,hostfwd=tcp:127.0.0.1:{}-:22,hostfwd=tcp:127.0.0.1:{}-:{}",
+            self.ssh_port, self.service_port, self.guest_service_port
+        )
+    }
+
+    /// Additional QEMU arguments for the isolated arena network.
+    #[must_use]
+    pub fn qemu_opts(&self) -> String {
+        format!(
+            "-netdev socket,id=arena,mcast=230.77.0.1:{} \
              -device virtio-net-pci,netdev=arena,mac={}",
-            self.ssh_port,
-            self.service_port,
-            self.guest_service_port,
-            self.multicast_port,
-            self.mac_address
+            self.multicast_port, self.mac_address
         )
     }
 }

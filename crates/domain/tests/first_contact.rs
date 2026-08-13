@@ -60,3 +60,21 @@ fn guest_definitions_do_not_reference_controller_assets() {
         );
     }
 }
+
+#[test]
+fn archivist_provisions_after_postgresql_setup() {
+    let archivist =
+        std::fs::read_to_string(arena_root().join("nix/archivist.nix")).expect("archivist module");
+    assert!(archivist.contains("postgresql-setup.service"));
+    assert!(archivist.contains("after = [ \"postgresql.service\" \"postgresql-setup.service\" ]"));
+    assert!(
+        archivist.contains("requires = [ \"postgresql.service\" \"postgresql-setup.service\" ]")
+    );
+}
+
+#[test]
+fn guest_image_supports_generic_linux_agent_binaries() {
+    let base =
+        std::fs::read_to_string(arena_root().join("nix/base.nix")).expect("shared guest module");
+    assert!(base.contains("programs.nix-ld.enable = true;"));
+}

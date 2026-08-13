@@ -27,8 +27,8 @@
   systemd.services.archivist-provision = {
     description = "Provision Archivist durable state";
     wantedBy = [ "multi-user.target" ];
-    after = [ "postgresql.service" ];
-    requires = [ "postgresql.service" ];
+    after = [ "postgresql.service" "postgresql-setup.service" ];
+    requires = [ "postgresql.service" "postgresql-setup.service" ];
     before = [ "archivist-app.service" ];
     path = [ pkgs.postgresql_16 ];
     serviceConfig.Type = "oneshot";

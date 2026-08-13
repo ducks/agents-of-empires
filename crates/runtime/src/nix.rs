@@ -85,6 +85,7 @@ impl TerritoryDriver for NixVmDriver {
         command
             .current_dir(vm_state)
             .env("QEMU_NET_OPTS", network.qemu_net_opts())
+            .env("QEMU_OPTS", network.qemu_opts())
             .stdin(Stdio::null())
             .stdout(Stdio::from(stdout))
             .stderr(Stdio::from(stderr))

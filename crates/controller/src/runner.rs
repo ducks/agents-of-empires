@@ -368,8 +368,11 @@ fn record_agent_results(
             elapsed,
         )?;
         append(log, world, events, [usage])?;
-        let charged = referee.charge(&result.territory, result.usage.resource_units, elapsed)?;
-        append(log, world, events, [charged])?;
+        if referee.outcome().is_none() {
+            let charged =
+                referee.charge(&result.territory, result.usage.resource_units, elapsed)?;
+            append(log, world, events, [charged])?;
+        }
     }
     Ok(())
 }
@@ -390,4 +393,81 @@ fn append(
 
 fn elapsed_ms(started: Instant) -> u64 {
     u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
+}
+
+#[cfg(test)]
+mod tests {
+    use aoe_agent::{AgentResult, AgentStatus, AgentUsage};
+    use aoe_domain::{ArenaManifest, Event};
+    use aoe_referee::Referee;
+    use aoe_replay::{EventLog, WorldState};
+
+    use super::{append, record_agent_results};
+
+    const MANIFEST: &str = include_str!("../../runtime/tests/fixture.toml");
+
+    #[test]
+    fn late_agent_result_is_recorded_without_charging_finished_match() {
+        let manifest = ArenaManifest::parse(MANIFEST).expect("manifest");
+        let mut referee = Referee::from_manifest(&manifest);
+        let mut world = WorldState::default();
+        let path = std::env::temp_dir().join(format!(
+            "aoe-controller-late-agent-result-{}.jsonl",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let mut log = EventLog::open(&path).expect("event log");
+        let mut events = Vec::new();
+        append(
+            &mut log,
+            &mut world,
+            &mut events,
+            referee.start().expect("start"),
+        )
+        .expect("append start");
+        let finish_at = manifest.rules.duration_seconds * 1000;
+        append(
+            &mut log,
+            &mut world,
+            &mut events,
+            referee.tick(finish_at).expect("finish on timer"),
+        )
+        .expect("append finish");
+        let result = AgentResult {
+            schema_version: 1,
+            agent: "gate-agent".into(),
+            territory: "gate".into(),
+            status: AgentStatus::TimedOut,
+            summary: "agent exceeded its deadline".into(),
+            usage: AgentUsage {
+                resource_units: 1,
+                ..AgentUsage::default()
+            },
+            transcript: None,
+        };
+
+        record_agent_results(
+            &mut referee,
+            &mut log,
+            &mut world,
+            &mut events,
+            vec![result],
+            finish_at,
+        )
+        .expect("late result");
+
+        assert!(events.iter().any(|event| matches!(
+            event.event,
+            Event::AgentFinished { ref agent, .. } if agent == "gate-agent"
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event.event,
+            Event::UsageCharged { ref agent, .. } if agent == "gate-agent"
+        )));
+        assert!(!events.iter().any(|event| matches!(
+            event.event,
+            Event::ResourcesChanged { ref reason, .. } if reason == "agent inference"
+        )));
+        std::fs::remove_file(path).expect("cleanup");
+    }
 }
