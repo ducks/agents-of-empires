@@ -1,0 +1,128 @@
+schema_version = 1
+[arena]
+id = "primary-failover"
+display_name = "Stateful Primary Failover"
+mode = "build_race"
+[network]
+cidr = "10.81.0.0/24"
+allow_public_internet = false
+[rules]
+duration_seconds = 900
+tick_ms = 1000
+healthy_resources_per_tick = 0
+minimum_territories = 3
+[build]
+stop_on_first_durable = true
+completion_milestone = "host-reboot"
+[[build.milestones]]
+id = "failed-primary-preserved"
+display_name = "Failed Primary Preserved"
+verifier = "verify/incident-confirmed.sh"
+timeout_seconds = 5
+points = 5
+[[build.milestones]]
+id = "reads-restored"
+display_name = "Existing Reads Restored"
+depends_on = ["failed-primary-preserved"]
+verifier = "verify/reads-restored.sh"
+timeout_seconds = 10
+points = 20
+[[build.milestones]]
+id = "old-primary-fenced"
+display_name = "Old Primary Fenced"
+depends_on = ["reads-restored"]
+verifier = "verify/old-primary-fenced.sh"
+timeout_seconds = 10
+points = 20
+[[build.milestones]]
+id = "writes-restored"
+display_name = "Writes Restored"
+depends_on = ["old-primary-fenced"]
+verifier = "verify/writes-restored.sh"
+timeout_seconds = 15
+points = 25
+[[build.milestones]]
+id = "service-restart"
+display_name = "Topology Restart"
+depends_on = ["writes-restored"]
+verifier = "verify/service-restart.sh"
+timeout_seconds = 20
+points = 15
+[[build.milestones]]
+id = "host-reboot"
+display_name = "Host Reboot"
+depends_on = ["service-restart"]
+verifier = "verify/host-reboot.sh"
+operation = "host_reboot"
+timeout_seconds = 40
+points = 15
+[[classes]]
+id = "failover-engineer"
+display_name = "Failover Engineer"
+[classes.resources]
+vcpus = 1
+memory_mib = 768
+disk_mib = 2048
+[[territories]]
+id = "failover-one"
+class = "failover-engineer"
+nixos_config = "./arenas/primary-failover#nixosConfigurations.failover-one.config.system.build.vm"
+[territories.service]
+port = 8080
+path = "/health"
+expected_status = 200
+expected_body = "ready"
+[territories.service.health]
+poll_interval_ms = 1000
+consecutive_failures = 3
+recovery_window_seconds = 60
+[[territories]]
+id = "failover-two"
+class = "failover-engineer"
+nixos_config = "./arenas/primary-failover#nixosConfigurations.failover-two.config.system.build.vm"
+[territories.service]
+port = 8080
+path = "/health"
+expected_status = 200
+expected_body = "ready"
+[territories.service.health]
+poll_interval_ms = 1000
+consecutive_failures = 3
+recovery_window_seconds = 60
+[[territories]]
+id = "failover-three"
+class = "failover-engineer"
+nixos_config = "./arenas/primary-failover#nixosConfigurations.failover-three.config.system.build.vm"
+[territories.service]
+port = 8080
+path = "/health"
+expected_status = 200
+expected_body = "ready"
+[territories.service.health]
+poll_interval_ms = 1000
+consecutive_failures = 3
+recovery_window_seconds = 60
+[[agents]]
+id = "deepseek-failover-engineer"
+territory = "failover-one"
+adapter = "claux"
+model = "deepseek/deepseek-v4-flash-0731"
+reasoning_effort = "high"
+[agents.budget]
+resource_units = 900
+[[agents]]
+id = "luna-failover-engineer"
+territory = "failover-two"
+adapter = "claux"
+model = "openai/gpt-5.6-luna"
+reasoning_effort = "high"
+[agents.budget]
+resource_units = 900
+[[agents]]
+id = "glm-failover-engineer"
+territory = "failover-three"
+adapter = "claux"
+model = "z-ai/glm-5.2"
+reasoning_effort = "high"
+[agents.budget]
+resource_units = 900
