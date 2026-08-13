@@ -7,6 +7,7 @@ use aoe_agent::{
 };
 use aoe_domain::{AgentConfig, Budget};
 use async_trait::async_trait;
+use tokio::sync::mpsc;
 
 struct FakeAdapter;
 
@@ -95,4 +96,57 @@ async fn unknown_adapter_is_a_harness_error() {
         .await
         .remove(0);
     assert_eq!(result.status, AgentStatus::HarnessError);
+}
+
+struct StaggeredAdapter;
+
+#[async_trait]
+impl AgentAdapter for StaggeredAdapter {
+    async fn run(
+        &self,
+        invocation: AgentInvocation,
+        _timeout: Duration,
+    ) -> Result<AgentResult, AgentControllerError> {
+        let delay = if invocation.config.id == "fast" {
+            10
+        } else {
+            100
+        };
+        tokio::time::sleep(Duration::from_millis(delay)).await;
+        Ok(AgentResult {
+            schema_version: 1,
+            agent: invocation.config.id,
+            territory: invocation.config.territory,
+            status: AgentStatus::Completed,
+            summary: "done".into(),
+            usage: AgentUsage::default(),
+            transcript: None,
+        })
+    }
+}
+
+#[tokio::test]
+async fn streams_each_agent_without_waiting_for_the_slowest() {
+    let mut controller = AgentController::new();
+    controller.register("fake", Arc::new(StaggeredAdapter));
+    let (sender, mut receiver) = mpsc::channel(2);
+    let task = tokio::spawn(async move {
+        controller
+            .run_stream(
+                vec![
+                    invocation("slow", "archive", 10),
+                    invocation("fast", "gate", 10),
+                ],
+                Duration::from_secs(1),
+                sender,
+            )
+            .await;
+    });
+    let first = tokio::time::timeout(Duration::from_millis(50), receiver.recv())
+        .await
+        .expect("first result should not wait for slow adapter")
+        .expect("result");
+    assert_eq!(first.agent, "fast");
+    assert_eq!(receiver.recv().await.expect("second result").agent, "slow");
+    task.await.expect("dispatcher");
 }

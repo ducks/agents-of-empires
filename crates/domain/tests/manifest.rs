@@ -1,4 +1,4 @@
-use aoe_domain::{ArenaManifest, Event, EventEnvelope, ManifestError, MatchState};
+use aoe_domain::{ArenaManifest, Event, EventEnvelope, ManifestError, MatchMode, MatchState};
 
 const VALID: &str = r#"
 schema_version = 1
@@ -169,4 +169,84 @@ fn events_round_trip_as_tagged_json() {
     assert!(json.contains("match_state_changed"));
     let decoded: EventEnvelope = serde_json::from_str(&json).expect("deserialize");
     assert_eq!(decoded, envelope);
+}
+
+#[test]
+fn parses_build_race_milestone_dag() {
+    let build = r#"
+mode = "build_race"
+
+[build]
+stop_on_first_durable = true
+completion_milestone = "reboot"
+
+[[build.milestones]]
+id = "service-up"
+display_name = "Service Up"
+verifier = "verify/service-up.sh"
+timeout_seconds = 30
+points = 10
+
+[[build.milestones]]
+id = "reboot"
+display_name = "Host Reboot"
+depends_on = ["service-up"]
+verifier = "verify/reboot.sh"
+timeout_seconds = 120
+points = 50
+"#;
+    let source = VALID.replace(
+        "display_name = \"First Contact\"",
+        &format!("display_name = \"First Contact\"\n{build}"),
+    );
+    let manifest = ArenaManifest::parse(&source).expect("build manifest");
+    assert_eq!(manifest.arena.mode, MatchMode::BuildRace);
+    assert_eq!(manifest.build.expect("contract").milestones.len(), 2);
+}
+
+#[test]
+fn rejects_build_race_without_contract() {
+    let source = VALID.replace(
+        "display_name = \"First Contact\"",
+        "display_name = \"First Contact\"\nmode = \"build_race\"",
+    );
+    let Err(ManifestError::Validation(errors)) = ArenaManifest::parse(&source) else {
+        panic!("expected validation errors");
+    };
+    assert!(errors.iter().any(|error| error.path == "build"));
+}
+
+#[test]
+fn rejects_cyclic_milestones() {
+    let build = r#"
+mode = "build_race"
+
+[build]
+stop_on_first_durable = true
+completion_milestone = "one"
+
+[[build.milestones]]
+id = "one"
+display_name = "One"
+depends_on = ["two"]
+verifier = "verify/one.sh"
+timeout_seconds = 30
+points = 10
+
+[[build.milestones]]
+id = "two"
+display_name = "Two"
+depends_on = ["one"]
+verifier = "verify/two.sh"
+timeout_seconds = 30
+points = 10
+"#;
+    let source = VALID.replace(
+        "display_name = \"First Contact\"",
+        &format!("display_name = \"First Contact\"\n{build}"),
+    );
+    let Err(ManifestError::Validation(errors)) = ArenaManifest::parse(&source) else {
+        panic!("expected validation errors");
+    };
+    assert!(errors.iter().any(|error| error.message.contains("cycle")));
 }

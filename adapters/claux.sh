@@ -127,6 +127,22 @@ set +e
 status=$?
 set -e
 
+# A controller-owned durability check may reboot the guest while Claux still
+# has an SSH session open. Wait for that same host to return before collecting
+# artifacts, and distinguish the expected transport interruption from model or
+# player failure.
+referee_interrupted=false
+if (( status == 255 )) && [[ -f "${run_root}/referee-reboot" ]]; then
+  deadline=$((SECONDS + 60))
+  until (( SECONDS >= deadline )); do
+    if "${ssh_command[@]}" true >/dev/null 2>&1; then
+      referee_interrupted=true
+      break
+    fi
+    sleep 1
+  done
+fi
+
 "${scp_command[@]}" "root@${AOE_TERRITORY_HOST}:${remote_root}/transcript.json" "$transcript" 2>/dev/null || true
 "${scp_command[@]}" "root@${AOE_TERRITORY_HOST}:${remote_root}/result.json" "$native_result" 2>/dev/null || true
 
@@ -153,12 +169,19 @@ if [[ -s "$native_result" ]]; then
     }' "$native_result" >"${AOE_RESULT_FILE}.partial"
   mv "${AOE_RESULT_FILE}.partial" "$AOE_RESULT_FILE"
 else
+  normalized_status="failed"
+  summary="Claux exited with status ${status}"
+  if [[ "$referee_interrupted" == true ]]; then
+    normalized_status="interrupted"
+    summary="agent session was interrupted by the referee's host reboot"
+  fi
   jq -n \
     --arg agent "$AOE_AGENT_ID" \
     --arg territory "$AOE_TERRITORY_ID" \
-    --arg summary "Claux exited with status ${status}" \
+    --arg status "$normalized_status" \
+    --arg summary "$summary" \
     --arg transcript "$transcript" \
-    '{schema_version:1, agent:$agent, territory:$territory, status:"failed", summary:$summary, usage:{resource_units:1}, transcript:$transcript}' \
+    '{schema_version:1, agent:$agent, territory:$territory, status:$status, summary:$summary, usage:{resource_units:1}, transcript:$transcript}' \
     >"$AOE_RESULT_FILE"
 fi
 exit "$status"

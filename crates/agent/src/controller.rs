@@ -1,10 +1,12 @@
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use futures::future::join_all;
+use futures::{StreamExt, stream::FuturesUnordered};
 use thiserror::Error;
+use tokio::sync::mpsc;
 
 use crate::{AgentInvocation, AgentResult, AgentStatus};
 
@@ -48,26 +50,57 @@ impl AgentController {
         invocations: Vec<AgentInvocation>,
         timeout: Duration,
     ) -> Vec<AgentResult> {
-        let futures = invocations.into_iter().map(|invocation| async move {
-            let Some(adapter) = self.adapters.get(&invocation.config.adapter) else {
-                return AgentResult::controller_result(
-                    &invocation,
-                    AgentStatus::HarnessError,
-                    format!("unknown adapter {}", invocation.config.adapter),
-                );
-            };
-            let mut result = match adapter.run(invocation.clone(), timeout).await {
-                Ok(result) => result,
-                Err(error) => AgentResult::controller_result(
-                    &invocation,
-                    AgentStatus::HarnessError,
-                    error.to_string(),
-                ),
-            };
-            apply_budget(&invocation, &mut result);
-            result
-        });
-        join_all(futures).await
+        let mut pending = self.pending(invocations, timeout);
+        let mut results = Vec::new();
+        while let Some(result) = pending.next().await {
+            results.push(result);
+        }
+        results
+    }
+
+    /// Run invocations concurrently and publish each result as soon as that
+    /// individual adapter finishes.
+    pub async fn run_stream(
+        &self,
+        invocations: Vec<AgentInvocation>,
+        timeout: Duration,
+        sender: mpsc::Sender<AgentResult>,
+    ) {
+        let mut pending = self.pending(invocations, timeout);
+        while let Some(result) = pending.next().await {
+            if sender.send(result).await.is_err() {
+                break;
+            }
+        }
+    }
+
+    fn pending(
+        &self,
+        invocations: Vec<AgentInvocation>,
+        timeout: Duration,
+    ) -> FuturesUnordered<impl Future<Output = AgentResult> + '_> {
+        invocations
+            .into_iter()
+            .map(|invocation| async move {
+                let Some(adapter) = self.adapters.get(&invocation.config.adapter) else {
+                    return AgentResult::controller_result(
+                        &invocation,
+                        AgentStatus::HarnessError,
+                        format!("unknown adapter {}", invocation.config.adapter),
+                    );
+                };
+                let mut result = match adapter.run(invocation.clone(), timeout).await {
+                    Ok(result) => result,
+                    Err(error) => AgentResult::controller_result(
+                        &invocation,
+                        AgentStatus::HarnessError,
+                        error.to_string(),
+                    ),
+                };
+                apply_budget(&invocation, &mut result);
+                result
+            })
+            .collect()
     }
 }
 

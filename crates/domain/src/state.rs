@@ -20,3 +20,25 @@ pub enum MatchState {
     Finished,
     Aborted,
 }
+
+/// Controller-owned lifecycle state for one build-race competitor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CompetitorState {
+    Preparing,
+    Building,
+    Verifying,
+    Durable,
+    Incomplete,
+    Unavailable,
+}
+
+/// Why an agent process stopped, independent of match scoring.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentTerminalState {
+    Completed,
+    Failed,
+    Interrupted,
+    Terminated,
+}

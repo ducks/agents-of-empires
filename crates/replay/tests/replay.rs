@@ -2,7 +2,10 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use aoe_domain::{Event, EventEnvelope, FailureSource, MatchState, TerritoryState};
+use aoe_domain::{
+    AgentTerminalState, CompetitorState, Event, EventEnvelope, FailureSource, MatchState,
+    TerritoryState,
+};
 use aoe_replay::{
     EventLog, EventLogError, Snapshot, WorldState, load_events, load_snapshot, reduce, replay,
     write_snapshot,
@@ -149,4 +152,93 @@ fn snapshot_round_trip_preserves_reduced_state() {
     write_snapshot(&path, &snapshot).expect("write snapshot");
     assert_eq!(load_snapshot(&path).expect("load snapshot"), snapshot);
     fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
+fn milestone_evidence_reduces_and_revokes() {
+    let passed = event(
+        0,
+        100,
+        Event::MilestonePassed {
+            territory: "builder".into(),
+            milestone: "write-read".into(),
+            points: 20,
+            evidence: serde_json::json!({"record": "opaque-17"}),
+        },
+    );
+    let durable = event(
+        1,
+        200,
+        Event::DurableDeploymentCompleted {
+            territory: "builder".into(),
+            elapsed_ms: 200,
+        },
+    );
+    let revoked = event(
+        2,
+        300,
+        Event::MilestoneRevoked {
+            territory: "builder".into(),
+            milestone: "write-read".into(),
+            reason: "record disappeared after reboot".into(),
+        },
+    );
+    let state = replay([&passed, &durable, &revoked]);
+    let builder = state.territories.get("builder").expect("builder");
+    assert_eq!(builder.competitor_state, Some(CompetitorState::Durable));
+    assert_eq!(builder.durable_at_ms, Some(200));
+    assert_eq!(builder.milestone_points, 0);
+    assert!(!builder.milestones["write-read"].passed);
+}
+
+#[test]
+fn interrupted_and_terminated_agents_are_terminal_without_becoming_losses() {
+    let events = [
+        event(
+            0,
+            0,
+            Event::AgentStarted {
+                agent: "winner".into(),
+                territory: "one".into(),
+                model: "model-a".into(),
+            },
+        ),
+        event(
+            1,
+            10,
+            Event::AgentInterrupted {
+                agent: "winner".into(),
+                source: FailureSource::Arena,
+                detail: "referee reboot".into(),
+            },
+        ),
+        event(
+            2,
+            10,
+            Event::AgentStarted {
+                agent: "loser".into(),
+                territory: "two".into(),
+                model: "model-b".into(),
+            },
+        ),
+        event(
+            3,
+            10,
+            Event::AgentTerminated {
+                agent: "loser".into(),
+                reason: "drain expired".into(),
+            },
+        ),
+    ];
+    let state = replay(&events);
+    assert_eq!(
+        state.agents["winner"].terminal_state,
+        Some(AgentTerminalState::Interrupted)
+    );
+    assert_eq!(state.agents["winner"].successful, None);
+    assert_eq!(
+        state.agents["loser"].terminal_state,
+        Some(AgentTerminalState::Terminated)
+    );
+    assert!(state.agents.values().all(|agent| !agent.running));
 }

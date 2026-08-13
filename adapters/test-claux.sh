@@ -26,6 +26,9 @@ for argument in "$@"; do
   if [[ "$argument" == "-N" ]]; then
     sleep 30
   fi
+  if [[ "${TEST_REMOTE_EXIT_255:-}" == 1 && "$argument" == *"--output-format json"* ]]; then
+    exit 255
+  fi
 done
 exit 0
 EOF
@@ -37,7 +40,7 @@ source_path="${@: -2:1}"
 destination="${@: -1}"
 if [[ "$source_path" == *:*/transcript.json ]]; then
   printf '%s' '{"schema_version":2}' >"$destination"
-elif [[ "$source_path" == *:*/result.json ]]; then
+elif [[ "$source_path" == *:*/result.json && "${TEST_NO_NATIVE_RESULT:-}" != 1 ]]; then
   printf '%s' '{"result":"held the line","usage":{"input_tokens":120,"output_tokens":8,"cost_usd":0.0012}}' >"$destination"
 fi
 EOF
@@ -78,7 +81,55 @@ jq -e '
   and .usage.resource_units == 1
 ' "$root/run/result.json" >/dev/null
 
+rm -f "$root/run/result.json" "$root/run/claux-result.json" "$root/run/transcript.json" "$root/run/referee-reboot"
+set +e
+PATH="$root/bin:$PATH" \
+TEST_REMOTE_EXIT_255=1 \
+TEST_NO_NATIVE_RESULT=1 \
+AOE_AGENT_ID=test-agent \
+AOE_TERRITORY_ID=test-territory \
+AOE_TERRITORY_HOST=127.0.0.1 \
+AOE_SSH_PORT=26000 \
+AOE_MODEL=test/model \
+AOE_REASONING_EFFORT=low \
+AOE_INSTRUCTION_FILE="$root/instruction.md" \
+AOE_RESULT_FILE="$root/run/result.json" \
+AOE_CREDENTIAL_FILE="$root/credential.env" \
+AOE_CLAUX_BINARY="$root/claux" \
+AOE_OPENROUTER_PROXY="$root/fake-proxy.py" \
+  "$adapter"
+generic_255_status=$?
+set -e
+[[ "$generic_255_status" == 255 ]]
 if rg -q 'controller-only-secret' "$root/run"; then
   echo "controller credential leaked into adapter artifacts" >&2
   exit 1
 fi
+
+jq -e '.status == "failed"' "$root/run/result.json" >/dev/null
+
+rm -f "$root/run/result.json" "$root/run/claux-result.json" "$root/run/transcript.json"
+printf 'host-reboot\n' >"$root/run/referee-reboot"
+set +e
+PATH="$root/bin:$PATH" \
+TEST_REMOTE_EXIT_255=1 \
+TEST_NO_NATIVE_RESULT=1 \
+AOE_AGENT_ID=test-agent \
+AOE_TERRITORY_ID=test-territory \
+AOE_TERRITORY_HOST=127.0.0.1 \
+AOE_SSH_PORT=26000 \
+AOE_MODEL=test/model \
+AOE_REASONING_EFFORT=low \
+AOE_INSTRUCTION_FILE="$root/instruction.md" \
+AOE_RESULT_FILE="$root/run/result.json" \
+AOE_CREDENTIAL_FILE="$root/credential.env" \
+AOE_CLAUX_BINARY="$root/claux" \
+AOE_OPENROUTER_PROXY="$root/fake-proxy.py" \
+  "$adapter"
+interrupted_status=$?
+set -e
+[[ "$interrupted_status" == 255 ]]
+jq -e '
+  .status == "interrupted"
+  and .summary == "agent session was interrupted by the referee\u0027s host reboot"
+' "$root/run/result.json" >/dev/null

@@ -15,6 +15,7 @@ pub struct ArenaManifest {
     pub arena: ArenaConfig,
     pub network: NetworkConfig,
     pub rules: MatchRules,
+    pub build: Option<BuildContract>,
     pub classes: Vec<TerritoryClass>,
     pub territories: Vec<TerritoryConfig>,
     pub agents: Vec<AgentConfig>,
@@ -25,6 +26,48 @@ pub struct ArenaManifest {
 pub struct ArenaConfig {
     pub id: String,
     pub display_name: String,
+    #[serde(default)]
+    pub mode: MatchMode,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MatchMode {
+    BuildRace,
+    #[default]
+    Conquest,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BuildContract {
+    pub stop_on_first_durable: bool,
+    pub completion_milestone: String,
+    pub milestones: Vec<MilestoneConfig>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MilestoneConfig {
+    pub id: String,
+    pub display_name: String,
+    #[serde(default)]
+    pub depends_on: Vec<String>,
+    pub verifier: String,
+    #[serde(default)]
+    pub operation: MilestoneOperation,
+    pub timeout_seconds: u64,
+    pub points: u64,
+    #[serde(default = "default_true")]
+    pub required: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MilestoneOperation {
+    #[default]
+    Observe,
+    HostReboot,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -112,6 +155,10 @@ pub struct Budget {
 
 fn default_reasoning_effort() -> String {
     "default".to_owned()
+}
+
+const fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Error)]
@@ -204,6 +251,12 @@ impl ArenaManifest {
                 "does not satisfy rules.minimum_territories",
             );
         }
+        validate_build_contract(
+            &mut errors,
+            self.arena.mode,
+            self.build.as_ref(),
+            self.rules.duration_seconds,
+        );
 
         let class_ids = validate_classes(&mut errors, &self.classes);
         let territory_ids = validate_territories(
@@ -215,6 +268,117 @@ impl ArenaManifest {
         validate_agents(&mut errors, &self.agents, &territory_ids);
         errors
     }
+}
+
+fn validate_build_contract(
+    errors: &mut Vec<ValidationError>,
+    mode: MatchMode,
+    build: Option<&BuildContract>,
+    duration_seconds: u64,
+) {
+    let Some(build) = build else {
+        if mode == MatchMode::BuildRace {
+            push_error(errors, "build", "is required for build_race mode");
+        }
+        return;
+    };
+    if mode != MatchMode::BuildRace {
+        push_error(errors, "build", "is only valid for build_race mode");
+    }
+    let mut ids = HashSet::new();
+    for (index, milestone) in build.milestones.iter().enumerate() {
+        let path = format!("build.milestones[{index}]");
+        validate_id(errors, &format!("{path}.id"), &milestone.id);
+        if !ids.insert(milestone.id.clone()) {
+            push_error(errors, format!("{path}.id"), "must be unique");
+        }
+        if milestone.display_name.trim().is_empty() {
+            push_error(errors, format!("{path}.display_name"), "must not be empty");
+        }
+        if milestone.verifier.trim().is_empty() {
+            push_error(errors, format!("{path}.verifier"), "must not be empty");
+        }
+        if milestone.timeout_seconds == 0 || milestone.timeout_seconds > duration_seconds {
+            push_error(
+                errors,
+                format!("{path}.timeout_seconds"),
+                "must be positive and no longer than the match",
+            );
+        }
+        if milestone.points == 0 {
+            push_error(errors, format!("{path}.points"), "must be positive");
+        }
+    }
+    if build.milestones.is_empty() {
+        push_error(errors, "build.milestones", "must not be empty");
+    }
+    if !ids.contains(&build.completion_milestone) {
+        push_error(
+            errors,
+            "build.completion_milestone",
+            "references an unknown milestone",
+        );
+    }
+    let milestones: HashMap<_, _> = build
+        .milestones
+        .iter()
+        .map(|milestone| (milestone.id.as_str(), milestone))
+        .collect();
+    for (index, milestone) in build.milestones.iter().enumerate() {
+        for dependency in &milestone.depends_on {
+            if dependency == &milestone.id {
+                push_error(
+                    errors,
+                    format!("build.milestones[{index}].depends_on"),
+                    "must not depend on itself",
+                );
+            } else if !ids.contains(dependency) {
+                push_error(
+                    errors,
+                    format!("build.milestones[{index}].depends_on"),
+                    format!("references unknown milestone {dependency}"),
+                );
+            }
+        }
+    }
+    for milestone in &build.milestones {
+        let mut visiting = HashSet::new();
+        if milestone_has_cycle(&milestone.id, &milestones, &mut visiting) {
+            push_error(
+                errors,
+                "build.milestones",
+                format!("dependency cycle includes {}", milestone.id),
+            );
+            break;
+        }
+    }
+    if let Some(completion) = milestones.get(build.completion_milestone.as_str())
+        && !completion.required
+    {
+        push_error(
+            errors,
+            "build.completion_milestone",
+            "must reference a required milestone",
+        );
+    }
+}
+
+fn milestone_has_cycle<'a>(
+    id: &'a str,
+    milestones: &HashMap<&'a str, &'a MilestoneConfig>,
+    visiting: &mut HashSet<&'a str>,
+) -> bool {
+    if !visiting.insert(id) {
+        return true;
+    }
+    let cyclic = milestones.get(id).is_some_and(|milestone| {
+        milestone
+            .depends_on
+            .iter()
+            .any(|dependency| milestone_has_cycle(dependency, milestones, visiting))
+    });
+    visiting.remove(id);
+    cyclic
 }
 
 fn validate_classes(

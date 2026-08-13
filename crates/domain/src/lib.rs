@@ -6,7 +6,8 @@ mod state;
 
 pub use event::{Event, EventEnvelope, FailureSource};
 pub use manifest::{
-    AgentConfig, ArenaConfig, ArenaManifest, Budget, HealthPolicy, ManifestError, MatchRules,
-    NetworkConfig, ResourceLimits, ServiceCheck, TerritoryClass, TerritoryConfig, ValidationError,
+    AgentConfig, ArenaConfig, ArenaManifest, Budget, BuildContract, HealthPolicy, ManifestError,
+    MatchMode, MatchRules, MilestoneConfig, MilestoneOperation, NetworkConfig, ResourceLimits,
+    ServiceCheck, TerritoryClass, TerritoryConfig, ValidationError,
 };
-pub use state::{MatchState, TerritoryState};
+pub use state::{AgentTerminalState, CompetitorState, MatchState, TerritoryState};

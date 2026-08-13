@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{MatchState, TerritoryState};
+use crate::{CompetitorState, MatchState, TerritoryState};
 
 /// The authority responsible for a failed operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -51,12 +51,61 @@ pub enum Event {
         success: bool,
         detail: String,
     },
+    AgentInterrupted {
+        agent: String,
+        source: FailureSource,
+        detail: String,
+    },
+    AgentTerminated {
+        agent: String,
+        reason: String,
+    },
     UsageCharged {
         agent: String,
         resource_units: u64,
         input_tokens: Option<u64>,
         output_tokens: Option<u64>,
         cost_microusd: Option<u64>,
+    },
+    PostMatchDrainStarted {
+        timeout_ms: u64,
+        pending_agents: u64,
+    },
+    PostMatchDrainFinished {
+        captured_agents: u64,
+        terminated_agents: u64,
+    },
+    CompetitorStateChanged {
+        territory: String,
+        from: CompetitorState,
+        to: CompetitorState,
+        reason: String,
+    },
+    MilestoneEvaluationStarted {
+        territory: String,
+        milestone: String,
+    },
+    MilestonePassed {
+        territory: String,
+        milestone: String,
+        points: u64,
+        evidence: serde_json::Value,
+    },
+    MilestoneFailed {
+        territory: String,
+        milestone: String,
+        category: String,
+        detail: String,
+        retryable: bool,
+    },
+    MilestoneRevoked {
+        territory: String,
+        milestone: String,
+        reason: String,
+    },
+    DurableDeploymentCompleted {
+        territory: String,
+        elapsed_ms: u64,
     },
     ResourcesChanged {
         territory: String,

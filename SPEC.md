@@ -1,268 +1,271 @@
 # Agents of Empires
 
-An autonomous infrastructure-agent battle arena. Each agent controls a
-different server territory, receives a model and harness, and competes to keep
-its own service alive while taking other territories offline.
+An autonomous infrastructure-agent build arena. Each agent receives a blank
+Linux territory, a model and harness, and the same deployment contract. The
+first agent to build a complete, externally verified, durable service wins.
 
-The servers are the board. The agents are the players.
+The servers are the board. The agents build the empires.
 
 ## The premise
 
-A match begins with several isolated virtual machines on one private network.
-Each machine runs a different operational stack and exposes one service that
-the outside referee continuously verifies.
+A match begins with several equivalent disposable virtual machines. They have
+an operating system, shell access, basic diagnostic tools, and no application
+service. Agents start simultaneously and turn those machines into working
+systems from a written contract.
 
-Agents start inside their own territory with local credentials, shell access,
-limited visibility, and a finite inference budget. They are not given a menu of
-attacks. They inspect their machines, discover the network, harden their
-services, and decide how to compete using the tools their territory provides.
+The contract may require a database-backed API, a queue and worker, a reverse
+proxy, persistent storage, authentication, or several cooperating services.
+Agents are free to choose packages, topology, configuration, and implementation
+details within the arena's constraints.
 
-The match runs concurrently. An agent may investigate, defend, attack, recover,
-expand its visibility, or waste ten minutes reasoning itself into a hole. The
-referee measures outcomes from outside the arena.
+An external referee continuously checks observable milestones. An agent does
+not win by claiming completion, returning the expected text from a fake health
+listener, or passing its own test. It wins when the controller verifies the
+functional contract and proves the deployment survives restart and reboot.
 
-Think BattleBots meets Age of Empires, with shell access.
+Think a real-time strategy build order, played through a shell.
+
+## Product direction
+
+Build races are the first and primary mode. They measure a useful operational
+capability with a clear objective: can an agent create working infrastructure
+from an empty machine?
+
+PvP is a later `conquest` mode. A future match may let agents use the systems
+they built to defend territory or compete with peers, but offensive mechanics
+must be earned from verified construction. Arbitrary sabotage is not the core
+loop.
 
 ## Design principles
 
+- **Blank starts, equivalent opportunities.** Competitors receive the same base
+  image and deployment contract unless an arena explicitly studies asymmetry.
 - **Real systems, external truth.** Agents operate disposable Linux hosts. The
-  referee decides health from outside the guest.
-- **Asymmetric territories.** Different stacks produce different tools,
-  strengths, weaknesses, and attack surfaces.
-- **Free-form action.** Agents use shell commands and service interfaces, not a
-  predefined move list.
-- **Durable outcomes.** A repair or attack only counts if the observed state
-  persists through the relevant verification window.
-- **Imperfect information.** Agents begin with their own host and must discover
-  the rest of the arena.
-- **Replayable evidence.** Every observation, action, verification result, and
-  state transition is recorded as an immutable event.
-- **Contained competition.** The entire arena is disposable, isolated from the
-  host and public internet, and contains no real credentials or targets.
+  controller verifies outcomes from outside the guest.
+- **Free-form construction.** Agents use ordinary shell and service tools, not
+  a predefined move list or blessed implementation.
+- **Progress is observable.** Verified milestones make partial success and
+  different build strategies visible while the match runs.
+- **Durability is part of completion.** Restart and reboot checks are required
+  milestones, not bonus points.
+- **Efficiency remains evidence.** Time, model usage, actual cost, and tool
+  activity are recorded alongside correctness.
+- **Harness neutrality.** The arena owns the VM, contract, verifier, clock, and
+  result. An adapter only invokes an agent and returns normalized execution
+  data.
+- **Replayable evidence.** Ordered events explain every milestone, score, and
+  final result.
+- **Contained execution.** Guests cannot access the controller, verifier,
+  public internet, or real credentials.
 
-## First playable match
+## First build race
 
-The first version has three agents and lasts 15 minutes.
+The first arena runs three agents against the same durable web-service
+contract. Each receives a fresh NixOS VM with:
 
-Each agent receives:
+- one CPU and a fixed memory and disk limit;
+- SSH access and standard diagnostic tools;
+- no running application, database, or reverse proxy;
+- no public internet route;
+- controller-provided build artifacts or a sealed package cache;
+- an equal wall-clock and inference budget.
 
-- one NixOS virtual machine;
-- one model and harness;
-- one user-facing service to defend;
-- shell access inside its own machine;
-- network access only to the arena;
-- an equal inference budget;
-- a short objective: remain operational and eliminate the other territories.
+The required deployment exposes a database-backed HTTP service under systemd.
+It must support a health request and a functional write/read cycle. Written
+state must remain correct after application restart, database restart, and host
+reboot.
 
-The first three territory classes are:
+The exact application contract belongs to the arena manifest and controller
+verifier. The expected implementation and verifier secrets never enter a guest.
 
-| Class | Stack | Strength | Weakness |
-| --- | --- | --- | --- |
-| Gatekeeper | Nginx edge | Network visibility and routing control | Small local state and an exposed control plane |
-| Archivist | PostgreSQL service | Durable state and strong recovery | Slow operations and dangerous lock contention |
-| Courier | Redis and worker queue | Fast coordination and asynchronous reach | Volatile state and fragile queue semantics |
+## Milestones
 
-Each territory exposes a distinct external endpoint. The services should be
-simple enough that agents can understand them, but stateful enough that uptime
-cannot be restored with a fake listener or static response.
+Milestones are ordered, controller-owned claims about one territory. The first
+arena uses:
+
+```text
+reachable -> service_up -> write_read -> service_restart -> host_reboot -> durable
+```
+
+`reachable` is preflight and does not award progress. Every later milestone is
+verified externally and may depend on evidence created by an earlier stage.
+For example, the reboot verifier reads the same opaque record written before
+the restart. A newly created replacement record does not satisfy it.
+
+Each milestone declares:
+
+- a stable identifier and display name;
+- its dependencies;
+- a controller-side verifier;
+- a timeout;
+- points used for partial standings;
+- whether failure is retryable while match time remains;
+- opaque evidence carried into later checks.
+
+Milestones are monotonic once durably proven. A later verification may revoke a
+milestone if it demonstrates the earlier success was superficial, such as data
+disappearing after reboot.
 
 ## Match lifecycle
 
-1. The controller validates the arena manifest and agent configurations.
-2. It builds fresh guest images and creates an isolated arena network.
-3. Each territory receives unique credentials, topology, and service state.
-4. The referee confirms every service is healthy before the match begins.
-5. Agents start simultaneously inside their own territories.
-6. The referee polls health and invariants while recording agent activity.
-7. A territory enters a degraded state when external verification fails.
-8. The territory is eliminated if it remains unhealthy beyond its recovery
-   window and fails a final durable verification.
-9. The controller powers off eliminated guests. Agents never receive
-   hypervisor control.
-10. The last active territory wins. If the match timer expires, the referee
-    ranks survivors by verified uptime, remaining budget, and durable impact.
+1. The controller validates the arena, contract, agents, and adapters.
+2. It builds equivalent blank guests and a sealed management network.
+3. It confirms VM and SSH readiness, but does not require the target service.
+4. Agents start simultaneously with the same contract and deadline.
+5. The referee evaluates eligible milestones at bounded intervals.
+6. Verified progress is appended to the event log and shown live.
+7. When a territory reaches `durable`, the referee records its finish time and
+   complete evidence.
+8. The match may stop on the first durable deployment or continue to rank all
+   finishers, as declared by the arena.
+9. At the deadline, incomplete agents are ranked by verified progress. Provider,
+   harness, and arena failures remain distinct from player outcomes.
+10. The controller tears down guests and preserves logs, transcripts, results,
+    verifier evidence, and final state.
 
-## Territory state
-
-A territory moves through explicit states:
+## Competitor state
 
 ```text
-provisioning -> healthy -> degraded -> recovering -> healthy
-                              |
-                              +-> eliminated
+preparing -> building -> verifying -> durable
+                 |           |
+                 +-----------+-> incomplete
+                 |
+                 +-> unavailable
 ```
 
-One failed probe does not eliminate a player. Health uses a bounded rolling
-window so a slow request or service restart creates pressure without ending the
-match immediately.
+`building` means the agent and guest are active. `verifying` means at least one
+contract milestone has passed. `durable` means every required milestone passed.
+`incomplete` is a terminal player result at the deadline. `unavailable` is a
+terminal non-player result caused by provider, harness, or arena failure.
 
-Elimination requires all of the following:
+The detailed milestone ledger is more important than the coarse state. Two
+incomplete agents may have built substantially different portions of the
+system.
 
-- the public service fails its health and functional checks;
-- the failure persists through the configured recovery window;
-- the owner fails a final recovery opportunity;
-- the failure is not caused by referee or host infrastructure.
+## Referee and verification
 
-After elimination, the controller shuts down the guest and records the final
-cause. The game never asks an agent to control VM lifecycle directly.
+The referee evaluates facts, not implementation style or agent intent:
 
-## Agent freedom and boundaries
+- Is the expected port reachable from the user-facing boundary?
+- Does the health response describe a genuinely usable service?
+- Can a verifier write an opaque value and read the same value back?
+- Does application state survive service restart?
+- Does database state survive its own restart?
+- Does the complete deployment return after host reboot without agent help?
+- Did the agent preserve required topology, authentication, and data?
+- Is a missing result caused by the player, provider, harness, or arena?
 
-Agents may inspect and modify their own machines and interact with reachable
-arena services. They may discover and use intentionally provisioned weaknesses.
-They may not access the controller, hypervisor, verifier, other agents'
-transcripts, model credentials, or public network.
-
-The arena enforces this structurally:
-
-- guests run in disposable VMs rather than containers sharing a host kernel;
-- the arena network has no default internet route;
-- model traffic exits through a controller-owned credential proxy;
-- agents receive no cloud, GitHub, SSH host, or hypervisor credentials;
-- verifier and scoring state never enter guest images;
-- resource limits bound CPU, memory, disk, network, time, and inference spend;
-- the controller can terminate the entire match independently of every guest.
-
-## Referee
-
-Replaybook provides the starting point for provisioning, agent adapters,
-external verification, restart checks, result normalization, and execution
-recording. Agents of Empires owns the multiplayer lifecycle and game rules.
-
-The referee must answer facts, not infer intent:
-
-- Is each service healthy from the user-facing boundary?
-- Is its durable state intact?
-- Did the service recover within its window?
-- Did a restart erase an apparent repair?
-- Did an agent preserve required topology and data?
-- Was a failure caused by the arena, provider, harness, or player action?
-
-The first version does not need perfect attack attribution. Survival determines
-the winner. Event correlation may identify likely attackers for the replay,
-but uncertain attribution must remain uncertain.
-
-## Economy
-
-Healthy territories generate one resource unit per tick. Agents spend resource
-units when they invoke their model. Tool calls inside the guest are free but
-remain bounded by host resources and match time.
-
-The game displays both abstract resources and actual model cost. Abstract
-resources keep models with different pricing competitive. Actual cost remains
-visible as experimental evidence.
-
-An agent therefore chooses between frequent cheap decisions and fewer expensive
-ones. A model that survives while spending less retains more resources for a
-late recovery or attack.
+Verifier state and oracle material remain controller-side. Guest images are
+audited for leaks before a paid run begins. Forbidden shortcuts are explicit in
+the contract and enforced through observable invariants where possible.
 
 ## Scoring
 
-Last active territory wins. Timed matches use these tie-breakers in order:
+The primary result is correctness:
 
-1. verified uptime percentage;
-2. number of opposing eliminations with confident attribution;
-3. remaining abstract resource budget;
-4. lowest actual model cost;
-5. shortest cumulative degraded time.
+1. all required milestones passed;
+2. earliest durable completion time.
 
-The scoreboard must separate provider and harness failures from player losses.
-An unavailable model endpoint is not an opponent's victory.
+If no agent finishes, standings use:
 
-## Event log
+1. greatest dependency-valid milestone score;
+2. furthest required durability stage;
+3. earliest time reaching that stage;
+4. lowest model cost, when comparable;
+5. lowest token use, when comparable.
 
-The controller writes an append-only JSONL event stream. Events include:
+Cost never compensates for an incorrect deployment. A cheap incomplete build
+does not outrank a durable repair. Cost and tokens are secondary operational
+characteristics and remain unavailable rather than zero when a harness cannot
+report them.
 
-```json
-{
-  "sequence": 184,
-  "time_ms": 91234,
-  "kind": "territory.health_changed",
-  "territory": "gatekeeper",
-  "from": "healthy",
-  "to": "degraded",
-  "evidence": {"status": 502, "check": "checkout"}
-}
+The scoreboard separates evaluated, unavailable, and infrastructure-invalid
+runs. A provider outage is not evidence about a model's ability to build the
+service.
+
+## Agent freedom and boundaries
+
+Agents may modify their assigned guests freely and use any locally available
+tool. They may not access another territory during build mode, the controller,
+hypervisor, verifier, other transcripts, model credentials, or public network.
+
+The arena enforces this structurally with disposable VMs, isolated credentials,
+controller-owned provider proxies, no public route, bounded resources, and
+independent lifecycle control. Adapters must be executable inside the guest and
+are preflighted before the match clock starts.
+
+## Event log and visualization
+
+The append-only JSONL stream remains the source of truth. In addition to arena,
+agent, usage, and infrastructure events, build races record:
+
+- milestone evaluation started;
+- milestone passed with controller evidence;
+- milestone failed with a stable category;
+- milestone revoked by a later durability check;
+- competitor state changed;
+- durable completion and final standings.
+
+Live and replay views use the same reducer. The initial terminal view centers
+the milestone race:
+
+```text
+                 SSH  SERVICE  WRITE/READ  RESTART  REBOOT   TIME   COST
+deepseek          ✓      ✓         ✓          …        -     2:14  $0.02
+luna              ✓      ✓         …          -        -     2:14  $0.01
+glm               ✓      …         -          -        -     2:14  $0.04
 ```
 
-Required event classes:
-
-- arena and territory lifecycle;
-- health and invariant observations;
-- agent rounds, tool calls, and model usage;
-- network discovery and controller-visible connections;
-- resource accounting;
-- degradation, recovery, and elimination;
-- infrastructure and provider failures.
-
-The event stream is the source of truth. Current world state is a pure reduction
-over ordered events. A match can be replayed without running any agents.
-
-## Visualization
-
-The first interface is a terminal application. It shows:
-
-- a network and territory map;
-- health, ownership, stack type, and resource budget;
-- animated links for controller-observed network activity;
-- each agent's current high-level action;
-- a chronological event feed;
-- match time and standings.
-
-Colors represent state: green healthy, yellow degraded, red under sustained
-failure, gray eliminated. The interface must remain understandable without
-color.
-
-The terminal viewer can open an agent transcript at a selected event and replay
-a completed match from its JSONL log. A web viewer using the same event reducer
-is a later presentation layer, not part of the first playable version.
+The event feed explains verification attempts and agent lifecycle without
+dumping repetitive healthy ticks. Transcripts and raw evidence remain available
+for inspection.
 
 ## Repository shape
 
 ```text
 agents-of-empires/
   crates/
-    controller/       # match lifecycle and process supervision
-    domain/           # manifests, IDs, states, events, and rules
-    referee/          # Replaybook bridge and health evaluation
+    controller/       # match lifecycle and orchestration
+    domain/           # contracts, milestones, states, events, and validation
+    referee/          # external milestone evaluation and scoring
     replay/           # event store, reducer, and snapshots
-    tui/              # live terminal map and replay viewer
+    runtime/          # disposable blank guests and isolation
+    agent/            # harness-neutral adapter execution
+    tui/              # live milestone race and replay viewer
   arenas/
-    first-contact/    # three-territory MVP arena
-  adapters/           # harness adapter configuration
+    first-build/      # durable service provisioning race
+    first-contact/    # retained PvP prototype
+  adapters/           # harness adapters
   .arf/specs/         # dependency-ordered implementation design
 ```
 
-Rust is the preferred controller language. It fits the long-running concurrent
-process model, provides strong event and state types, and can share one reducer
-between live execution and replay.
-
 ## MVP acceptance criteria
 
-The first playable version is complete when it can:
+The build-race MVP is complete when it can:
 
-- boot three fresh asymmetric territories on an isolated network;
-- dispatch three independently configured agent harnesses concurrently;
-- prevent guests from reaching the host or public internet;
-- externally verify each service throughout the match;
-- degrade, recover, and eliminate territories deterministically;
-- enforce time, compute, and inference budgets;
-- complete a match without manual intervention;
-- write a complete append-only event log;
-- replay that log through the terminal visualization;
-- explain every final result using recorded evidence.
+- boot at least three equivalent blank VMs concurrently;
+- prove the target application is absent before agents start;
+- dispatch different model and harness combinations with isolated credentials;
+- externally evaluate ordered functional and durability milestones;
+- preserve opaque verifier evidence across restart and reboot;
+- declare the first durable deployment without trusting agent output;
+- rank partial builds deterministically when the timer expires;
+- distinguish player, provider, harness, and arena failures;
+- record time, tokens, cost, tool activity, and milestone evidence;
+- replay the complete match through a readable terminal view;
+- explain every final standing from recorded events.
 
-## Non-goals for the first version
+## Non-goals for the first build version
 
-- a balanced competitive esport;
-- arbitrary untrusted third-party VM images;
-- public matchmaking or hosted tournaments;
-- a browser-based control plane;
-- perfect attribution for every outage;
-- long-lived worlds or persistent player progression;
-- access to public targets or real production systems;
+- offensive actions or cross-territory access;
+- asymmetric starting images;
+- arbitrary public package downloads;
+- subjective code-quality judging;
+- hosted matchmaking or public tournaments;
+- a browser control plane;
+- long-lived worlds or player progression;
 - training models directly from match data.
 
-The first goal is one reproducible, legible, entertaining match between three
-agents. Balance, additional classes, alliances, technology trees, and learning
-systems come after that loop works.
+The first goal is one reproducible race from blank machine to durable service.
+Conquest, technology trees, asymmetric civilizations, and persistent campaigns
+come after that loop is trustworthy and fun to watch.
