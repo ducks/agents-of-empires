@@ -60,3 +60,14 @@ fn guest_definitions_do_not_reference_controller_assets() {
         );
     }
 }
+
+#[test]
+fn archivist_provisions_after_postgresql_setup() {
+    let archivist =
+        std::fs::read_to_string(arena_root().join("nix/archivist.nix")).expect("archivist module");
+    assert!(archivist.contains("postgresql-setup.service"));
+    assert!(archivist.contains("after = [ \"postgresql.service\" \"postgresql-setup.service\" ]"));
+    assert!(
+        archivist.contains("requires = [ \"postgresql.service\" \"postgresql-setup.service\" ]")
+    );
+}
