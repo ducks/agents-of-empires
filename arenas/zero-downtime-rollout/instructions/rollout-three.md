@@ -1,0 +1,1 @@
+Roll the live stateful service from v1 to v2 using the contract appended below. Preserve every request and existing record during cutover. Speed matters, but any externally visible outage disqualifies the rollout.

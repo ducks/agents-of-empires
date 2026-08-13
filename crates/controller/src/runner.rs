@@ -741,7 +741,8 @@ async fn password_ssh(
         use std::os::unix::fs::PermissionsExt;
         tokio::fs::set_permissions(&askpass, std::fs::Permissions::from_mode(0o700)).await?;
     }
-    tokio::process::Command::new("ssh")
+    let mut child = tokio::process::Command::new("ssh");
+    child
         .args([
             "-p",
             &port.to_string(),
@@ -749,6 +750,8 @@ async fn password_ssh(
             "BatchMode=no",
             "-o",
             "ConnectTimeout=2",
+            "-o",
+            "ConnectionAttempts=1",
             "-o",
             "PreferredAuthentications=password",
             "-o",
@@ -763,8 +766,10 @@ async fn password_ssh(
         .env("SSH_ASKPASS", askpass)
         .env("SSH_ASKPASS_REQUIRE", "force")
         .env("DISPLAY", ":0")
-        .status()
+        .kill_on_drop(true);
+    tokio::time::timeout(Duration::from_secs(5), child.status())
         .await
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "SSH probe timed out"))?
 }
 
 fn credential_value(path: &Path, key: &str) -> Result<String, RunError> {
