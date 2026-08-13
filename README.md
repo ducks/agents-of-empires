@@ -115,4 +115,16 @@ agents-of-empires replay matches/first-contact/events.jsonl --no-color
 agents-of-empires inspect matches/first-contact/events.jsonl 42 --json
 ```
 
+Generate a self-contained static match archive from one match or every match in
+a directory:
+
+```bash
+agents-of-empires report matches --output site
+```
+
+Open `site/index.html` locally or publish `site/` with GitHub Pages. Each match
+page includes the frozen outcome, territory and agent results, token and cost
+totals, the complete event timeline, downloadable source artifacts, and any
+agent transcripts captured before or during the post-match drain.
+
 Ctrl-C stops the guests but retains an aborted, inspectable match log.

@@ -3,7 +3,9 @@ use std::env;
 use std::io::IsTerminal;
 use std::path::PathBuf;
 
-use aoe_controller::{Cli, Command, RunOptions, doctor, inspect, replay_log, run_match, validate};
+use aoe_controller::{
+    Cli, Command, RunOptions, doctor, generate_reports, inspect, replay_log, run_match, validate,
+};
 use aoe_tui::RenderOptions;
 
 const HELP: &str = "Agents of Empires
@@ -14,6 +16,7 @@ Usage:
       [--output DIR] [--base-port PORT] [--multicast-port PORT] [--no-color]
   agents-of-empires replay EVENT_LOG [--json] [--no-color] [--width COLUMNS]
   agents-of-empires inspect EVENT_LOG SEQUENCE [--json]
+  agents-of-empires report MATCH_OR_MATCHES_DIR [--output DIR]
   agents-of-empires doctor [--json]
 ";
 
@@ -88,6 +91,15 @@ async fn execute() -> Result<(), Box<dyn std::error::Error>> {
             sequence,
             json,
         } => println!("{}", inspect(&log, sequence, json)?),
+        Command::Report { input, output } => {
+            let report = generate_reports(&input, &output)?;
+            println!(
+                "generated {} match report{} at {}",
+                report.matches,
+                if report.matches == 1 { "" } else { "s" },
+                report.index.display()
+            );
+        }
         Command::Doctor { json } => {
             let report = doctor();
             if json {

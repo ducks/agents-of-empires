@@ -5,5 +5,7 @@ mod reducer;
 mod snapshot;
 
 pub use log::{EventLog, EventLogError, load_events};
-pub use reducer::{AgentView, HealthView, WorldState, reduce, replay};
+pub use reducer::{
+    AgentView, HealthView, MilestoneView, TerritoryView, WorldState, reduce, replay,
+};
 pub use snapshot::{Snapshot, SnapshotError, load_snapshot, write_snapshot};

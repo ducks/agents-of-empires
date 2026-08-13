@@ -33,6 +33,10 @@ pub enum Command {
         sequence: u64,
         json: bool,
     },
+    Report {
+        input: PathBuf,
+        output: PathBuf,
+    },
     Doctor {
         json: bool,
     },
@@ -69,11 +73,23 @@ impl Cli {
             "run" => parse_run(args)?,
             "replay" => parse_replay(args)?,
             "inspect" => parse_inspect(args)?,
+            "report" => parse_report(args)?,
             "doctor" => parse_doctor(args)?,
             _ => return Err(ParseError::Unexpected(command)),
         };
         Ok(Self { command })
     }
+}
+
+fn parse_report(mut args: Vec<String>) -> Result<Command, ParseError> {
+    let input = PathBuf::from(take_positional(&mut args, "MATCH_OR_MATCHES_DIR")?);
+    let output = if args.iter().any(|arg| arg == "--output") {
+        PathBuf::from(take_flag_value(&mut args, "--output")?)
+    } else {
+        PathBuf::from("site")
+    };
+    reject_remaining(args)?;
+    Ok(Command::Report { input, output })
 }
 
 fn take_positional(args: &mut Vec<String>, name: &str) -> Result<String, ParseError> {
