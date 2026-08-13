@@ -308,7 +308,10 @@ fn render_match(report: &MatchReport) -> String {
                     "historical"
                 },
                 value.arena_id,
-                &value.compatibility_key[..12]
+                value
+                    .compatibility_key
+                    .get(..12)
+                    .unwrap_or(&value.compatibility_key)
             )
         },
     );
