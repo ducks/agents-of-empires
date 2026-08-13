@@ -15,6 +15,8 @@ use aoe_tui::{RenderOptions, render_world};
 use thiserror::Error;
 use tokio::sync::mpsc;
 
+use crate::provenance::write_provenance;
+
 const POST_MATCH_DRAIN: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone)]
@@ -56,6 +58,8 @@ pub enum RunError {
     Json(#[from] serde_json::Error),
     #[error("output already contains an event log: {0}")]
     OutputExists(String),
+    #[error("could not record match provenance: {0}")]
+    Provenance(String),
 }
 
 /// Run a complete match, using the same event reducer as replay mode.
@@ -74,6 +78,8 @@ pub async fn run_match(options: RunOptions) -> Result<WorldState, RunError> {
     }
     std::fs::create_dir_all(&options.output)?;
     let manifest = ArenaManifest::load(&options.manifest)?;
+    write_provenance(&options.manifest, &manifest, &options.output)
+        .map_err(|error| RunError::Provenance(error.to_string()))?;
     validate_adapters(&manifest, &options.adapters)?;
     let plan = NetworkPlan::from_manifest(&manifest, options.base_port, options.multicast_port)?;
     let driver = Arc::new(NixVmDriver::new(options.output.join("territories")));
