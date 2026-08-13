@@ -15,6 +15,7 @@
     documentation.enable = false;
     documentation.nixos.enable = false;
     programs.command-not-found.enable = false;
+    programs.nix-ld.enable = true;
     networking.hostName = config.arena.territory;
     networking.useDHCP = false;
     networking.useNetworkd = true;
