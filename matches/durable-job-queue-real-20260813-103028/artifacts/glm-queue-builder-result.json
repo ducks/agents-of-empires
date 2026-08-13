@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "agent": "glm-queue-builder",
+  "territory": "queue-three",
+  "status": "completed",
+  "summary": "Now let me verify durability across a worker restart and a crash-mid-process scenario.All checks pass. Let me confirm boot-readiness (enabled, ordered after the seed).The durable job queue is implemented, verified, and running.\n\n## What I built\n\n**`/opt/job-queue/api.py`** — stdlib HTTP server on port 8080:\n- `GET /health` → `200` body `ready`\n- `POST /jobs/<id>` (UTF-8 body) → `202`; inserts a new `queued` job, or updates the payload of a still-queued job. Completed jobs are left untouched to preserve exactly-once accounting.\n- `GET /jobs/<id>` → JSON with `id`, `payload`, `status`, `result`, integer `attempts`; `404` if missing.\n\n**`/opt/job-queue/worker.py`** — claim-and-complete loop:\n- Each queued job is transitioned `queued → done` with `result = \"processed:\" + payload` and `attempts += 1` inside a single `BEGIN IMMEDIATE` transaction. The work is pure string concat, so claim and complete are one atomic step — no `processing` limbo state is ever written.\n- WAL mode + `busy_timeout=30000` for concurrent API access.\n\n## Why it's durable and exactly-once\n- A crash mid-transaction rolls the job back to `queued`; on restart it is retried and still costs exactly **one** attempt. Verified with SIGKILL mid-loop.\n- Seed jobs (`accepted-alpha-7d3`, `-beta-91e`, `-gamma-c42`) were recovered and completed, not replaced.\n- State lives in SQLite on disk; survives worker restart and host reboot.\n\n## Verified\n- Health endpoint; all 3 seed jobs → `done`, `attempts=1`, `processed:<payload>`.\n- New jobs via POST → `202` then `done`, one attempt, correct result.\n- 20 concurrent POSTs → all done, 0 with `attempts!=1`, 0 wrong results.\n- Worker `stop` with job queued → job stays `queued`, restart completes it once.\n- `SIGKILL` worker mid-flight → restart recovers, still exactly one attempt.\n- Boot readiness: all three units `enabled`; `queue-seed` (oneshot, idempotent `INSERT OR IGNORE`) runs `Before` the api/worker which `After`+`Requires` it; `Restart=always` on both. Final DB: 27 jobs, 0 queued, 0 with `attempts!=1`, 0 bad results.\n\nBoth services are `active` and will return on their own after reboot.",
+  "usage": {
+    "rounds": null,
+    "tool_calls": null,
+    "input_tokens": 87741,
+    "output_tokens": 5665,
+    "cost_microusd": 47956,
+    "resource_units": 1
+  },
+  "transcript": "matches/durable-job-queue-real-20260813-103028/agents/glm-queue-builder/transcript.json"
+}

@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "agent": "glm-builder",
+  "territory": "builder-three",
+  "status": "completed",
+  "summary": "The unit is already enabled but failed (app missing). `/opt/builder` doesn't exist yet. Let me create the app using stdlib only.Service is active. Now let me verify the contract end-to-end.All endpoints work, including binary-safe round-trips. Now verify durability across a service restart.Service restart preserves data. Reboot durability is covered by: the unit is already `enabled` (so it starts at boot via `multi-user.target`) and records live on persistent disk under `/var/lib/builder-app/records/` (not tmpfs). I won't reboot the live host since that would drop my session, but the conditions for autonomous recovery are in place.\n\nLet me do a final confirmation of the enabled state and a clean restart to be sure the process is runningcleanly.Done. The service is deployed, running, and verified.\n\n## Summary\n\n**Application:** `/opt/builder/app.py` — a stdlib-only Python HTTP server (no external deps, safe on this minimal NixOS guest).\n\n**Endpoints on port 8080:**\n- `GET /health` → `200` body `ready`\n- `PUT /records/<id>` → stores exact request body, `204`\n- `GET /records/<id>` → returns exact stored body, `200` (404 if missing)\n\n**Durability:**\n- Records persisted as flat files under `/var/lib/builder-app/records/` (persistent root disk, not tmpfs).\n- Writes go to a `.tmp` file then `fsync` + atomic `os.replace` — crash-safe.\n- Verified binary-safe round-trips and data survival across `systemctl restart`.\n\n**Autonomous recovery after reboot:**\n- The existing `builder-app.service` unit is `enabled` with `WantedBy=multi-user.target` and `Restart=always`, so it boots unattended and self-recovers on crash.\n- `/opt/builder/app.py` is a real file on disk, not ephemeral state.\n\n**Verified:** health 200/`ready`, PUT 204, GET 200 with byte-exact body (text and binary), 404 for missing records, data intact after service restart. Unit state: `enabled` + `active`, listening on `0.0.0.0:8080`.",
+  "usage": {
+    "rounds": null,
+    "tool_calls": null,
+    "input_tokens": 43497,
+    "output_tokens": 2858,
+    "cost_microusd": 19122,
+    "resource_units": 1
+  },
+  "transcript": "matches/first-build-real-20260813-093450/agents/glm-builder/transcript.json"
+}
