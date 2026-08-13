@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -19,6 +20,7 @@ pub struct MatchProvenance {
     pub arena_mode: String,
     pub manifest_sha256: String,
     pub verifier_sha256: String,
+    pub adapter_sha256: BTreeMap<String, String>,
     pub compatibility_key: String,
 }
 
@@ -33,6 +35,7 @@ pub enum ProvenanceError {
 pub fn write_provenance(
     manifest_path: &Path,
     manifest: &ArenaManifest,
+    adapters: &HashMap<String, PathBuf>,
     output: &Path,
 ) -> Result<MatchProvenance, ProvenanceError> {
     let manifest_source = fs::read(manifest_path)?;
@@ -53,6 +56,7 @@ pub fn write_provenance(
         arena_mode: format!("{:?}", manifest.arena.mode).to_lowercase(),
         manifest_sha256,
         verifier_sha256,
+        adapter_sha256: adapter_digests(adapters)?,
         compatibility_key,
     };
     fs::write(
@@ -60,6 +64,15 @@ pub fn write_provenance(
         serde_json::to_vec_pretty(&provenance)?,
     )?;
     Ok(provenance)
+}
+
+fn adapter_digests(
+    adapters: &HashMap<String, PathBuf>,
+) -> Result<BTreeMap<String, String>, std::io::Error> {
+    adapters
+        .iter()
+        .map(|(name, path)| Ok((name.clone(), digest(&fs::read(path)?))))
+        .collect()
 }
 
 pub fn read_provenance(path: &Path) -> Result<MatchProvenance, ProvenanceError> {

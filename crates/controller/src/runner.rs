@@ -78,8 +78,13 @@ pub async fn run_match(options: RunOptions) -> Result<WorldState, RunError> {
     }
     std::fs::create_dir_all(&options.output)?;
     let manifest = ArenaManifest::load(&options.manifest)?;
-    write_provenance(&options.manifest, &manifest, &options.output)
-        .map_err(|error| RunError::Provenance(error.to_string()))?;
+    write_provenance(
+        &options.manifest,
+        &manifest,
+        &options.adapters,
+        &options.output,
+    )
+    .map_err(|error| RunError::Provenance(error.to_string()))?;
     validate_adapters(&manifest, &options.adapters)?;
     let plan = NetworkPlan::from_manifest(&manifest, options.base_port, options.multicast_port)?;
     let driver = Arc::new(NixVmDriver::new(options.output.join("territories")));
