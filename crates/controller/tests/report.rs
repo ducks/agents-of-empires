@@ -97,6 +97,9 @@ fn generates_archive_and_match_artifacts() {
     let index = fs::read_to_string(output.join("index.html")).expect("index");
     assert!(index.contains("build-race-001"));
     assert!(index.contains("territory-a"));
+    assert!(index.contains("What am I looking at?"));
+    assert!(index.contains("identical disposable NixOS machines"));
+    assert!(index.contains("https://github.com/ducks/agents-of-empires"));
     let match_page =
         fs::read_to_string(output.join("matches/build-race-001/index.html")).expect("match");
     assert!(match_page.contains("model/a"));
