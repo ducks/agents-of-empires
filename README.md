@@ -146,3 +146,6 @@ cargo run --release --bin agents-of-empires -- run \
   --credential queue-three="$credentials/queue-three.env" \
   --output "matches/durable-job-queue-oracle-$(date -u +%Y%m%d-%H%M%S)"
 ```
+
+After the oracle passes, race the default DeepSeek, Luna, and GLM fleet using
+`arenas/durable-job-queue/agents-real.toml` and the `claux` adapter.
