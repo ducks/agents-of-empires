@@ -149,3 +149,24 @@ cargo run --release --bin agents-of-empires -- run \
 
 After the oracle passes, race the default DeepSeek, Luna, and GLM fleet using
 `arenas/durable-job-queue/agents-real.toml` and the `claux` adapter.
+
+## Zero-downtime rollout race
+
+The rollout arena begins with a live stateful v1 deployment. Agents must build
+v2, preserve existing customer records, and cut the public proxy over without a
+single failed external probe. The winning deployment must then survive a v2
+service restart and host reboot. Test the arena with deterministic oracle agents:
+
+```bash
+credentials="$(scripts/prepare-rollout-credentials.sh)"
+cargo run --release --bin agents-of-empires -- run \
+  arenas/zero-downtime-rollout/arena.toml \
+  --adapter oracle-rollout=adapters/oracle-rollout.sh \
+  --credential rollout-one="$credentials/rollout-one.env" \
+  --credential rollout-two="$credentials/rollout-two.env" \
+  --credential rollout-three="$credentials/rollout-three.env" \
+  --output "matches/zero-downtime-rollout-oracle-$(date -u +%Y%m%d-%H%M%S)"
+```
+
+After the oracle passes, use `agents-real.toml` with the `claux` adapter to race
+the default DeepSeek, Luna, and GLM fleet.
