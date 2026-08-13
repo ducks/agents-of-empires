@@ -177,6 +177,7 @@ pub fn reduce(state: &mut WorldState, envelope: &EventEnvelope) {
                 cost_microusd.unwrap_or(0),
             );
         }
+        Event::PostMatchDrainStarted { .. } | Event::PostMatchDrainFinished { .. } => {}
         Event::CompetitorStateChanged { territory, to, .. } => {
             state
                 .territories

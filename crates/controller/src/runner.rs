@@ -13,6 +13,9 @@ use aoe_replay::{EventLog, WorldState, reduce};
 use aoe_runtime::{ArenaSupervisor, NetworkPlan, NixVmDriver};
 use aoe_tui::{RenderOptions, render_world};
 use thiserror::Error;
+use tokio::sync::mpsc;
+
+const POST_MATCH_DRAIN: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone)]
 pub struct RunOptions {
@@ -240,8 +243,12 @@ async fn run_booted_build_match(
     }
 
     let agent_timeout = Duration::from_secs(manifest.rules.duration_seconds);
-    let mut agent_task =
-        tokio::spawn(async move { agents.run_all(invocations, agent_timeout).await });
+    let (agent_sender, mut agent_results) = mpsc::channel(manifest.agents.len().max(1));
+    let mut agent_task = tokio::spawn(async move {
+        agents
+            .run_stream(invocations, agent_timeout, agent_sender)
+            .await;
+    });
     let mut interrupt = Box::pin(tokio::signal::ctrl_c());
     let started = Instant::now();
     let deadline = Duration::from_secs(manifest.rules.duration_seconds);
@@ -371,26 +378,84 @@ async fn run_booted_build_match(
             referee.finish("match timer expired", elapsed_ms(started))?,
         )?;
     }
-    if !agent_task.is_finished() {
-        agent_task.abort();
-    } else {
-        let results = (&mut agent_task)
-            .await
-            .map_err(|error| RunError::AgentTask(error.to_string()))?;
-        record_build_agent_results(
-            &mut referee,
-            &mut log,
-            &mut world,
-            &mut events,
-            results,
-            elapsed_ms(started),
-        )?;
-    }
+    let frozen_elapsed_ms = world.elapsed_ms;
+    drain_build_agents(
+        &mut agent_task,
+        &mut agent_results,
+        &mut referee,
+        &mut log,
+        &mut world,
+        &mut events,
+        frozen_elapsed_ms,
+        POST_MATCH_DRAIN,
+    )
+    .await?;
     std::fs::write(
         options.output.join("world.json"),
         serde_json::to_vec_pretty(&world)?,
     )?;
     Ok(world)
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn drain_build_agents(
+    agent_task: &mut tokio::task::JoinHandle<()>,
+    agent_results: &mut mpsc::Receiver<aoe_agent::AgentResult>,
+    referee: &mut BuildReferee,
+    log: &mut EventLog,
+    world: &mut WorldState,
+    events: &mut Vec<EventEnvelope>,
+    frozen_elapsed_ms: u64,
+    drain: Duration,
+) -> Result<(), RunError> {
+    let pending_agents = world.agents.values().filter(|agent| agent.running).count() as u64;
+    let started = referee.record(
+        Event::PostMatchDrainStarted {
+            timeout_ms: u64::try_from(drain.as_millis()).unwrap_or(u64::MAX),
+            pending_agents,
+        },
+        frozen_elapsed_ms,
+    )?;
+    append(log, world, events, [started])?;
+    let mut captured_agents = 0_u64;
+    let deadline = Instant::now() + drain;
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        match tokio::time::timeout(remaining, agent_results.recv()).await {
+            Ok(Some(result)) => {
+                captured_agents = captured_agents.saturating_add(1);
+                record_build_agent_results(
+                    referee,
+                    log,
+                    world,
+                    events,
+                    vec![result],
+                    frozen_elapsed_ms,
+                )?;
+            }
+            Ok(None) | Err(_) => break,
+        }
+    }
+    if !agent_task.is_finished() {
+        agent_task.abort();
+    }
+    let _ = agent_task.await;
+    while let Ok(result) = agent_results.try_recv() {
+        captured_agents = captured_agents.saturating_add(1);
+        record_build_agent_results(referee, log, world, events, vec![result], frozen_elapsed_ms)?;
+    }
+    let finished = referee.record(
+        Event::PostMatchDrainFinished {
+            captured_agents,
+            terminated_agents: pending_agents.saturating_sub(captured_agents),
+        },
+        frozen_elapsed_ms,
+    )?;
+    append(log, world, events, [finished])?;
+    Ok(())
 }
 
 fn register_build_competitors(
@@ -884,11 +949,12 @@ fn elapsed_ms(started: Instant) -> u64 {
 #[cfg(test)]
 mod tests {
     use aoe_agent::{AgentResult, AgentStatus, AgentUsage};
-    use aoe_domain::{ArenaManifest, Event};
-    use aoe_referee::Referee;
+    use aoe_domain::{ArenaManifest, Event, MatchState};
+    use aoe_referee::{BuildReferee, Referee};
     use aoe_replay::{EventLog, WorldState};
+    use tokio::sync::mpsc;
 
-    use super::{RunOptions, append, invocations, record_agent_results};
+    use super::{RunOptions, append, drain_build_agents, invocations, record_agent_results};
 
     const MANIFEST: &str = include_str!("../../runtime/tests/fixture.toml");
 
@@ -985,5 +1051,162 @@ mod tests {
             );
             assert!(!invocation.instruction.contains("builder-one-race"));
         }
+    }
+
+    #[tokio::test]
+    async fn post_match_drain_records_late_results_at_the_frozen_clock() {
+        let manifest_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../arenas/first-build/agents-real.toml");
+        let manifest = ArenaManifest::load(&manifest_path).expect("build manifest");
+        let mut referee = BuildReferee::from_manifest(&manifest);
+        let mut world = WorldState::default();
+        let path = std::env::temp_dir().join(format!(
+            "aoe-controller-build-drain-{}.jsonl",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let mut log = EventLog::open(&path).expect("event log");
+        let mut events = Vec::new();
+        append(
+            &mut log,
+            &mut world,
+            &mut events,
+            referee.start().expect("start"),
+        )
+        .expect("append start");
+        append(
+            &mut log,
+            &mut world,
+            &mut events,
+            referee.finish("test winner", 40_000).expect("finish"),
+        )
+        .expect("append finish");
+        let frozen_winner = world.winner.clone();
+        let (sender, mut receiver) = mpsc::channel(2);
+        let mut task = tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            sender
+                .send(AgentResult {
+                    schema_version: 1,
+                    agent: "luna-builder".into(),
+                    territory: "builder-two".into(),
+                    status: AgentStatus::Completed,
+                    summary: "returned during drain".into(),
+                    usage: AgentUsage {
+                        input_tokens: Some(12),
+                        resource_units: 1,
+                        ..AgentUsage::default()
+                    },
+                    transcript: Some("transcript.json".into()),
+                })
+                .await
+                .expect("send result");
+        });
+        drain_build_agents(
+            &mut task,
+            &mut receiver,
+            &mut referee,
+            &mut log,
+            &mut world,
+            &mut events,
+            40_000,
+            std::time::Duration::from_millis(100),
+        )
+        .await
+        .expect("drain");
+
+        assert_eq!(world.match_state, MatchState::Finished);
+        assert_eq!(world.winner, frozen_winner);
+        let finished = events
+            .iter()
+            .find(|event| matches!(event.event, Event::AgentFinished { ref agent, .. } if agent == "luna-builder"))
+            .expect("late result event");
+        assert_eq!(finished.elapsed_ms, 40_000);
+        assert_eq!(world.elapsed_ms, 40_000);
+        assert!(events.iter().any(|event| matches!(
+            event.event,
+            Event::PostMatchDrainStarted {
+                pending_agents: 0,
+                ..
+            }
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event.event,
+            Event::PostMatchDrainFinished {
+                captured_agents: 1,
+                terminated_agents: 0,
+            }
+        )));
+        std::fs::remove_file(path).expect("cleanup");
+    }
+
+    #[tokio::test]
+    async fn post_match_drain_terminates_agents_at_the_deadline() {
+        let manifest_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../arenas/first-build/agents-real.toml");
+        let manifest = ArenaManifest::load(&manifest_path).expect("build manifest");
+        let mut referee = BuildReferee::from_manifest(&manifest);
+        let mut world = WorldState::default();
+        let path = std::env::temp_dir().join(format!(
+            "aoe-controller-build-drain-timeout-{}.jsonl",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let mut log = EventLog::open(&path).expect("event log");
+        let mut events = Vec::new();
+        append(
+            &mut log,
+            &mut world,
+            &mut events,
+            referee.start().expect("start"),
+        )
+        .expect("append start");
+        for agent in &manifest.agents {
+            let event = referee
+                .record(
+                    Event::AgentStarted {
+                        agent: agent.id.clone(),
+                        territory: agent.territory.clone(),
+                        model: agent.model.clone(),
+                    },
+                    0,
+                )
+                .expect("agent started");
+            append(&mut log, &mut world, &mut events, [event]).expect("append agent");
+        }
+        append(
+            &mut log,
+            &mut world,
+            &mut events,
+            referee.finish("test winner", 40_000).expect("finish"),
+        )
+        .expect("append finish");
+        let (sender, mut receiver) = mpsc::channel(1);
+        let mut task = tokio::spawn(async move {
+            let _sender = sender;
+            std::future::pending::<()>().await;
+        });
+        let started = std::time::Instant::now();
+        drain_build_agents(
+            &mut task,
+            &mut receiver,
+            &mut referee,
+            &mut log,
+            &mut world,
+            &mut events,
+            40_000,
+            std::time::Duration::from_millis(20),
+        )
+        .await
+        .expect("drain");
+        assert!(started.elapsed() < std::time::Duration::from_millis(100));
+        assert!(events.iter().any(|event| matches!(
+            event.event,
+            Event::PostMatchDrainFinished {
+                captured_agents: 0,
+                terminated_agents: 3,
+            }
+        )));
+        std::fs::remove_file(path).expect("cleanup");
     }
 }

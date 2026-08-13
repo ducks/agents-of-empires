@@ -262,6 +262,14 @@ pub fn event_summary(event: &Event) -> String {
             resource_units,
             ..
         } => format!("{agent} used {resource_units} resources"),
+        Event::PostMatchDrainStarted {
+            timeout_ms,
+            pending_agents,
+        } => format!("post-match drain started for {pending_agents} agents ({timeout_ms}ms limit)"),
+        Event::PostMatchDrainFinished {
+            captured_agents,
+            terminated_agents,
+        } => format!("post-match drain captured {captured_agents}, terminated {terminated_agents}"),
         Event::CompetitorStateChanged {
             territory,
             from,

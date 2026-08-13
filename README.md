@@ -82,6 +82,10 @@ referee awards milestones for service health, opaque write/read behavior,
 service-restart persistence, and host-reboot persistence. The first durable
 deployment wins.
 
+After the result is frozen, the controller gives unfinished agents a bounded
+30-second drain to return results and transcripts. Late artifacts are recorded
+at the frozen match clock and cannot change milestones, standings, or winner.
+
 Once the oracle succeeds, race the default real-agent fleet with the same
 guests and verifier:
 

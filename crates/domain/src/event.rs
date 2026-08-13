@@ -58,6 +58,14 @@ pub enum Event {
         output_tokens: Option<u64>,
         cost_microusd: Option<u64>,
     },
+    PostMatchDrainStarted {
+        timeout_ms: u64,
+        pending_agents: u64,
+    },
+    PostMatchDrainFinished {
+        captured_agents: u64,
+        terminated_agents: u64,
+    },
     CompetitorStateChanged {
         territory: String,
         from: CompetitorState,
