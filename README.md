@@ -34,6 +34,31 @@ agents-of-empires run arenas/first-contact/arena.toml \
   --output matches/first-contact
 ```
 
+Run the five-minute First Contact match with the bundled Claux adapter:
+
+```bash
+export OPENROUTER_API_KEY=...
+credentials="$(scripts/prepare-first-contact-credentials.sh)"
+cargo run --release --bin agents-of-empires -- run \
+  arenas/first-contact/arena.toml \
+  --adapter claux=adapters/claux.sh \
+  --credential gatekeeper="$credentials/gatekeeper.env" \
+  --credential archivist="$credentials/archivist.env" \
+  --credential courier="$credentials/courier.env" \
+  --output matches/first-contact-$(date -u +%Y%m%d-%H%M%S)
+```
+
+The adapter runs Claux inside each assigned territory while a controller-owned
+credential proxy supplies model access. The real provider key never enters a
+guest. The bundled opening fleet uses DeepSeek V4 Flash 0731, GPT-5.6 Luna,
+and Tencent HY3 Preview.
+
+Exercise the adapter boundary without model traffic or a VM:
+
+```bash
+adapters/test-claux.sh
+```
+
 The match writes an append-only `events.jsonl` and final `world.json`. Live and
 replay views use the same reducer:
 
