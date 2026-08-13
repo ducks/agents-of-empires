@@ -51,6 +51,15 @@ pub enum Event {
         success: bool,
         detail: String,
     },
+    AgentInterrupted {
+        agent: String,
+        source: FailureSource,
+        detail: String,
+    },
+    AgentTerminated {
+        agent: String,
+        reason: String,
+    },
     UsageCharged {
         agent: String,
         resource_units: u64,

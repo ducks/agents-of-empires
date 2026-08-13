@@ -21,6 +21,7 @@ pub enum AgentStatus {
     Failed,
     Unavailable,
     TimedOut,
+    Interrupted,
     BudgetExceeded,
     HarnessError,
 }

@@ -257,6 +257,12 @@ pub fn event_summary(event: &Event) -> String {
             detail,
             ..
         } => format!("{agent} finished success={success}: {detail}"),
+        Event::AgentInterrupted {
+            agent,
+            source,
+            detail,
+        } => format!("{agent} interrupted by {source:?}: {detail}"),
+        Event::AgentTerminated { agent, reason } => format!("{agent} terminated: {reason}"),
         Event::UsageCharged {
             agent,
             resource_units,

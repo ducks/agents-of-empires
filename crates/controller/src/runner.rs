@@ -296,6 +296,18 @@ async fn run_booted_build_match(
                 // forwards stable and lets all reboots begin before any one
                 // territory is polled for recovery.
                 for territory in &eligible {
+                    let agent = manifest
+                        .agents
+                        .iter()
+                        .find(|agent| agent.territory == territory.id)
+                        .expect("validated assignment");
+                    let marker = options
+                        .output
+                        .join("agents")
+                        .join(&agent.id)
+                        .join("referee-reboot");
+                    tokio::fs::create_dir_all(marker.parent().expect("agent directory")).await?;
+                    tokio::fs::write(&marker, milestone.id.as_bytes()).await?;
                     let assignment = plan
                         .assignments
                         .iter()
@@ -447,10 +459,26 @@ async fn drain_build_agents(
         captured_agents = captured_agents.saturating_add(1);
         record_build_agent_results(referee, log, world, events, vec![result], frozen_elapsed_ms)?;
     }
+    let terminated: Vec<_> = world
+        .agents
+        .iter()
+        .filter(|(_, agent)| agent.running)
+        .map(|(agent, _)| agent.clone())
+        .collect();
+    for agent in &terminated {
+        let event = referee.record(
+            Event::AgentTerminated {
+                agent: agent.clone(),
+                reason: "post-match drain deadline expired".into(),
+            },
+            frozen_elapsed_ms,
+        )?;
+        append(log, world, events, [event])?;
+    }
     let finished = referee.record(
         Event::PostMatchDrainFinished {
             captured_agents,
-            terminated_agents: pending_agents.saturating_sub(captured_agents),
+            terminated_agents: terminated.len() as u64,
         },
         frozen_elapsed_ms,
     )?;
@@ -647,15 +675,25 @@ fn record_build_agent_results(
         let source = match result.status {
             AgentStatus::Unavailable => FailureSource::Provider,
             AgentStatus::HarnessError => FailureSource::Harness,
+            AgentStatus::Interrupted => FailureSource::Arena,
             _ => FailureSource::Player,
         };
-        for event in [
+        let terminal = if result.status == AgentStatus::Interrupted {
+            Event::AgentInterrupted {
+                agent: result.agent.clone(),
+                source,
+                detail: result.summary.clone(),
+            }
+        } else {
             Event::AgentFinished {
                 agent: result.agent.clone(),
                 source,
                 success: result.status == AgentStatus::Completed,
-                detail: result.summary,
-            },
+                detail: result.summary.clone(),
+            }
+        };
+        for event in [
+            terminal,
             Event::UsageCharged {
                 agent: result.agent,
                 resource_units: result.usage.resource_units,
@@ -895,6 +933,7 @@ fn record_agent_results(
         let source = match result.status {
             AgentStatus::Unavailable => FailureSource::Provider,
             AgentStatus::HarnessError => FailureSource::Harness,
+            AgentStatus::Interrupted => FailureSource::Arena,
             _ => FailureSource::Player,
         };
         let success = result.status == AgentStatus::Completed;
@@ -1207,6 +1246,14 @@ mod tests {
                 terminated_agents: 3,
             }
         )));
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event.event, Event::AgentTerminated { .. }))
+                .count(),
+            3
+        );
+        assert!(world.agents.values().all(|agent| !agent.running));
         std::fs::remove_file(path).expect("cleanup");
     }
 }

@@ -10,4 +10,4 @@ pub use manifest::{
     MatchMode, MatchRules, MilestoneConfig, MilestoneOperation, NetworkConfig, ResourceLimits,
     ServiceCheck, TerritoryClass, TerritoryConfig, ValidationError,
 };
-pub use state::{CompetitorState, MatchState, TerritoryState};
+pub use state::{AgentTerminalState, CompetitorState, MatchState, TerritoryState};

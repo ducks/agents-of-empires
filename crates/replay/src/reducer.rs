@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
 use aoe_domain::{
-    CompetitorState, Event, EventEnvelope, FailureSource, MatchState, TerritoryState,
+    AgentTerminalState, CompetitorState, Event, EventEnvelope, FailureSource, MatchState,
+    TerritoryState,
 };
 use serde::{Deserialize, Serialize};
 
@@ -22,6 +23,10 @@ pub struct AgentView {
     pub running: bool,
     pub successful: Option<bool>,
     pub failure_source: Option<FailureSource>,
+    #[serde(default)]
+    pub terminal_state: Option<AgentTerminalState>,
+    #[serde(default)]
+    pub terminal_detail: Option<String>,
     pub resource_units_used: u64,
     pub input_tokens: u64,
     pub output_tokens: u64,
@@ -154,12 +159,38 @@ pub fn reduce(state: &mut WorldState, envelope: &EventEnvelope) {
             agent,
             source,
             success,
-            ..
+            detail,
         } => {
             let view = state.agents.entry(agent.clone()).or_default();
             view.running = false;
             view.successful = Some(*success);
             view.failure_source = Some(*source);
+            view.terminal_state = Some(if *success {
+                AgentTerminalState::Completed
+            } else {
+                AgentTerminalState::Failed
+            });
+            view.terminal_detail = Some(detail.clone());
+        }
+        Event::AgentInterrupted {
+            agent,
+            source,
+            detail,
+        } => {
+            let view = state.agents.entry(agent.clone()).or_default();
+            view.running = false;
+            view.successful = None;
+            view.failure_source = Some(*source);
+            view.terminal_state = Some(AgentTerminalState::Interrupted);
+            view.terminal_detail = Some(detail.clone());
+        }
+        Event::AgentTerminated { agent, reason } => {
+            let view = state.agents.entry(agent.clone()).or_default();
+            view.running = false;
+            view.successful = None;
+            view.failure_source = Some(FailureSource::Controller);
+            view.terminal_state = Some(AgentTerminalState::Terminated);
+            view.terminal_detail = Some(reason.clone());
         }
         Event::UsageCharged {
             agent,

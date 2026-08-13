@@ -85,6 +85,9 @@ deployment wins.
 After the result is frozen, the controller gives unfinished agents a bounded
 30-second drain to return results and transcripts. Late artifacts are recorded
 at the frozen match clock and cannot change milestones, standings, or winner.
+An agent disconnected by a referee-initiated reboot is recorded as interrupted,
+not failed. Agents still running when the drain expires are explicitly marked
+terminated in the final state.
 
 Once the oracle succeeds, race the default real-agent fleet with the same
 guests and verifier:

@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use aoe_domain::{
-    CompetitorState, Event, EventEnvelope, FailureSource, MatchState, TerritoryState,
+    AgentTerminalState, CompetitorState, Event, EventEnvelope, FailureSource, MatchState,
+    TerritoryState,
 };
 use aoe_replay::{
     EventLog, EventLogError, Snapshot, WorldState, load_events, load_snapshot, reduce, replay,
@@ -188,4 +189,56 @@ fn milestone_evidence_reduces_and_revokes() {
     assert_eq!(builder.durable_at_ms, Some(200));
     assert_eq!(builder.milestone_points, 0);
     assert!(!builder.milestones["write-read"].passed);
+}
+
+#[test]
+fn interrupted_and_terminated_agents_are_terminal_without_becoming_losses() {
+    let events = [
+        event(
+            0,
+            0,
+            Event::AgentStarted {
+                agent: "winner".into(),
+                territory: "one".into(),
+                model: "model-a".into(),
+            },
+        ),
+        event(
+            1,
+            10,
+            Event::AgentInterrupted {
+                agent: "winner".into(),
+                source: FailureSource::Arena,
+                detail: "referee reboot".into(),
+            },
+        ),
+        event(
+            2,
+            10,
+            Event::AgentStarted {
+                agent: "loser".into(),
+                territory: "two".into(),
+                model: "model-b".into(),
+            },
+        ),
+        event(
+            3,
+            10,
+            Event::AgentTerminated {
+                agent: "loser".into(),
+                reason: "drain expired".into(),
+            },
+        ),
+    ];
+    let state = replay(&events);
+    assert_eq!(
+        state.agents["winner"].terminal_state,
+        Some(AgentTerminalState::Interrupted)
+    );
+    assert_eq!(state.agents["winner"].successful, None);
+    assert_eq!(
+        state.agents["loser"].terminal_state,
+        Some(AgentTerminalState::Terminated)
+    );
+    assert!(state.agents.values().all(|agent| !agent.running));
 }
