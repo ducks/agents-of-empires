@@ -62,3 +62,20 @@ fn parses_inspect_sequence() {
         }
     );
 }
+
+#[test]
+fn parses_report_directories() {
+    let cli = Cli::parse(
+        ["report", "matches", "--output", "docs"]
+            .into_iter()
+            .map(str::to_owned),
+    )
+    .expect("parse");
+    assert_eq!(
+        cli.command,
+        Command::Report {
+            input: PathBuf::from("matches"),
+            output: PathBuf::from("docs"),
+        }
+    );
+}
