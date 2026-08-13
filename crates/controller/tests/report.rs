@@ -6,6 +6,7 @@ use aoe_domain::{
     TerritoryState,
 };
 use aoe_replay::{AgentView, MilestoneView, TerritoryView, WorldState};
+use serde_json::json;
 
 fn temp_dir(name: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!("aoe-report-{}-{name}", std::process::id()))
@@ -131,5 +132,51 @@ fn accepts_historical_events_with_duplicate_elapsed_time() {
     generate_reports(&source, &output).expect("historical report");
     let page = fs::read_to_string(output.join("matches/old-match/index.html")).expect("page");
     assert!(page.contains("Durable deployment completed"));
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
+fn separates_current_compatibility_key_from_history() {
+    let root = temp_dir("seasons");
+    let _ = fs::remove_dir_all(&root);
+    for (name, key) in [
+        ("race-001", "old"),
+        ("race-002", "new"),
+        ("race-003", "new"),
+    ] {
+        let source = root.join("matches").join(name);
+        fs::create_dir_all(&source).expect("match dir");
+        fs::write(
+            source.join("world.json"),
+            serde_json::to_vec(&WorldState::default()).expect("world"),
+        )
+        .expect("world file");
+        fs::write(source.join("events.jsonl"), "").expect("events");
+        fs::write(
+            source.join("match.json"),
+            serde_json::to_vec(&json!({
+                "schema_version": 1,
+                "controller_version": "0.1.0",
+                "source_revision": null,
+                "arena_id": "build",
+                "arena_mode": "buildrace",
+                "manifest_sha256": key,
+                "verifier_sha256": key,
+                "adapter_sha256": {},
+                "compatibility_key": key
+            }))
+            .expect("provenance"),
+        )
+        .expect("provenance file");
+    }
+    let output = root.join("site");
+    generate_reports(&root.join("matches"), &output).expect("reports");
+    let index = fs::read_to_string(output.join("index.html")).expect("index");
+    let current = index.find("<h2>Current</h2>").expect("current");
+    let historical = index.find("<h2>Historical</h2>").expect("historical");
+    assert!(index[current..historical].contains("race-002"));
+    assert!(index[current..historical].contains("race-003"));
+    assert!(!index[current..historical].contains("race-001"));
+    assert!(index[historical..].contains("race-001"));
     fs::remove_dir_all(root).expect("cleanup");
 }

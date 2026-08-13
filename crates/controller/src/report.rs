@@ -7,6 +7,8 @@ use aoe_replay::WorldState;
 use serde::Serialize;
 use thiserror::Error;
 
+use crate::provenance::{MatchProvenance, read_provenance};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReportSummary {
     pub matches: usize,
@@ -35,6 +37,8 @@ struct MatchReport {
     events: Vec<ReportEvent>,
     source: PathBuf,
     report_dir: PathBuf,
+    provenance: Option<MatchProvenance>,
+    current: bool,
 }
 
 /// Generate a self-contained static report site from one match directory or a
@@ -58,24 +62,46 @@ pub fn generate_reports(input: &Path, output: &Path) -> Result<ReportSummary, Re
         fs::create_dir_all(&report_dir)?;
         let state = read_world(&source.join("world.json"))?;
         let events = read_report_events(&source.join("events.jsonl"))?;
+        let provenance = read_provenance(&source.join("match.json")).ok();
         let report = MatchReport {
             name,
             state,
             events,
             source,
             report_dir,
+            provenance,
+            current: false,
         };
         copy_public_artifacts(&report)?;
-        fs::write(report.report_dir.join("index.html"), render_match(&report))?;
         reports.push(report);
     }
     reports.sort_by(|left, right| right.name.cmp(&left.name));
+    mark_current(&mut reports);
+    for report in &reports {
+        fs::write(report.report_dir.join("index.html"), render_match(report))?;
+    }
     let index = output.join("index.html");
     fs::write(&index, render_index(&reports))?;
     Ok(ReportSummary {
         matches: reports.len(),
         index,
     })
+}
+
+fn mark_current(reports: &mut [MatchReport]) {
+    let mut current = std::collections::HashMap::new();
+    for report in reports.iter() {
+        if let Some(provenance) = &report.provenance {
+            current
+                .entry(provenance.arena_id.clone())
+                .or_insert_with(|| provenance.compatibility_key.clone());
+        }
+    }
+    for report in reports {
+        report.current = report.provenance.as_ref().is_some_and(|provenance| {
+            current.get(&provenance.arena_id) == Some(&provenance.compatibility_key)
+        });
+    }
 }
 
 struct ReportEvent {
@@ -148,6 +174,9 @@ fn copy_public_artifacts(report: &MatchReport) -> Result<(), ReportError> {
     fs::create_dir_all(&raw)?;
     fs::copy(report.source.join("events.jsonl"), raw.join("events.jsonl"))?;
     fs::copy(report.source.join("world.json"), raw.join("world.json"))?;
+    if report.source.join("match.json").is_file() {
+        fs::copy(report.source.join("match.json"), raw.join("match.json"))?;
+    }
     for agent in report.state.agents.keys() {
         let source = report.source.join("agents").join(agent);
         for file in ["transcript.json", "transcript.jsonl", "result.json"] {
@@ -161,6 +190,22 @@ fn copy_public_artifacts(report: &MatchReport) -> Result<(), ReportError> {
 }
 
 fn render_index(reports: &[MatchReport]) -> String {
+    let current = render_cards(reports.iter().filter(|report| report.current));
+    let historical = render_cards(reports.iter().filter(|report| !report.current));
+    let current = if current.is_empty() {
+        "<p class=\"empty\">No matches recorded under the current rules yet.</p>".to_owned()
+    } else {
+        current
+    };
+    page(
+        "Agents of Empires · Match Archive",
+        &format!(
+            "<header class=\"hero\"><span class=\"eyebrow\">Match archive</span><h1>Agents of Empires</h1><p>Build races decided by durable deployments, not confident answers.</p></header><main><section><div class=\"section-heading\"><h2>Current</h2><p>Matches sharing the newest manifest and verifier compatibility key for each arena.</p></div><div class=\"match-list\">{current}</div></section><section><div class=\"section-heading\"><h2>Historical</h2><p>Prototype or superseded runs retained for auditability, not direct comparison.</p></div><div class=\"match-list historical\">{historical}</div></section></main>"
+        ),
+    )
+}
+
+fn render_cards<'a>(reports: impl Iterator<Item = &'a MatchReport>) -> String {
     let mut body = String::new();
     for report in reports {
         let winner = report.state.winner.as_deref().unwrap_or("No winner");
@@ -191,12 +236,7 @@ fn render_index(reports: &[MatchReport]) -> String {
             ))
         );
     }
-    page(
-        "Agents of Empires · Match Archive",
-        &format!(
-            "<header class=\"hero\"><span class=\"eyebrow\">Match archive</span><h1>Agents of Empires</h1><p>Build races decided by durable deployments, not confident answers.</p></header><main><section class=\"match-list\">{body}</section></main>"
-        ),
-    )
+    body
 }
 
 fn render_match(report: &MatchReport) -> String {
@@ -257,6 +297,21 @@ fn render_match(report: &MatchReport) -> String {
         .map(|agent| agent.input_tokens.saturating_add(agent.output_tokens))
         .sum();
     let timeline = render_timeline(&report.events);
+    let provenance = report.provenance.as_ref().map_or_else(
+        || "historical · provenance unavailable".to_owned(),
+        |value| {
+            format!(
+                "{} · {} · {}",
+                if report.current {
+                    "current"
+                } else {
+                    "historical"
+                },
+                value.arena_id,
+                &value.compatibility_key[..12]
+            )
+        },
+    );
     let content = format!(
         "<nav><a href=\"../../\">← All matches</a><span>Agents of Empires</span></nav>
         <header class=\"hero match-hero\"><span class=\"eyebrow\">{:?} · {}</span><h1>{}</h1><p>{}</p>
@@ -275,7 +330,13 @@ fn render_match(report: &MatchReport) -> String {
         grouped(total_tokens),
         report.events.len()
     );
-    page(&format!("{} · Agents of Empires", report.name), &content)
+    page(
+        &format!("{} · Agents of Empires", report.name),
+        &content.replace(
+            "Agents of Empires</span>",
+            &format!("Agents of Empires · {}</span>", escape(&provenance)),
+        ),
+    )
 }
 
 fn transcript_link(report: &MatchReport, agent: &str) -> String {
