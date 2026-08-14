@@ -142,7 +142,7 @@ fn resolve_nixos_configs(manifest_path: &Path, manifest: &mut ArenaManifest) {
             continue;
         };
         let resolved = resolved.canonicalize().unwrap_or(resolved);
-        let mut reference = resolved.to_string_lossy().into_owned();
+        let mut reference = format!("path:{}", resolved.to_string_lossy());
         if let Some(attribute) = attribute {
             reference.push('#');
             reference.push_str(attribute);
@@ -1203,7 +1203,7 @@ mod tests {
         for territory in &manifest.territories {
             assert_eq!(
                 territory.nixos_config,
-                format!("{}#nixosConfigurations.test", expected.display())
+                format!("path:{}#nixosConfigurations.test", expected.display())
             );
         }
         std::fs::remove_dir_all(root).expect("cleanup");
