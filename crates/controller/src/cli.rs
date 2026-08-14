@@ -35,6 +35,15 @@ pub enum Command {
         multicast_port: u16,
         no_color: bool,
     },
+    Benchmark {
+        suite: PathBuf,
+        output: PathBuf,
+        adapters: Vec<String>,
+        credentials: Vec<String>,
+        base_port: u16,
+        multicast_port: u16,
+        no_color: bool,
+    },
     Replay {
         log: PathBuf,
         json: bool,
@@ -93,6 +102,7 @@ impl Cli {
             "arena" => parse_arena(args)?,
             "run" => parse_run(args)?,
             "series" => parse_series(args)?,
+            "benchmark" => parse_benchmark(args)?,
             "replay" => parse_replay(args)?,
             "inspect" => parse_inspect(args)?,
             "report" => parse_report(args)?,
@@ -231,6 +241,30 @@ fn parse_series(mut args: Vec<String>) -> Result<Command, ParseError> {
         adapters,
         credentials,
         rounds,
+        base_port,
+        multicast_port,
+        no_color,
+    })
+}
+
+fn parse_benchmark(mut args: Vec<String>) -> Result<Command, ParseError> {
+    let suite = PathBuf::from(take_positional(&mut args, "SUITE")?);
+    let output = if args.iter().any(|arg| arg == "--output") {
+        PathBuf::from(take_flag_value(&mut args, "--output")?)
+    } else {
+        PathBuf::from("benchmarks/latest")
+    };
+    let base_port = numeric_flag(&mut args, "--base-port", 26_000_u16)?;
+    let multicast_port = numeric_flag(&mut args, "--multicast-port", 23_977_u16)?;
+    let no_color = take_bool(&mut args, "--no-color");
+    let adapters = repeated_flag(&mut args, "--adapter")?;
+    let credentials = repeated_flag(&mut args, "--credential")?;
+    reject_remaining(args)?;
+    Ok(Command::Benchmark {
+        suite,
+        output,
+        adapters,
+        credentials,
         base_port,
         multicast_port,
         no_color,

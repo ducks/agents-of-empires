@@ -177,3 +177,34 @@ fn parses_series_configuration() {
         }
     );
 }
+
+#[test]
+fn parses_benchmark_configuration() {
+    let cli = Cli::parse(
+        [
+            "benchmark",
+            "suites/infra-core.toml",
+            "--adapter",
+            "claux=/bin/claux-adapter",
+            "--credential",
+            "builder-one=/tmp/key",
+            "--output",
+            "benchmarks/infra-core",
+        ]
+        .into_iter()
+        .map(str::to_owned),
+    )
+    .expect("parse");
+    assert_eq!(
+        cli.command,
+        Command::Benchmark {
+            suite: PathBuf::from("suites/infra-core.toml"),
+            output: PathBuf::from("benchmarks/infra-core"),
+            adapters: vec!["claux=/bin/claux-adapter".into()],
+            credentials: vec!["builder-one=/tmp/key".into()],
+            base_port: 26000,
+            multicast_port: 23977,
+            no_color: false,
+        }
+    );
+}

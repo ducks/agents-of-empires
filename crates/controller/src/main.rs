@@ -4,9 +4,9 @@ use std::io::IsTerminal;
 use std::path::PathBuf;
 
 use aoe_controller::{
-    ArenaCommand, Cli, Command, RunOptions, SeriesOptions, doctor, generate_reports_with_series,
-    init_arena, inspect, render_series, replay_log, run_match, run_series, validate,
-    validate_arena_package,
+    ArenaCommand, BenchmarkOptions, Cli, Command, RunOptions, SeriesOptions, doctor,
+    generate_reports_with_series, init_arena, inspect, render_benchmark, render_series, replay_log,
+    run_benchmark, run_match, run_series, validate, validate_arena_package,
 };
 use aoe_tui::RenderOptions;
 
@@ -20,6 +20,8 @@ Usage:
       [--output DIR] [--base-port PORT] [--multicast-port PORT] [--no-color]
   agents-of-empires series MANIFEST --adapter NAME=PATH [--credential TERRITORY=PATH]
       [--rounds N] [--output DIR] [--base-port PORT] [--multicast-port PORT] [--no-color]
+  agents-of-empires benchmark SUITE --adapter NAME=PATH [--credential TERRITORY=PATH]
+      [--output DIR] [--base-port PORT] [--multicast-port PORT] [--no-color]
   agents-of-empires replay EVENT_LOG [--json] [--no-color] [--width COLUMNS]
   agents-of-empires inspect EVENT_LOG SEQUENCE [--json]
   agents-of-empires report MATCH_OR_MATCHES_DIR [--series SERIES_OR_SERIES_DIR] [--output DIR]
@@ -132,6 +134,27 @@ async fn execute() -> Result<(), Box<dyn std::error::Error>> {
             })
             .await?;
             println!("{}", render_series(&summary));
+        }
+        Command::Benchmark {
+            suite,
+            output,
+            adapters,
+            credentials,
+            base_port,
+            multicast_port,
+            no_color,
+        } => {
+            let summary = run_benchmark(BenchmarkOptions {
+                suite,
+                output,
+                adapters: mappings(adapters, "--adapter")?,
+                credentials: mappings(credentials, "--credential")?,
+                base_port,
+                multicast_port,
+                color: !no_color && std::io::stdout().is_terminal(),
+            })
+            .await?;
+            println!("{}", render_benchmark(&summary));
         }
         Command::Replay {
             log,
