@@ -135,8 +135,8 @@ fn render_territory_table(output: &mut String, state: &WorldState, color: bool) 
 fn render_build_table(output: &mut String, state: &WorldState, color: bool) {
     let _ = writeln!(
         output,
-        "{:<3} {:<16} {:<12} {:<12} {:>10} {:>8}",
-        "", "territory", "class", "state", "milestones", "points"
+        "{:<3} {:<16} {:<12} {:<12} {:>10} {:>8} {:>12} {:>10}",
+        "", "territory", "class", "state", "milestones", "points", "tokens", "cost"
     );
     for (id, territory) in &state.territories {
         let competitor = territory
@@ -148,15 +148,28 @@ fn render_build_table(output: &mut String, state: &WorldState, color: bool) {
             .filter(|milestone| milestone.passed)
             .count();
         let total = territory.milestones.len();
+        let usage = territory
+            .agent
+            .as_ref()
+            .and_then(|agent| state.agents.get(agent));
+        let tokens = usage.map_or(0, |agent| {
+            agent.input_tokens.saturating_add(agent.output_tokens)
+        });
+        let cost = usage.map_or_else(
+            || "n/a".to_owned(),
+            |agent| format_money(agent.cost_microusd),
+        );
         let _ = writeln!(
             output,
-            "{:<3} {id:<16} {:<12} {:<12} {:>5}/{:<4} {:>8}",
+            "{:<3} {id:<16} {:<12} {:<12} {:>5}/{:<4} {:>8} {:>12} {:>10}",
             competitor_marker(competitor, color),
             territory.class.as_deref().unwrap_or("unknown"),
             competitor_label(competitor),
             passed,
             total,
             territory.milestone_points,
+            tokens,
+            cost,
         );
     }
 }
@@ -224,6 +237,7 @@ fn format_clock(elapsed_ms: u64) -> String {
 }
 
 #[must_use]
+#[allow(clippy::too_many_lines)]
 pub fn event_summary(event: &Event) -> String {
     match event {
         Event::TerritoryRegistered {
@@ -266,8 +280,16 @@ pub fn event_summary(event: &Event) -> String {
         Event::UsageCharged {
             agent,
             resource_units,
-            ..
-        } => format!("{agent} used {resource_units} resources"),
+            input_tokens,
+            output_tokens,
+            cost_microusd,
+        } => usage_summary(
+            agent,
+            *resource_units,
+            *input_tokens,
+            *output_tokens,
+            *cost_microusd,
+        ),
         Event::PostMatchDrainStarted {
             timeout_ms,
             pending_agents,
@@ -324,4 +346,26 @@ pub fn event_summary(event: &Event) -> String {
             winner.as_deref().unwrap_or("none")
         ),
     }
+}
+
+fn usage_summary(
+    agent: &str,
+    resource_units: u64,
+    input_tokens: Option<u64>,
+    output_tokens: Option<u64>,
+    cost_microusd: Option<u64>,
+) -> String {
+    let tokens = input_tokens
+        .unwrap_or(0)
+        .saturating_add(output_tokens.unwrap_or(0));
+    let cost = cost_microusd.map_or_else(|| "cost n/a".into(), format_money);
+    format!("{agent} usage +{tokens} tokens, {cost}, {resource_units} resources")
+}
+
+fn format_money(microusd: u64) -> String {
+    format!(
+        "${}.{:04}",
+        microusd / 1_000_000,
+        (microusd % 1_000_000) / 100
+    )
 }

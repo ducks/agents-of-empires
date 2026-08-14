@@ -3,7 +3,7 @@ set -euo pipefail
 
 required=(
   AOE_AGENT_ID AOE_TERRITORY_ID AOE_TERRITORY_HOST AOE_SSH_PORT
-  AOE_MODEL AOE_REASONING_EFFORT AOE_INSTRUCTION_FILE AOE_RESULT_FILE
+  AOE_MODEL AOE_REASONING_EFFORT AOE_INSTRUCTION_FILE AOE_RESULT_FILE AOE_USAGE_FILE
   AOE_CREDENTIAL_FILE
 )
 for name in "${required[@]}"; do
@@ -43,6 +43,26 @@ remote_port="$((18000 + AOE_SSH_PORT % 1000))"
 transcript="${run_root}/transcript.json"
 native_result="${run_root}/claux-result.json"
 
+normalize_usage() {
+  local source="$1"
+  [[ -s "$source" ]] || return 0
+  jq \
+    --arg agent "$AOE_AGENT_ID" \
+    --arg territory "$AOE_TERRITORY_ID" \
+    '{schema_version:1,agent:$agent,territory:$territory,usage:{rounds:(.usage.rounds // null),tool_calls:(.usage.tool_calls // null),input_tokens:(.usage.input_tokens // null),output_tokens:(.usage.output_tokens // null),cost_microusd:(if .usage.cost_usd == null then null else (.usage.cost_usd * 1000000 | round) end),resource_units:1}}' \
+    "$source" >"${AOE_USAGE_FILE}.partial" 2>/dev/null || return 0
+  mv "${AOE_USAGE_FILE}.partial" "$AOE_USAGE_FILE"
+}
+
+checkpoint_usage() {
+  while true; do
+    sleep 2
+    live="${run_root}/transcript.live.json"
+    "${scp_command[@]}" "root@${AOE_TERRITORY_HOST}:${remote_root}/transcript.json" "$live" 2>/dev/null || continue
+    normalize_usage "$live"
+  done
+}
+
 cat >"$askpass" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$AOE_SSH_PASSWORD"
@@ -51,7 +71,12 @@ chmod 0700 "$askpass"
 
 proxy_pid=""
 tunnel_pid=""
+checkpoint_pid=""
 cleanup() {
+  if [[ -n "$checkpoint_pid" ]] && kill -0 "$checkpoint_pid" 2>/dev/null; then
+    kill "$checkpoint_pid" 2>/dev/null || true
+    wait "$checkpoint_pid" 2>/dev/null || true
+  fi
   if [[ -n "$tunnel_pid" ]] && kill -0 "$tunnel_pid" 2>/dev/null; then
     kill "$tunnel_pid" 2>/dev/null || true
     wait "$tunnel_pid" 2>/dev/null || true
@@ -112,6 +137,9 @@ kill -0 "$tunnel_pid"
 "${scp_command[@]}" "$claux" "root@${AOE_TERRITORY_HOST}:${remote_root}/claux"
 "${scp_command[@]}" "$AOE_INSTRUCTION_FILE" "root@${AOE_TERRITORY_HOST}:${remote_root}/instruction.md"
 
+checkpoint_usage &
+checkpoint_pid=$!
+
 set +e
 "${ssh_command[@]}" \
   "chmod 0700 '${remote_root}/claux' && \
@@ -126,6 +154,12 @@ set +e
    OPENROUTER_API_KEY=arena-proxy-placeholder '${remote_root}/claux' --print \"\$(cat '${remote_root}/instruction.md')\" --permission-mode bypass --output-format json --transcript '${remote_root}/transcript.json' > '${remote_root}/result.json'"
 status=$?
 set -e
+
+if [[ -n "$checkpoint_pid" ]] && kill -0 "$checkpoint_pid" 2>/dev/null; then
+  kill "$checkpoint_pid" 2>/dev/null || true
+  wait "$checkpoint_pid" 2>/dev/null || true
+fi
+checkpoint_pid=""
 
 # A controller-owned durability check may reboot the guest while Claux still
 # has an SSH session open. Wait for that same host to return before collecting
@@ -145,6 +179,7 @@ fi
 
 "${scp_command[@]}" "root@${AOE_TERRITORY_HOST}:${remote_root}/transcript.json" "$transcript" 2>/dev/null || true
 "${scp_command[@]}" "root@${AOE_TERRITORY_HOST}:${remote_root}/result.json" "$native_result" 2>/dev/null || true
+normalize_usage "$transcript"
 
 if [[ -s "$native_result" ]]; then
   jq \

@@ -130,6 +130,11 @@ replay plots each agent on a shared clock with milestone, state, usage, and
 terminal markers. It supports playback speeds, scrubbing, and raw event
 inspection without changing or reinterpreting the referee's result.
 
+Harness adapters may atomically publish cumulative usage to `AOE_USAGE_FILE`
+while they run. The controller records only the increase since the previous
+checkpoint, making live token and cost accounting survive an early race finish
+or forced post-match termination.
+
 Ctrl-C stops the guests but retains an aborted, inspectable match log.
 
 ## Durable job queue race

@@ -77,9 +77,25 @@ fn generates_archive_and_match_artifacts() {
             reason: "first durable deployment".into(),
         },
     };
+    let usage = EventEnvelope {
+        schema_version: 1,
+        sequence: 1,
+        elapsed_ms: 42_000,
+        event: Event::UsageCharged {
+            agent: "agent-a".into(),
+            resource_units: 1,
+            input_tokens: Some(12_345),
+            output_tokens: Some(678),
+            cost_microusd: Some(12_500),
+        },
+    };
     fs::write(
         source.join("events.jsonl"),
-        format!("{}\n", serde_json::to_string(&event).expect("event JSON")),
+        format!(
+            "{}\n{}\n",
+            serde_json::to_string(&event).expect("event JSON"),
+            serde_json::to_string(&usage).expect("usage JSON")
+        ),
     )
     .expect("events");
     fs::write(
@@ -115,6 +131,37 @@ fn generates_archive_and_match_artifacts() {
             .is_file()
     );
 
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
+fn missing_usage_is_not_rendered_as_zero() {
+    let root = temp_dir("missing-usage");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).expect("match dir");
+    let mut state = WorldState::default();
+    state.agents.insert(
+        "unfinished".into(),
+        AgentView {
+            territory: "one".into(),
+            model: "model/unfinished".into(),
+            terminal_state: Some(AgentTerminalState::Terminated),
+            ..AgentView::default()
+        },
+    );
+    fs::write(
+        root.join("world.json"),
+        serde_json::to_vec(&state).expect("world"),
+    )
+    .expect("world file");
+    fs::write(root.join("events.jsonl"), "").expect("events");
+    let output = root.join("site");
+    generate_reports(&root, &output).expect("report");
+    let match_name = root.file_name().expect("match name");
+    let page = fs::read_to_string(output.join("matches").join(match_name).join("index.html"))
+        .expect("page");
+    assert!(page.contains("model/unfinished"));
+    assert!(page.contains("<td>n/a</td><td>n/a</td><td>n/a</td>"));
     fs::remove_dir_all(root).expect("cleanup");
 }
 

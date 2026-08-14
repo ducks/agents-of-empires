@@ -38,6 +38,16 @@ pub struct AgentUsage {
     pub resource_units: u64,
 }
 
+/// Cumulative usage checkpoint atomically published by a running adapter.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AgentUsageCheckpoint {
+    pub schema_version: u32,
+    pub agent: String,
+    pub territory: String,
+    pub usage: AgentUsage,
+}
+
 /// Stable result schema written by adapters and consumed by the controller.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

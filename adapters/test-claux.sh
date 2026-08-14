@@ -39,7 +39,7 @@ set -euo pipefail
 source_path="${@: -2:1}"
 destination="${@: -1}"
 if [[ "$source_path" == *:*/transcript.json ]]; then
-  printf '%s' '{"schema_version":2}' >"$destination"
+  printf '%s' '{"schema_version":2,"usage":{"input_tokens":120,"output_tokens":8,"cost_usd":0.0012}}' >"$destination"
 elif [[ "$source_path" == *:*/result.json && "${TEST_NO_NATIVE_RESULT:-}" != 1 ]]; then
   printf '%s' '{"result":"held the line","usage":{"input_tokens":120,"output_tokens":8,"cost_usd":0.0012}}' >"$destination"
 fi
@@ -64,6 +64,7 @@ AOE_MODEL=test/model \
 AOE_REASONING_EFFORT=low \
 AOE_INSTRUCTION_FILE="$root/instruction.md" \
 AOE_RESULT_FILE="$root/run/result.json" \
+AOE_USAGE_FILE="$root/run/usage.json" \
 AOE_CREDENTIAL_FILE="$root/credential.env" \
 AOE_CLAUX_BINARY="$root/claux" \
 AOE_OPENROUTER_PROXY="$root/fake-proxy.py" \
@@ -80,6 +81,13 @@ jq -e '
   and .usage.cost_microusd == 1200
   and .usage.resource_units == 1
 ' "$root/run/result.json" >/dev/null
+jq -e '
+  .schema_version == 1
+  and .agent == "test-agent"
+  and .usage.input_tokens == 120
+  and .usage.output_tokens == 8
+  and .usage.cost_microusd == 1200
+' "$root/run/usage.json" >/dev/null
 
 rm -f "$root/run/result.json" "$root/run/claux-result.json" "$root/run/transcript.json" "$root/run/referee-reboot"
 set +e
@@ -94,6 +102,7 @@ AOE_MODEL=test/model \
 AOE_REASONING_EFFORT=low \
 AOE_INSTRUCTION_FILE="$root/instruction.md" \
 AOE_RESULT_FILE="$root/run/result.json" \
+AOE_USAGE_FILE="$root/run/usage.json" \
 AOE_CREDENTIAL_FILE="$root/credential.env" \
 AOE_CLAUX_BINARY="$root/claux" \
 AOE_OPENROUTER_PROXY="$root/fake-proxy.py" \
@@ -122,6 +131,7 @@ AOE_MODEL=test/model \
 AOE_REASONING_EFFORT=low \
 AOE_INSTRUCTION_FILE="$root/instruction.md" \
 AOE_RESULT_FILE="$root/run/result.json" \
+AOE_USAGE_FILE="$root/run/usage.json" \
 AOE_CREDENTIAL_FILE="$root/credential.env" \
 AOE_CLAUX_BINARY="$root/claux" \
 AOE_OPENROUTER_PROXY="$root/fake-proxy.py" \

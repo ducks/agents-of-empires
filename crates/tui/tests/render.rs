@@ -116,6 +116,24 @@ fn build_race_renders_milestone_progress() {
                 evidence: serde_json::json!({"health": "ready"}),
             },
         ),
+        envelope(
+            3,
+            Event::AgentStarted {
+                agent: "oracle".into(),
+                territory: "builder-one".into(),
+                model: "model/oracle".into(),
+            },
+        ),
+        envelope(
+            4,
+            Event::UsageCharged {
+                agent: "oracle".into(),
+                resource_units: 1,
+                input_tokens: Some(1_200),
+                output_tokens: Some(34),
+                cost_microusd: Some(12_500),
+            },
+        ),
     ];
     let mut state = WorldState::default();
     for event in &events {
@@ -133,4 +151,6 @@ fn build_race_renders_milestone_progress() {
     assert!(rendered.contains("verifying"));
     assert!(rendered.contains("1/1"));
     assert!(rendered.contains("10"));
+    assert!(rendered.contains("1234"));
+    assert!(rendered.contains("$0.0125"));
 }
