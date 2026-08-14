@@ -4,14 +4,17 @@ use std::io::IsTerminal;
 use std::path::PathBuf;
 
 use aoe_controller::{
-    Cli, Command, RunOptions, SeriesOptions, doctor, generate_reports_with_series, inspect,
-    render_series, replay_log, run_match, run_series, validate,
+    ArenaCommand, Cli, Command, RunOptions, SeriesOptions, doctor, generate_reports_with_series,
+    init_arena, inspect, render_series, replay_log, run_match, run_series, validate,
+    validate_arena_package,
 };
 use aoe_tui::RenderOptions;
 
 const HELP: &str = "Agents of Empires
 
 Usage:
+  agents-of-empires arena init NAME [--output DIR]
+  agents-of-empires arena validate ARENA_DIR_OR_MANIFEST [--json]
   agents-of-empires validate MANIFEST [--json]
   agents-of-empires run MANIFEST --adapter NAME=PATH [--credential TERRITORY=PATH]
       [--output DIR] [--base-port PORT] [--multicast-port PORT] [--no-color]
@@ -35,6 +38,39 @@ async fn execute() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse(env::args().skip(1))?;
     match cli.command {
         Command::Help => print!("{HELP}"),
+        Command::Arena { command } => match command {
+            ArenaCommand::Init { name, output } => {
+                let manifest = init_arena(&name, &output)?;
+                println!("created arena {name} at {}", output.display());
+                println!(
+                    "validate it with: agents-of-empires arena validate {}",
+                    output.display()
+                );
+                println!("manifest: {}", manifest.display());
+            }
+            ArenaCommand::Validate { path, json } => {
+                let report = validate_arena_package(&path)?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&report)?);
+                } else {
+                    println!(
+                        "{} arena package {} ({})",
+                        if report.valid { "valid" } else { "invalid" },
+                        report.arena.as_deref().unwrap_or("unknown"),
+                        report.root.display()
+                    );
+                    for warning in &report.warnings {
+                        println!("  warning: {warning}");
+                    }
+                    for error in &report.errors {
+                        println!("  error: {error}");
+                    }
+                }
+                if !report.valid {
+                    return Err("arena package validation failed".into());
+                }
+            }
+        },
         Command::Validate { manifest, json } => {
             let report = validate(&manifest)?;
             if json {

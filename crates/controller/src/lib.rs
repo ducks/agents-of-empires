@@ -1,3 +1,4 @@
+pub mod arena;
 pub mod cli;
 pub mod commands;
 pub mod provenance;
@@ -5,7 +6,8 @@ pub mod report;
 pub mod runner;
 pub mod series;
 
-pub use cli::{Cli, Command, ParseError};
+pub use arena::{ArenaPackageReport, init_arena, validate_arena_package};
+pub use cli::{ArenaCommand, Cli, Command, ParseError};
 pub use commands::{DoctorReport, ValidationReport, doctor, inspect, replay_log, validate};
 pub use provenance::{MatchProvenance, read_provenance, write_provenance};
 pub use report::{ReportError, ReportSummary, generate_reports, generate_reports_with_series};

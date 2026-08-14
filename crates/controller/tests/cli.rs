@@ -1,6 +1,44 @@
 use std::path::PathBuf;
 
-use aoe_controller::{Cli, Command, ParseError};
+use aoe_controller::{ArenaCommand, Cli, Command, ParseError};
+
+#[test]
+fn parses_arena_init_with_default_output() {
+    let cli = Cli::parse(
+        ["arena", "init", "cache-race"]
+            .into_iter()
+            .map(str::to_owned),
+    )
+    .expect("parse");
+    assert_eq!(
+        cli.command,
+        Command::Arena {
+            command: ArenaCommand::Init {
+                name: "cache-race".into(),
+                output: PathBuf::from("arenas/cache-race"),
+            },
+        }
+    );
+}
+
+#[test]
+fn parses_arena_package_validation() {
+    let cli = Cli::parse(
+        ["arena", "validate", "community/cache-race", "--json"]
+            .into_iter()
+            .map(str::to_owned),
+    )
+    .expect("parse");
+    assert_eq!(
+        cli.command,
+        Command::Arena {
+            command: ArenaCommand::Validate {
+                path: PathBuf::from("community/cache-race"),
+                json: true,
+            },
+        }
+    );
+}
 
 #[test]
 fn parses_run_configuration() {

@@ -77,7 +77,7 @@ pub async fn run_match(options: RunOptions) -> Result<WorldState, RunError> {
 
 pub(crate) async fn run_match_with_manifest(
     options: RunOptions,
-    manifest: ArenaManifest,
+    mut manifest: ArenaManifest,
 ) -> Result<WorldState, RunError> {
     let event_path = options.output.join("events.jsonl");
     if event_path
@@ -94,6 +94,7 @@ pub(crate) async fn run_match_with_manifest(
         &options.output,
     )
     .map_err(|error| RunError::Provenance(error.to_string()))?;
+    resolve_nixos_configs(&options.manifest, &mut manifest);
     validate_adapters(&manifest, &options.adapters)?;
     let plan = NetworkPlan::from_manifest(&manifest, options.base_port, options.multicast_port)?;
     let driver = Arc::new(NixVmDriver::new(options.output.join("territories")));
@@ -117,6 +118,36 @@ pub(crate) async fn run_match_with_manifest(
         }));
     }
     result
+}
+
+fn resolve_nixos_configs(manifest_path: &Path, manifest: &mut ArenaManifest) {
+    let arena_root = manifest_path.parent().unwrap_or_else(|| Path::new("."));
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    for territory in &mut manifest.territories {
+        let (flake, attribute) = territory.nixos_config.split_once('#').map_or(
+            (territory.nixos_config.as_str(), None),
+            |(flake, attribute)| (flake, Some(attribute)),
+        );
+        let flake_path = Path::new(flake);
+        if flake_path.is_absolute() {
+            continue;
+        }
+        let package_relative = arena_root.join(flake_path);
+        let legacy_cwd_relative = cwd.join(flake_path);
+        let resolved = if package_relative.exists() {
+            package_relative
+        } else if legacy_cwd_relative.exists() {
+            legacy_cwd_relative
+        } else {
+            continue;
+        };
+        let mut reference = resolved.to_string_lossy().into_owned();
+        if let Some(attribute) = attribute {
+            reference.push('#');
+            reference.push_str(attribute);
+        }
+        territory.nixos_config = reference;
+    }
 }
 
 async fn run_booted_match(
