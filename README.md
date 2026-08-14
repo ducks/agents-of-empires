@@ -12,6 +12,26 @@ Think a real-time strategy build order, played through a shell.
 See [SPEC.md](SPEC.md) for the initial design and `.arf/specs/` for the
 dependency-ordered implementation plan.
 
+## Development
+
+Enter the pinned development environment before building or running an arena:
+
+```bash
+nix-shell
+```
+
+The shell includes the Rust compiler, Cargo, rustfmt, Clippy, rust-analyzer,
+OpenSSL build dependencies, and the Nix, QEMU, and SSH runtime tools checked by
+`agents-of-empires doctor`.
+
+Run the same checks used by CI:
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace --all-targets
+```
+
 ## Bring your own arena
 
 Arena packages are a public plugin boundary. They own disposable guest images,
