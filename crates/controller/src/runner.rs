@@ -141,6 +141,7 @@ fn resolve_nixos_configs(manifest_path: &Path, manifest: &mut ArenaManifest) {
         } else {
             continue;
         };
+        let resolved = resolved.canonicalize().unwrap_or(resolved);
         let mut reference = resolved.to_string_lossy().into_owned();
         if let Some(attribute) = attribute {
             reference.push('#');
@@ -1178,10 +1179,35 @@ mod tests {
 
     use super::{
         RunOptions, append, drain_build_agents, invocations, record_agent_results,
-        record_build_usage_checkpoints, usage_delta,
+        record_build_usage_checkpoints, resolve_nixos_configs, usage_delta,
     };
 
     const MANIFEST: &str = include_str!("../../runtime/tests/fixture.toml");
+
+    #[test]
+    fn package_relative_flake_references_become_absolute() {
+        let root = std::env::temp_dir().join(format!(
+            "aoe-controller-relative-flake-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("arena root");
+        let mut manifest = ArenaManifest::parse(MANIFEST).expect("manifest");
+        for territory in &mut manifest.territories {
+            territory.nixos_config = ".#nixosConfigurations.test".into();
+        }
+
+        resolve_nixos_configs(&root.join("arena.toml"), &mut manifest);
+
+        let expected = root.canonicalize().expect("canonical root");
+        for territory in &manifest.territories {
+            assert_eq!(
+                territory.nixos_config,
+                format!("{}#nixosConfigurations.test", expected.display())
+            );
+        }
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
 
     #[test]
     fn cumulative_usage_checkpoints_are_recorded_once() {
