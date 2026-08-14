@@ -8,6 +8,7 @@ use aoe_replay::WorldState;
 use serde::Serialize;
 use thiserror::Error;
 
+use crate::benchmark::{BenchmarkStanding, BenchmarkSummary};
 use crate::provenance::{MatchProvenance, read_provenance};
 use crate::series::SeriesSummary;
 
@@ -15,6 +16,7 @@ use crate::series::SeriesSummary;
 pub struct ReportSummary {
     pub matches: usize,
     pub series: usize,
+    pub benchmarks: usize,
     pub index: PathBuf,
 }
 
@@ -32,10 +34,14 @@ pub enum ReportError {
     World { path: PathBuf, detail: String },
     #[error("invalid series summary in {path}: {detail}")]
     Series { path: PathBuf, detail: String },
+    #[error("invalid benchmark summary in {path}: {detail}")]
+    Benchmark { path: PathBuf, detail: String },
     #[error("no completed match artifacts found below {0}")]
     NoMatches(PathBuf),
     #[error("no completed series artifacts found below {0}")]
     NoSeries(PathBuf),
+    #[error("no completed benchmark artifacts found below {0}")]
+    NoBenchmarks(PathBuf),
 }
 
 struct MatchReport {
@@ -60,6 +66,14 @@ struct SeriesReport {
     current: bool,
 }
 
+struct BenchmarkReport {
+    name: String,
+    slug: String,
+    summary: BenchmarkSummary,
+    report_dir: PathBuf,
+    series_slugs: Vec<String>,
+}
+
 /// Generate a self-contained static report site from one match directory or a
 /// directory containing match directories.
 ///
@@ -68,7 +82,7 @@ struct SeriesReport {
 /// Returns an error for missing artifacts, malformed event/world data, or file
 /// system failures.
 pub fn generate_reports(input: &Path, output: &Path) -> Result<ReportSummary, ReportError> {
-    generate_reports_with_series(input, &[], output)
+    generate_reports_with_benchmarks(input, &[], &[], output)
 }
 
 /// Generate a static archive containing ordinary matches and match series.
@@ -82,9 +96,33 @@ pub fn generate_reports_with_series(
     series_inputs: &[PathBuf],
     output: &Path,
 ) -> Result<ReportSummary, ReportError> {
-    let match_dirs = discover_matches(input)?;
+    generate_reports_with_benchmarks(input, series_inputs, &[], output)
+}
+
+/// Generate a static archive containing matches, series, and benchmark suites.
+///
+/// # Errors
+///
+/// Returns an error for missing artifacts, malformed report data, or file
+/// system failures.
+pub fn generate_reports_with_benchmarks(
+    input: &Path,
+    series_inputs: &[PathBuf],
+    benchmark_inputs: &[PathBuf],
+    output: &Path,
+) -> Result<ReportSummary, ReportError> {
+    let match_dirs = match discover_matches(input) {
+        Ok(matches) => matches,
+        Err(ReportError::NoMatches(_))
+            if !series_inputs.is_empty() || !benchmark_inputs.is_empty() =>
+        {
+            Vec::new()
+        }
+        Err(error) => return Err(error),
+    };
     fs::create_dir_all(output.join("matches"))?;
     fs::create_dir_all(output.join("series"))?;
+    fs::create_dir_all(output.join("benchmarks"))?;
     let mut reports = Vec::with_capacity(match_dirs.len());
     for source in match_dirs {
         let name = source
@@ -105,48 +143,27 @@ pub fn generate_reports_with_series(
                 .unwrap_or("series")
                 .to_owned();
             let slug = safe_name(&name);
-            let summary = read_series(&source.join("series.json"))?;
-            let mut round_slugs = Vec::with_capacity(summary.rounds.len());
-            for round in &summary.rounds {
-                let round_name = format!("{} · round {}", name, round.round);
-                let round_slug = format!("{}-round-{:03}", slug, round.round);
-                let round_source = source.join(format!("round-{:03}", round.round));
-                reports.push(load_match_report(
-                    round_source,
-                    round_name,
-                    round_slug.clone(),
-                    false,
-                    output,
-                )?);
-                round_slugs.push(round_slug);
-            }
-            let report_dir = output.join("series").join(&slug);
-            fs::create_dir_all(report_dir.join("artifacts"))?;
-            fs::copy(
-                source.join("series.json"),
-                report_dir.join("artifacts/series.json"),
-            )?;
-            let provenance = summary.rounds.first().and_then(|round| {
-                read_provenance(
-                    &source
-                        .join(format!("round-{:03}", round.round))
-                        .join("match.json"),
-                )
-                .ok()
-            });
-            series_reports.push(SeriesReport {
+            append_series_report(
+                &source,
                 name,
                 slug,
-                summary,
-                report_dir,
-                round_slugs,
-                provenance,
-                current: false,
-            });
+                output,
+                &mut reports,
+                &mut series_reports,
+            )?;
         }
     }
+    let mut benchmark_reports = Vec::new();
+    append_benchmark_reports(
+        benchmark_inputs,
+        output,
+        &mut reports,
+        &mut series_reports,
+        &mut benchmark_reports,
+    )?;
     reports.sort_by(|left, right| right.name.cmp(&left.name));
     series_reports.sort_by(|left, right| right.name.cmp(&left.name));
+    benchmark_reports.sort_by(|left, right| right.name.cmp(&left.name));
     mark_current(&mut reports);
     mark_current_series(&mut series_reports);
     for report in &reports {
@@ -155,13 +172,121 @@ pub fn generate_reports_with_series(
     for report in &series_reports {
         fs::write(report.report_dir.join("index.html"), render_series(report))?;
     }
+    for report in &benchmark_reports {
+        fs::write(
+            report.report_dir.join("index.html"),
+            render_benchmark_report(report),
+        )?;
+    }
     let index = output.join("index.html");
-    fs::write(&index, render_index(&reports, &series_reports))?;
+    fs::write(
+        &index,
+        render_index(&reports, &series_reports, &benchmark_reports),
+    )?;
     Ok(ReportSummary {
         matches: reports.len(),
         series: series_reports.len(),
+        benchmarks: benchmark_reports.len(),
         index,
     })
+}
+
+fn append_benchmark_reports(
+    inputs: &[PathBuf],
+    output: &Path,
+    reports: &mut Vec<MatchReport>,
+    series_reports: &mut Vec<SeriesReport>,
+    benchmark_reports: &mut Vec<BenchmarkReport>,
+) -> Result<(), ReportError> {
+    for input in inputs {
+        for source in discover_benchmarks(input)? {
+            let summary = read_benchmark(&source.join("benchmark.json"))?;
+            let name = summary.suite_id.clone();
+            let slug = safe_name(&name);
+            let mut series_slugs = Vec::with_capacity(summary.arenas.len());
+            for arena in &summary.arenas {
+                let arena_source = source.join(
+                    arena
+                        .output
+                        .file_name()
+                        .unwrap_or_else(|| std::ffi::OsStr::new(&arena.arena_id)),
+                );
+                let arena_slug = format!("{slug}-{}", safe_name(&arena.arena_id));
+                append_series_report(
+                    &arena_source,
+                    format!("{} · {}", name, arena.arena_id),
+                    arena_slug.clone(),
+                    output,
+                    reports,
+                    series_reports,
+                )?;
+                series_slugs.push(arena_slug);
+            }
+            let report_dir = output.join("benchmarks").join(&slug);
+            fs::create_dir_all(report_dir.join("artifacts"))?;
+            fs::copy(
+                source.join("benchmark.json"),
+                report_dir.join("artifacts/benchmark.json"),
+            )?;
+            benchmark_reports.push(BenchmarkReport {
+                name,
+                slug,
+                summary,
+                report_dir,
+                series_slugs,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn append_series_report(
+    source: &Path,
+    name: String,
+    slug: String,
+    output: &Path,
+    reports: &mut Vec<MatchReport>,
+    series_reports: &mut Vec<SeriesReport>,
+) -> Result<(), ReportError> {
+    let summary = read_series(&source.join("series.json"))?;
+    let mut round_slugs = Vec::with_capacity(summary.rounds.len());
+    for round in &summary.rounds {
+        let round_name = format!("{} · round {}", name, round.round);
+        let round_slug = format!("{}-round-{:03}", slug, round.round);
+        let round_source = source.join(format!("round-{:03}", round.round));
+        reports.push(load_match_report(
+            round_source,
+            round_name,
+            round_slug.clone(),
+            false,
+            output,
+        )?);
+        round_slugs.push(round_slug);
+    }
+    let report_dir = output.join("series").join(&slug);
+    fs::create_dir_all(report_dir.join("artifacts"))?;
+    fs::copy(
+        source.join("series.json"),
+        report_dir.join("artifacts/series.json"),
+    )?;
+    let provenance = summary.rounds.first().and_then(|round| {
+        read_provenance(
+            &source
+                .join(format!("round-{:03}", round.round))
+                .join("match.json"),
+        )
+        .ok()
+    });
+    series_reports.push(SeriesReport {
+        name,
+        slug,
+        summary,
+        report_dir,
+        round_slugs,
+        provenance,
+        current: false,
+    });
+    Ok(())
 }
 
 fn load_match_report(
@@ -295,6 +420,25 @@ fn discover_series(input: &Path) -> Result<Vec<PathBuf>, ReportError> {
     }
 }
 
+fn discover_benchmarks(input: &Path) -> Result<Vec<PathBuf>, ReportError> {
+    if input.join("benchmark.json").is_file() {
+        return Ok(vec![input.to_owned()]);
+    }
+    let mut benchmarks = Vec::new();
+    for entry in fs::read_dir(input)? {
+        let path = entry?.path();
+        if path.join("benchmark.json").is_file() {
+            benchmarks.push(path);
+        }
+    }
+    benchmarks.sort();
+    if benchmarks.is_empty() {
+        Err(ReportError::NoBenchmarks(input.to_owned()))
+    } else {
+        Ok(benchmarks)
+    }
+}
+
 fn is_match_dir(path: &Path) -> bool {
     path.join("events.jsonl").is_file() && path.join("world.json").is_file()
 }
@@ -310,6 +454,14 @@ fn read_world(path: &Path) -> Result<WorldState, ReportError> {
 fn read_series(path: &Path) -> Result<SeriesSummary, ReportError> {
     let source = fs::read(path)?;
     serde_json::from_slice(&source).map_err(|error| ReportError::Series {
+        path: path.to_owned(),
+        detail: error.to_string(),
+    })
+}
+
+fn read_benchmark(path: &Path) -> Result<BenchmarkSummary, ReportError> {
+    let source = fs::read(path)?;
+    serde_json::from_slice(&source).map_err(|error| ReportError::Benchmark {
         path: path.to_owned(),
         detail: error.to_string(),
     })
@@ -335,7 +487,19 @@ fn copy_public_artifacts(report: &MatchReport) -> Result<(), ReportError> {
     Ok(())
 }
 
-fn render_index(reports: &[MatchReport], series: &[SeriesReport]) -> String {
+fn render_index(
+    reports: &[MatchReport],
+    series: &[SeriesReport],
+    benchmarks: &[BenchmarkReport],
+) -> String {
+    let benchmark_cards = render_benchmark_cards(benchmarks);
+    let benchmark_section = if benchmark_cards.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "<section><div class=\"section-heading\"><h2>Benchmarks</h2><p>Model performance across a consistent fleet of infrastructure arenas.</p></div><div class=\"match-list benchmark-list\">{benchmark_cards}</div></section>"
+        )
+    };
     let current_series = render_series_cards(series.iter().filter(|report| report.current));
     let historical_series = render_series_cards(series.iter().filter(|report| !report.current));
     let current_series = if current_series.is_empty() {
@@ -361,9 +525,37 @@ fn render_index(reports: &[MatchReport], series: &[SeriesReport]) -> String {
     page(
         "Agents of Empires · Match Archive",
         &format!(
-            "<header class=\"hero\"><span class=\"eyebrow\">Match archive</span><h1>Agents of Empires</h1><p>Build races decided by durable deployments, not confident answers.</p></header><main><section class=\"about\"><span class=\"eyebrow\">About the arena</span><h2>What am I looking at?</h2><p>Agents of Empires drops AI infrastructure agents into identical disposable NixOS machines and gives them the same service contract. A referee checks recovered state, fresh work, service restarts, and host reboots. The first agent to produce a durable deployment wins.</p><p><a href=\"https://github.com/ducks/agents-of-empires\">Read how the arena works and view the source →</a></p></section><section><div class=\"section-heading\"><h2>Series</h2><p>Seat-rotated races that separate agent performance from territory advantage.</p></div><div class=\"match-list series-list\">{current_series}</div></section><section><div class=\"section-heading\"><h2>Current</h2><p>Matches sharing the newest manifest and verifier compatibility key for each arena.</p></div><div class=\"match-list\">{current}</div></section><section><div class=\"section-heading\"><h2>Historical</h2><p>Prototype or superseded runs retained for auditability, not direct comparison.</p></div><div class=\"match-list historical\">{historical}{historical_series}</div></section></main>"
+            "<header class=\"hero\"><span class=\"eyebrow\">Match archive</span><h1>Agents of Empires</h1><p>Build races decided by durable deployments, not confident answers.</p></header><main><section class=\"about\"><span class=\"eyebrow\">About the arena</span><h2>What am I looking at?</h2><p>Agents of Empires drops AI infrastructure agents into identical disposable NixOS machines and gives them the same service contract. A referee checks recovered state, fresh work, service restarts, and host reboots. The first agent to produce a durable deployment wins.</p><p><a href=\"https://github.com/ducks/agents-of-empires\">Read how the arena works and view the source →</a></p></section>{benchmark_section}<section><div class=\"section-heading\"><h2>Series</h2><p>Seat-rotated races that separate agent performance from territory advantage.</p></div><div class=\"match-list series-list\">{current_series}</div></section><section><div class=\"section-heading\"><h2>Current</h2><p>Matches sharing the newest manifest and verifier compatibility key for each arena.</p></div><div class=\"match-list\">{current}</div></section><section><div class=\"section-heading\"><h2>Historical</h2><p>Prototype or superseded runs retained for auditability, not direct comparison.</p></div><div class=\"match-list historical\">{historical}{historical_series}</div></section></main>"
         ),
     )
+}
+
+fn render_benchmark_cards(reports: &[BenchmarkReport]) -> String {
+    let mut body = String::new();
+    for report in reports {
+        let leader = report.summary.standings.first();
+        let leader_name = leader.map_or("No leader", |standing| standing.model.as_str());
+        let record = leader.map_or_else(
+            || "No completed arenas".to_owned(),
+            |standing| {
+                format!(
+                    "{} wins · {}/{} milestones",
+                    standing.wins, standing.milestone_passes, standing.milestones_available
+                )
+            },
+        );
+        let _ = write!(
+            body,
+            "<a class=\"match-card benchmark-card\" href=\"benchmarks/{}/\"><div><span class=\"eyebrow\">{} of {} arenas</span><h2>{}</h2><p>Cross-arena model benchmark</p></div><div class=\"metrics\"><strong>{}</strong><span>{}</span></div></a>",
+            escape(&report.slug),
+            report.summary.arenas_completed,
+            report.summary.arenas_requested,
+            escape(&report.name),
+            escape(leader_name),
+            escape(&record),
+        );
+    }
+    body
 }
 
 fn render_cards<'a>(reports: impl Iterator<Item = &'a MatchReport>) -> String {
@@ -431,6 +623,122 @@ fn render_series_cards<'a>(reports: impl Iterator<Item = &'a SeriesReport>) -> S
         );
     }
     body
+}
+
+fn render_benchmark_report(report: &BenchmarkReport) -> String {
+    let leader = report.summary.standings.first();
+    let leader_name = leader.map_or("No leader", |standing| standing.model.as_str());
+    let rounds: usize = report
+        .summary
+        .arenas
+        .iter()
+        .map(|arena| arena.rounds_completed)
+        .sum();
+    let all_usage = report
+        .summary
+        .standings
+        .iter()
+        .all(|standing| standing.cost_microusd.is_some());
+    let total_cost = all_usage.then(|| {
+        report
+            .summary
+            .standings
+            .iter()
+            .filter_map(|standing| standing.cost_microusd)
+            .sum::<u64>()
+    });
+
+    let mut standings = String::new();
+    for (index, standing) in report.summary.standings.iter().enumerate() {
+        let tokens = standing
+            .input_tokens
+            .zip(standing.output_tokens)
+            .map(|(input, output)| input.saturating_add(output));
+        let _ = write!(
+            standings,
+            "<tr class=\"{}\"><td><strong>{}</strong></td><td>{}</td><td>{}/{}</td><td>{}/{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+            if index == 0 { "winner-row" } else { "" },
+            escape(&standing.model),
+            standing.wins,
+            standing.durable_deployments,
+            standing.appearances,
+            standing.milestone_passes,
+            standing.milestones_available,
+            standing
+                .median_durable_ms
+                .map_or_else(|| "n/a".to_owned(), duration),
+            tokens.map_or_else(|| "n/a".to_owned(), grouped),
+            standing
+                .cost_microusd
+                .map_or_else(|| "n/a".to_owned(), money),
+            standing
+                .cost_per_durable_microusd
+                .map_or_else(|| "n/a".to_owned(), money),
+            render_failures(standing),
+        );
+    }
+
+    let mut arenas = String::new();
+    for (index, arena) in report.summary.arenas.iter().enumerate() {
+        let leader = arena.standings.first();
+        let leader_name = leader.map_or("No leader", |standing| standing.model.as_str());
+        let record = leader.map_or_else(
+            || "No completed rounds".to_owned(),
+            |standing| {
+                format!(
+                    "{} wins · {}/{} milestones",
+                    standing.wins, standing.milestone_passes, standing.milestones_available
+                )
+            },
+        );
+        let slug = report.series_slugs.get(index).map_or("", String::as_str);
+        let status = if arena.aborted {
+            "aborted"
+        } else if arena.rounds_completed == arena.rounds_requested {
+            "complete"
+        } else {
+            "in progress"
+        };
+        let _ = write!(
+            arenas,
+            "<a class=\"match-card series-card\" href=\"../../series/{}/\"><div><span class=\"eyebrow\">{} · {}/{} rounds</span><h2>{}</h2><p>Open the seat rotation and individual match replays.</p></div><div class=\"metrics\"><strong>{}</strong><span>{}</span></div></a>",
+            escape(slug),
+            status,
+            arena.rounds_completed,
+            arena.rounds_requested,
+            escape(&arena.arena_id),
+            escape(leader_name),
+            escape(&record),
+        );
+    }
+
+    let content = format!(
+        "<nav><a href=\"../../\">← Archive</a><span>Agents of Empires · benchmark</span></nav>
+        <header class=\"hero match-hero\"><span class=\"eyebrow\">Cross-arena benchmark</span><h1>{}</h1><p>One consistent model fleet measured across independent infrastructure contracts.</p>
+        <div class=\"hero-stats\"><div><small>Leader</small><strong>{}</strong></div><div><small>Arenas</small><strong>{}/{}</strong></div><div><small>Rounds</small><strong>{}</strong></div><div><small>Recorded cost</small><strong>{}</strong></div></div></header>
+        <main><section><div class=\"section-heading\"><h2>Model leaderboard</h2><p>Ranked by wins, durable deployments, milestone coverage, time, and cost.</p></div><div class=\"table-wrap\"><table><thead><tr><th>Model</th><th>Wins</th><th>Durable</th><th>Milestones</th><th>Median</th><th>Tokens</th><th>Cost</th><th>Cost / durable</th><th>Failures</th></tr></thead><tbody>{standings}</tbody></table></div></section>
+        <section><div class=\"section-heading\"><h2>Arenas</h2><p>Open an arena for its seat rotation, then any round for the full replay.</p></div><div class=\"match-list\">{arenas}</div></section>
+        <footer><a href=\"artifacts/benchmark.json\">benchmark.json</a></footer></main>",
+        escape(&report.name),
+        escape(leader_name),
+        report.summary.arenas_completed,
+        report.summary.arenas_requested,
+        rounds,
+        total_cost.map_or_else(|| "n/a".to_owned(), money),
+    );
+    page(&format!("{} · Agents of Empires", report.name), &content)
+}
+
+fn render_failures(standing: &BenchmarkStanding) -> String {
+    if standing.failures.is_empty() {
+        return "—".into();
+    }
+    standing
+        .failures
+        .iter()
+        .map(|(source, count)| format!("{} {count}", escape(source)))
+        .collect::<Vec<_>>()
+        .join("<br>")
 }
 
 fn render_series(report: &SeriesReport) -> String {

@@ -212,6 +212,8 @@ a directory:
 ```bash
 agents-of-empires report matches --output site
 agents-of-empires report matches --series series --output site
+agents-of-empires report benchmarks/infra-core \
+  --benchmark benchmarks/infra-core --output site
 ```
 
 Open `site/index.html` locally or publish `site/` with GitHub Pages. Each match
@@ -226,6 +228,12 @@ Pass one or more `--series` inputs to add battle cards to the same archive.
 Each series page ranks the fleet by durable outcomes and cost, shows the full
 seat rotation, and links every round to its ordinary match replay and audit
 artifacts.
+
+Pass one or more `--benchmark` inputs to add cross-arena model leaderboards.
+The report automatically imports each benchmark's arena series and rounds, so
+the benchmark page drills down into seat rotations, individual match replays,
+and their audit artifacts. A benchmark directory can also be used as the
+positional input when no separate match archive is needed.
 
 Harness adapters may atomically publish cumulative usage to `AOE_USAGE_FILE`
 while they run. The controller records only the increase since the previous

@@ -5,8 +5,8 @@ use std::path::PathBuf;
 
 use aoe_controller::{
     ArenaCommand, BenchmarkOptions, Cli, Command, RunOptions, SeriesOptions, doctor,
-    generate_reports_with_series, init_arena, inspect, render_benchmark, render_series, replay_log,
-    run_benchmark, run_match, run_series, validate, validate_arena_package,
+    generate_reports_with_benchmarks, init_arena, inspect, render_benchmark, render_series,
+    replay_log, run_benchmark, run_match, run_series, validate, validate_arena_package,
 };
 use aoe_tui::RenderOptions;
 
@@ -24,7 +24,8 @@ Usage:
       [--output DIR] [--base-port PORT] [--multicast-port PORT] [--no-color]
   agents-of-empires replay EVENT_LOG [--json] [--no-color] [--width COLUMNS]
   agents-of-empires inspect EVENT_LOG SEQUENCE [--json]
-  agents-of-empires report MATCH_OR_MATCHES_DIR [--series SERIES_OR_SERIES_DIR] [--output DIR]
+  agents-of-empires report MATCH_OR_MATCHES_DIR [--series SERIES_OR_SERIES_DIR]
+      [--benchmark BENCHMARK_OR_BENCHMARKS_DIR] [--output DIR]
   agents-of-empires doctor [--json]
 ";
 
@@ -182,15 +183,19 @@ async fn execute() -> Result<(), Box<dyn std::error::Error>> {
             input,
             output,
             series,
+            benchmarks,
         } => {
             let series: Vec<_> = series.into_iter().map(PathBuf::from).collect();
-            let report = generate_reports_with_series(&input, &series, &output)?;
+            let benchmarks: Vec<_> = benchmarks.into_iter().map(PathBuf::from).collect();
+            let report = generate_reports_with_benchmarks(&input, &series, &benchmarks, &output)?;
             println!(
-                "generated {} match report{} and {} series report{} at {}",
+                "generated {} match report{}, {} series report{}, and {} benchmark report{} at {}",
                 report.matches,
                 if report.matches == 1 { "" } else { "s" },
                 report.series,
                 if report.series == 1 { "" } else { "s" },
+                report.benchmarks,
+                if report.benchmarks == 1 { "" } else { "s" },
                 report.index.display()
             );
         }

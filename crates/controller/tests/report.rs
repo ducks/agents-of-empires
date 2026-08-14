@@ -1,7 +1,10 @@
+use std::collections::BTreeMap;
 use std::fs;
 
 use aoe_controller::{
-    SeriesRound, SeriesStanding, SeriesSummary, generate_reports, generate_reports_with_series,
+    BenchmarkArenaSummary, BenchmarkPlanEntry, BenchmarkStanding, BenchmarkSummary, SeriesRound,
+    SeriesStanding, SeriesSummary, generate_reports, generate_reports_with_benchmarks,
+    generate_reports_with_series,
 };
 use aoe_domain::{
     AgentTerminalState, CompetitorState, Event, EventEnvelope, FailureSource, MatchState,
@@ -405,6 +408,7 @@ fn generates_series_battle_card_and_round_links() {
     let generated = generate_reports_with_series(&matches, &[series], &output).expect("report");
     assert_eq!(generated.matches, 3);
     assert_eq!(generated.series, 1);
+    assert_eq!(generated.benchmarks, 0);
     let index = fs::read_to_string(output.join("index.html")).expect("index");
     assert!(index.contains("Seat-rotated races"));
     assert!(index.contains("first-build-series"));
@@ -424,6 +428,127 @@ fn generates_series_battle_card_and_round_links() {
     assert!(
         output
             .join("series/first-build-series/artifacts/series.json")
+            .is_file()
+    );
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn generates_benchmark_leaderboard_and_drill_down() {
+    let root = temp_dir("benchmark-site");
+    let _ = fs::remove_dir_all(&root);
+    let benchmark = root.join("benchmarks/infra-core");
+    let arena = benchmark.join("01-first-build-real");
+    let round = arena.join("round-001");
+    fs::create_dir_all(&round).expect("round dir");
+    fs::write(
+        round.join("world.json"),
+        serde_json::to_vec(&WorldState::default()).expect("world"),
+    )
+    .expect("world file");
+    fs::write(round.join("events.jsonl"), "").expect("events");
+
+    let series = SeriesSummary {
+        schema_version: 1,
+        arena_id: "first-build-real".into(),
+        rounds_requested: 1,
+        rounds_completed: 1,
+        rounds: vec![SeriesRound {
+            round: 1,
+            output: round.clone(),
+            seats: [("deepseek-builder".into(), "builder-one".into())].into(),
+            winner_territory: Some("builder-one".into()),
+            winner_agent: Some("deepseek-builder".into()),
+            duration_ms: 42_000,
+            usage_agents: vec!["deepseek-builder".into()],
+        }],
+        standings: vec![SeriesStanding {
+            agent: "deepseek-builder".into(),
+            model: "deepseek/v4".into(),
+            appearances: 1,
+            wins: 1,
+            durable_deployments: 1,
+            median_durable_ms: Some(42_000),
+            usage_recorded: 1,
+            input_tokens: Some(10_000),
+            output_tokens: Some(1_000),
+            cost_microusd: Some(2_000),
+            cost_per_durable_microusd: Some(2_000),
+        }],
+    };
+    fs::write(
+        arena.join("series.json"),
+        serde_json::to_vec_pretty(&series).expect("series"),
+    )
+    .expect("series file");
+
+    let standing = BenchmarkStanding {
+        model: "deepseek/v4".into(),
+        appearances: 1,
+        wins: 1,
+        durable_deployments: 1,
+        durable_times_ms: vec![42_000],
+        median_durable_ms: Some(42_000),
+        milestone_passes: 4,
+        milestones_available: 4,
+        usage_recorded: 1,
+        input_tokens: Some(10_000),
+        output_tokens: Some(1_000),
+        cost_microusd: Some(2_000),
+        cost_per_durable_microusd: Some(2_000),
+        failures: BTreeMap::new(),
+    };
+    let summary = BenchmarkSummary {
+        schema_version: 1,
+        suite_id: "infra-core".into(),
+        arenas_requested: 1,
+        arenas_completed: 1,
+        plan: vec![BenchmarkPlanEntry {
+            arena_id: "first-build-real".into(),
+            manifest: "arenas/first-build/agents-real.toml".into(),
+            rounds: 1,
+            output: arena.clone(),
+        }],
+        arenas: vec![BenchmarkArenaSummary {
+            arena_id: "first-build-real".into(),
+            output: arena.clone(),
+            rounds_requested: 1,
+            rounds_completed: 1,
+            aborted: false,
+            standings: vec![standing.clone()],
+        }],
+        standings: vec![standing],
+    };
+    fs::write(
+        benchmark.join("benchmark.json"),
+        serde_json::to_vec_pretty(&summary).expect("benchmark"),
+    )
+    .expect("benchmark file");
+
+    let output = root.join("site");
+    let generated = generate_reports_with_benchmarks(
+        &benchmark,
+        &[],
+        std::slice::from_ref(&benchmark),
+        &output,
+    )
+    .expect("report");
+    assert_eq!(generated.matches, 1);
+    assert_eq!(generated.series, 1);
+    assert_eq!(generated.benchmarks, 1);
+    let index = fs::read_to_string(output.join("index.html")).expect("index");
+    assert!(index.contains("Cross-arena model benchmark"));
+    assert!(index.contains("benchmarks/infra-core/"));
+    let page = fs::read_to_string(output.join("benchmarks/infra-core/index.html"))
+        .expect("benchmark page");
+    assert!(page.contains("Model leaderboard"));
+    assert!(page.contains("deepseek/v4"));
+    assert!(page.contains("4/4"));
+    assert!(page.contains("../../series/infra-core-first-build-real/"));
+    assert!(
+        output
+            .join("matches/infra-core-first-build-real-round-001/index.html")
             .is_file()
     );
     fs::remove_dir_all(root).expect("cleanup");

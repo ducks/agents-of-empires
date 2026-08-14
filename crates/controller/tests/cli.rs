@@ -115,6 +115,7 @@ fn parses_report_directories() {
             input: PathBuf::from("matches"),
             output: PathBuf::from("docs"),
             series: Vec::new(),
+            benchmarks: Vec::new(),
         }
     );
 }
@@ -129,6 +130,8 @@ fn parses_series_report_inputs() {
             "series/first-build",
             "--series",
             "series/failover",
+            "--benchmark",
+            "benchmarks/infra-core",
         ]
         .into_iter()
         .map(str::to_owned),
@@ -140,6 +143,7 @@ fn parses_series_report_inputs() {
             input: PathBuf::from("matches"),
             output: PathBuf::from("site"),
             series: vec!["series/first-build".into(), "series/failover".into()],
+            benchmarks: vec!["benchmarks/infra-core".into()],
         }
     );
 }
