@@ -22,6 +22,16 @@ pub enum Command {
         multicast_port: u16,
         no_color: bool,
     },
+    Series {
+        manifest: PathBuf,
+        output: PathBuf,
+        adapters: Vec<String>,
+        credentials: Vec<String>,
+        rounds: Option<usize>,
+        base_port: u16,
+        multicast_port: u16,
+        no_color: bool,
+    },
     Replay {
         log: PathBuf,
         json: bool,
@@ -71,6 +81,7 @@ impl Cli {
             "help" | "--help" | "-h" => Command::Help,
             "validate" => parse_validate(args)?,
             "run" => parse_run(args)?,
+            "series" => parse_series(args)?,
             "replay" => parse_replay(args)?,
             "inspect" => parse_inspect(args)?,
             "report" => parse_report(args)?,
@@ -160,6 +171,32 @@ fn parse_run(mut args: Vec<String>) -> Result<Command, ParseError> {
     })
 }
 
+fn parse_series(mut args: Vec<String>) -> Result<Command, ParseError> {
+    let manifest = PathBuf::from(take_positional(&mut args, "MANIFEST")?);
+    let output = if args.iter().any(|arg| arg == "--output") {
+        PathBuf::from(take_flag_value(&mut args, "--output")?)
+    } else {
+        PathBuf::from("series/latest")
+    };
+    let rounds = optional_numeric_flag(&mut args, "--rounds")?;
+    let base_port = numeric_flag(&mut args, "--base-port", 26000_u16)?;
+    let multicast_port = numeric_flag(&mut args, "--multicast-port", 23977_u16)?;
+    let no_color = take_bool(&mut args, "--no-color");
+    let adapters = repeated_flag(&mut args, "--adapter")?;
+    let credentials = repeated_flag(&mut args, "--credential")?;
+    reject_remaining(args)?;
+    Ok(Command::Series {
+        manifest,
+        output,
+        adapters,
+        credentials,
+        rounds,
+        base_port,
+        multicast_port,
+        no_color,
+    })
+}
+
 fn parse_replay(mut args: Vec<String>) -> Result<Command, ParseError> {
     let log = PathBuf::from(take_positional(&mut args, "EVENT_LOG")?);
     let json = take_bool(&mut args, "--json");
@@ -216,4 +253,21 @@ where
         flag: flag.to_owned(),
         value,
     })
+}
+
+fn optional_numeric_flag<T>(args: &mut Vec<String>, flag: &str) -> Result<Option<T>, ParseError>
+where
+    T: std::str::FromStr,
+{
+    if !args.iter().any(|arg| arg == flag) {
+        return Ok(None);
+    }
+    let value = take_flag_value(args, flag)?;
+    value
+        .parse()
+        .map(Some)
+        .map_err(|_| ParseError::InvalidValue {
+            flag: flag.to_owned(),
+            value,
+        })
 }

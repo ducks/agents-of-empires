@@ -4,7 +4,8 @@ use std::io::IsTerminal;
 use std::path::PathBuf;
 
 use aoe_controller::{
-    Cli, Command, RunOptions, doctor, generate_reports, inspect, replay_log, run_match, validate,
+    Cli, Command, RunOptions, SeriesOptions, doctor, generate_reports, inspect, render_series,
+    replay_log, run_match, run_series, validate,
 };
 use aoe_tui::RenderOptions;
 
@@ -14,6 +15,8 @@ Usage:
   agents-of-empires validate MANIFEST [--json]
   agents-of-empires run MANIFEST --adapter NAME=PATH [--credential TERRITORY=PATH]
       [--output DIR] [--base-port PORT] [--multicast-port PORT] [--no-color]
+  agents-of-empires series MANIFEST --adapter NAME=PATH [--credential TERRITORY=PATH]
+      [--rounds N] [--output DIR] [--base-port PORT] [--multicast-port PORT] [--no-color]
   agents-of-empires replay EVENT_LOG [--json] [--no-color] [--width COLUMNS]
   agents-of-empires inspect EVENT_LOG SEQUENCE [--json]
   agents-of-empires report MATCH_OR_MATCHES_DIR [--output DIR]
@@ -68,6 +71,31 @@ async fn execute() -> Result<(), Box<dyn std::error::Error>> {
             })
             .await?;
             println!("match ended: {:?}", state.match_state);
+        }
+        Command::Series {
+            manifest,
+            output,
+            adapters,
+            credentials,
+            rounds,
+            base_port,
+            multicast_port,
+            no_color,
+        } => {
+            let summary = run_series(SeriesOptions {
+                run: RunOptions {
+                    manifest,
+                    output,
+                    adapters: mappings(adapters, "--adapter")?,
+                    credentials: mappings(credentials, "--credential")?,
+                    base_port,
+                    multicast_port,
+                    color: !no_color && std::io::stdout().is_terminal(),
+                },
+                rounds,
+            })
+            .await?;
+            println!("{}", render_series(&summary));
         }
         Command::Replay {
             log,

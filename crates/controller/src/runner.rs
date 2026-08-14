@@ -71,6 +71,14 @@ pub enum RunError {
 /// Returns an error for invalid configuration, guest lifecycle failures,
 /// failed preflight, event persistence errors, or agent controller failures.
 pub async fn run_match(options: RunOptions) -> Result<WorldState, RunError> {
+    let manifest = ArenaManifest::load(&options.manifest)?;
+    run_match_with_manifest(options, manifest).await
+}
+
+pub(crate) async fn run_match_with_manifest(
+    options: RunOptions,
+    manifest: ArenaManifest,
+) -> Result<WorldState, RunError> {
     let event_path = options.output.join("events.jsonl");
     if event_path
         .metadata()
@@ -79,7 +87,6 @@ pub async fn run_match(options: RunOptions) -> Result<WorldState, RunError> {
         return Err(RunError::OutputExists(event_path.display().to_string()));
     }
     std::fs::create_dir_all(&options.output)?;
-    let manifest = ArenaManifest::load(&options.manifest)?;
     write_provenance(
         &options.manifest,
         &manifest,

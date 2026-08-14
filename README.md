@@ -107,6 +107,30 @@ cargo run --release --bin agents-of-empires -- run \
 The opening fleet is DeepSeek V4 Flash 0731, GPT-5.6 Luna, and GLM 5.2 at
 high reasoning. Model identity is not exposed in the guest instructions.
 
+Run a complete seat-rotated series against the same arena:
+
+```bash
+export OPENROUTER_API_KEY=...
+credentials="$(scripts/prepare-first-build-credentials.sh)"
+cargo run --release --bin agents-of-empires -- series \
+  arenas/first-build/agents-real.toml \
+  --adapter claux=adapters/claux.sh \
+  --credential builder-one="$credentials/builder-one.env" \
+  --credential builder-two="$credentials/builder-two.env" \
+  --credential builder-three="$credentials/builder-three.env" \
+  --output "series/first-build-$(date -u +%Y%m%d-%H%M%S)"
+```
+
+By default, a series runs one round per territory. Every round uses the same
+arena, verifier, adapters, and port range, but each agent moves to the next
+territory. Use `--rounds N` to run more or fewer rounds. Rounds execute
+sequentially and retain their normal match artifacts under `round-NNN/`.
+
+The runner atomically updates `series.json` after every completed round and
+prints aggregate wins, durable deployments, median durable time, token usage,
+total cost, and cost per durable deployment. Usage totals are reported as
+unavailable when any contributing round lacks usage telemetry.
+
 The match writes an append-only `events.jsonl` and final `world.json`. Live and
 replay views use the same reducer:
 

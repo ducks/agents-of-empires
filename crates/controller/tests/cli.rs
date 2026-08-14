@@ -79,3 +79,37 @@ fn parses_report_directories() {
         }
     );
 }
+
+#[test]
+fn parses_series_configuration() {
+    let cli = Cli::parse(
+        [
+            "series",
+            "arena.toml",
+            "--rounds",
+            "5",
+            "--adapter",
+            "claux=/bin/claux-adapter",
+            "--credential",
+            "gatekeeper=/tmp/key",
+            "--output",
+            "series/test",
+        ]
+        .into_iter()
+        .map(str::to_owned),
+    )
+    .expect("parse");
+    assert_eq!(
+        cli.command,
+        Command::Series {
+            manifest: PathBuf::from("arena.toml"),
+            output: PathBuf::from("series/test"),
+            adapters: vec!["claux=/bin/claux-adapter".into()],
+            credentials: vec!["gatekeeper=/tmp/key".into()],
+            rounds: Some(5),
+            base_port: 26000,
+            multicast_port: 23977,
+            no_color: false,
+        }
+    );
+}
