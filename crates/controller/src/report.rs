@@ -276,16 +276,36 @@ fn render_match(report: &MatchReport) -> String {
             |value| format!("{value:?}").to_lowercase(),
         );
         let artifact = transcript_link(report, id);
+        let usage_known = report.events.iter().any(|event| {
+            event.value.get("kind").and_then(serde_json::Value::as_str) == Some("usage_charged")
+                && event.value.get("agent").and_then(serde_json::Value::as_str) == Some(id)
+                && ["input_tokens", "output_tokens", "cost_microusd"]
+                    .iter()
+                    .any(|field| event.value.get(field).is_some_and(|value| !value.is_null()))
+        });
         let _ = write!(
             agents,
-            "<tr><td><strong>{}</strong><small>{}</small></td><td>{}</td><td><span class=\"pill {}\">{}</span></td><td>{}</td><td>{}</td><td>{}</td></tr>",
+            "<tr><td><strong>{}</strong><small>{}</small></td><td>{}</td><td><span class=\"pill {}\">{}</span></td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
             escape(id),
             escape(&agent.territory),
             escape(&agent.model),
             terminal_class(agent.terminal_state),
             escape(&terminal),
-            grouped(agent.input_tokens),
-            grouped(agent.output_tokens),
+            if usage_known {
+                grouped(agent.input_tokens)
+            } else {
+                "n/a".into()
+            },
+            if usage_known {
+                grouped(agent.output_tokens)
+            } else {
+                "n/a".into()
+            },
+            if usage_known {
+                money(agent.cost_microusd)
+            } else {
+                "n/a".into()
+            },
             artifact
         );
     }
@@ -321,7 +341,7 @@ fn render_match(report: &MatchReport) -> String {
         <header class=\"hero match-hero\"><span class=\"eyebrow\">{:?} · {}</span><h1>{}</h1><p>{}</p>
         <div class=\"hero-stats\"><div><small>Winner</small><strong>{}</strong></div><div><small>Durable in</small><strong>{}</strong></div><div><small>Recorded cost</small><strong>{}</strong></div><div><small>Tokens</small><strong>{}</strong></div></div></header>
         <main>{replay}<section><div class=\"section-heading\"><h2>Territories</h2><p>The referee-owned result frozen when the first deployment became durable.</p></div><div class=\"table-wrap\"><table><thead><tr><th>Territory</th><th>State</th><th>Milestones</th><th>Points</th><th>Durable at</th></tr></thead><tbody>{territories}</tbody></table></div></section>
-        <section><div class=\"section-heading\"><h2>Agents</h2><p>Terminal outcomes include activity captured during the post-match drain.</p></div><div class=\"table-wrap\"><table><thead><tr><th>Agent</th><th>Model</th><th>Outcome</th><th>Input</th><th>Output</th><th>Artifact</th></tr></thead><tbody>{agents}</tbody></table></div></section>
+        <section><div class=\"section-heading\"><h2>Agents</h2><p>Usage includes cumulative checkpoints captured while agents were still running.</p></div><div class=\"table-wrap\"><table><thead><tr><th>Agent</th><th>Model</th><th>Outcome</th><th>Input</th><th>Output</th><th>Cost</th><th>Artifact</th></tr></thead><tbody>{agents}</tbody></table></div></section>
         <section><div class=\"section-heading\"><h2>Event timeline</h2><p>{} immutable events. The match clock remains frozen during post-match collection.</p></div><ol class=\"timeline\">{timeline}</ol></section>
         <footer><a href=\"artifacts/events.jsonl\">events.jsonl</a><a href=\"artifacts/world.json\">world.json</a></footer></main>",
         state.match_state,

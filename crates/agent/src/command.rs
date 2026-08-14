@@ -56,6 +56,7 @@ impl AgentAdapter for CommandAdapter {
             .map_err(|error| AgentControllerError::Adapter(error.to_string()))?;
         let instruction_path = run_root.join("instruction.md");
         let result_path = run_root.join("result.json");
+        let usage_path = run_root.join("usage.json");
         let stdout_path = run_root.join("stdout.log");
         let stderr_path = run_root.join("stderr.log");
         tokio::fs::write(&instruction_path, &invocation.instruction)
@@ -76,6 +77,7 @@ impl AgentAdapter for CommandAdapter {
             .env("AOE_REASONING_EFFORT", &invocation.config.reasoning_effort)
             .env("AOE_INSTRUCTION_FILE", &instruction_path)
             .env("AOE_RESULT_FILE", &result_path)
+            .env("AOE_USAGE_FILE", &usage_path)
             .env("AOE_STDOUT_FILE", &stdout_path)
             .env("AOE_STDERR_FILE", &stderr_path)
             .stdin(Stdio::null())

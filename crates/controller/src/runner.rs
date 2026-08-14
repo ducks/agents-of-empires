@@ -3,7 +3,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use aoe_agent::{AgentController, AgentInvocation, AgentStatus, CommandAdapter};
+use aoe_agent::{
+    AgentController, AgentInvocation, AgentStatus, AgentUsage, AgentUsageCheckpoint, CommandAdapter,
+};
 use aoe_domain::{
     ArenaManifest, Event, EventEnvelope, FailureSource, MatchMode, MilestoneConfig,
     MilestoneOperation,
@@ -215,6 +217,7 @@ async fn run_booted_match(
     Ok(world)
 }
 
+#[allow(clippy::too_many_lines)]
 async fn run_booted_build_match(
     manifest: &ArenaManifest,
     plan: &NetworkPlan,
@@ -265,6 +268,7 @@ async fn run_booted_build_match(
     let deadline = Duration::from_secs(manifest.rules.duration_seconds);
     let tick = Duration::from_millis(manifest.rules.tick_ms);
     let build = manifest.build.as_ref().expect("validated build contract");
+    let mut usage_seen = HashMap::new();
 
     while referee.outcome().is_none() && started.elapsed() < deadline {
         tokio::select! {
@@ -390,6 +394,15 @@ async fn run_booted_build_match(
                 }
             }
         }
+        record_build_usage_checkpoints(
+            &options.output,
+            &mut usage_seen,
+            &mut referee,
+            &mut log,
+            &mut world,
+            &mut events,
+            elapsed_ms(started),
+        )?;
         render_live(&world, &events, options.color);
     }
 
@@ -409,6 +422,8 @@ async fn run_booted_build_match(
         &mut log,
         &mut world,
         &mut events,
+        &mut usage_seen,
+        &options.output,
         frozen_elapsed_ms,
         POST_MATCH_DRAIN,
     )
@@ -428,6 +443,8 @@ async fn drain_build_agents(
     log: &mut EventLog,
     world: &mut WorldState,
     events: &mut Vec<EventEnvelope>,
+    usage_seen: &mut HashMap<String, AgentUsage>,
+    usage_root: &Path,
     frozen_elapsed_ms: u64,
     drain: Duration,
 ) -> Result<(), RunError> {
@@ -456,6 +473,7 @@ async fn drain_build_agents(
                     world,
                     events,
                     vec![result],
+                    usage_seen,
                     frozen_elapsed_ms,
                 )?;
             }
@@ -468,8 +486,25 @@ async fn drain_build_agents(
     let _ = agent_task.await;
     while let Ok(result) = agent_results.try_recv() {
         captured_agents = captured_agents.saturating_add(1);
-        record_build_agent_results(referee, log, world, events, vec![result], frozen_elapsed_ms)?;
+        record_build_agent_results(
+            referee,
+            log,
+            world,
+            events,
+            vec![result],
+            usage_seen,
+            frozen_elapsed_ms,
+        )?;
     }
+    record_build_usage_checkpoints(
+        usage_root,
+        usage_seen,
+        referee,
+        log,
+        world,
+        events,
+        frozen_elapsed_ms,
+    )?;
     let terminated: Vec<_> = world
         .agents
         .iter()
@@ -680,6 +715,7 @@ fn record_build_agent_results(
     world: &mut WorldState,
     events: &mut Vec<EventEnvelope>,
     results: Vec<aoe_agent::AgentResult>,
+    usage_seen: &mut HashMap<String, AgentUsage>,
     elapsed: u64,
 ) -> Result<(), RunError> {
     for result in results {
@@ -703,14 +739,15 @@ fn record_build_agent_results(
                 detail: result.summary.clone(),
             }
         };
+        let usage = usage_delta(usage_seen, &result.agent, &result.usage);
         for event in [
             terminal,
             Event::UsageCharged {
                 agent: result.agent,
-                resource_units: result.usage.resource_units,
-                input_tokens: result.usage.input_tokens,
-                output_tokens: result.usage.output_tokens,
-                cost_microusd: result.usage.cost_microusd,
+                resource_units: usage.resource_units,
+                input_tokens: usage.input_tokens,
+                output_tokens: usage.output_tokens,
+                cost_microusd: usage.cost_microusd,
             },
         ] {
             let envelope = referee.record(event, elapsed)?;
@@ -718,6 +755,97 @@ fn record_build_agent_results(
         }
     }
     Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn record_build_usage_checkpoints(
+    usage_root: &Path,
+    usage_seen: &mut HashMap<String, AgentUsage>,
+    referee: &mut BuildReferee,
+    log: &mut EventLog,
+    world: &mut WorldState,
+    events: &mut Vec<EventEnvelope>,
+    elapsed: u64,
+) -> Result<(), RunError> {
+    for agent in world.agents.keys().cloned().collect::<Vec<_>>() {
+        let path = usage_root.join("agents").join(&agent).join("usage.json");
+        let Ok(source) = std::fs::read(&path) else {
+            continue;
+        };
+        let Ok(checkpoint) = serde_json::from_slice::<AgentUsageCheckpoint>(&source) else {
+            continue;
+        };
+        let expected_territory = world.agents.get(&agent).map(|view| view.territory.as_str());
+        if checkpoint.schema_version != 1
+            || checkpoint.agent != agent
+            || Some(checkpoint.territory.as_str()) != expected_territory
+        {
+            continue;
+        }
+        let delta = usage_delta(usage_seen, &agent, &checkpoint.usage);
+        if usage_empty(&delta) {
+            continue;
+        }
+        let envelope = referee.record(
+            Event::UsageCharged {
+                agent,
+                resource_units: delta.resource_units,
+                input_tokens: delta.input_tokens,
+                output_tokens: delta.output_tokens,
+                cost_microusd: delta.cost_microusd,
+            },
+            elapsed,
+        )?;
+        append(log, world, events, [envelope])?;
+    }
+    Ok(())
+}
+
+fn usage_delta(
+    seen: &mut HashMap<String, AgentUsage>,
+    agent: &str,
+    cumulative: &AgentUsage,
+) -> AgentUsage {
+    let previous = seen.entry(agent.to_owned()).or_default();
+    let cumulative = AgentUsage {
+        rounds: option_max(previous.rounds, cumulative.rounds),
+        tool_calls: option_max(previous.tool_calls, cumulative.tool_calls),
+        input_tokens: option_max(previous.input_tokens, cumulative.input_tokens),
+        output_tokens: option_max(previous.output_tokens, cumulative.output_tokens),
+        cost_microusd: option_max(previous.cost_microusd, cumulative.cost_microusd),
+        resource_units: previous.resource_units.max(cumulative.resource_units),
+    };
+    let delta = AgentUsage {
+        rounds: option_delta(cumulative.rounds, previous.rounds),
+        tool_calls: option_delta(cumulative.tool_calls, previous.tool_calls),
+        input_tokens: option_delta(cumulative.input_tokens, previous.input_tokens),
+        output_tokens: option_delta(cumulative.output_tokens, previous.output_tokens),
+        cost_microusd: option_delta(cumulative.cost_microusd, previous.cost_microusd),
+        resource_units: cumulative
+            .resource_units
+            .saturating_sub(previous.resource_units),
+    };
+    previous.clone_from(&cumulative);
+    delta
+}
+
+fn option_max(previous: Option<u64>, current: Option<u64>) -> Option<u64> {
+    match (previous, current) {
+        (Some(left), Some(right)) => Some(left.max(right)),
+        (value @ Some(_), None) | (None, value @ Some(_)) => value,
+        (None, None) => None,
+    }
+}
+
+fn option_delta(current: Option<u64>, previous: Option<u64>) -> Option<u64> {
+    current.map(|value| value.saturating_sub(previous.unwrap_or(0)))
+}
+
+fn usage_empty(usage: &AgentUsage) -> bool {
+    usage.resource_units == 0
+        && usage.input_tokens.unwrap_or(0) == 0
+        && usage.output_tokens.unwrap_or(0) == 0
+        && usage.cost_microusd.unwrap_or(0) == 0
 }
 
 async fn password_ssh(
@@ -1003,15 +1131,142 @@ fn elapsed_ms(started: Instant) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use aoe_agent::{AgentResult, AgentStatus, AgentUsage};
+    use aoe_agent::{AgentResult, AgentStatus, AgentUsage, AgentUsageCheckpoint};
     use aoe_domain::{ArenaManifest, Event, MatchState};
     use aoe_referee::{BuildReferee, Referee};
     use aoe_replay::{EventLog, WorldState};
+    use std::collections::HashMap;
     use tokio::sync::mpsc;
 
-    use super::{RunOptions, append, drain_build_agents, invocations, record_agent_results};
+    use super::{
+        RunOptions, append, drain_build_agents, invocations, record_agent_results,
+        record_build_usage_checkpoints, usage_delta,
+    };
 
     const MANIFEST: &str = include_str!("../../runtime/tests/fixture.toml");
+
+    #[test]
+    fn cumulative_usage_checkpoints_are_recorded_once() {
+        let mut seen = HashMap::new();
+        let first = usage_delta(
+            &mut seen,
+            "agent-a",
+            &AgentUsage {
+                input_tokens: Some(100),
+                output_tokens: Some(10),
+                cost_microusd: Some(1_000),
+                resource_units: 1,
+                ..AgentUsage::default()
+            },
+        );
+        assert_eq!(first.input_tokens, Some(100));
+        assert_eq!(first.output_tokens, Some(10));
+        assert_eq!(first.cost_microusd, Some(1_000));
+        assert_eq!(first.resource_units, 1);
+
+        let second = usage_delta(
+            &mut seen,
+            "agent-a",
+            &AgentUsage {
+                input_tokens: Some(175),
+                output_tokens: Some(25),
+                cost_microusd: Some(1_800),
+                resource_units: 1,
+                ..AgentUsage::default()
+            },
+        );
+        assert_eq!(second.input_tokens, Some(75));
+        assert_eq!(second.output_tokens, Some(15));
+        assert_eq!(second.cost_microusd, Some(800));
+        assert_eq!(second.resource_units, 0);
+
+        let stale = usage_delta(
+            &mut seen,
+            "agent-a",
+            &AgentUsage {
+                input_tokens: Some(150),
+                output_tokens: None,
+                cost_microusd: None,
+                resource_units: 1,
+                ..AgentUsage::default()
+            },
+        );
+        assert_eq!(stale.input_tokens, Some(0));
+        assert_eq!(stale.output_tokens, Some(0));
+        assert_eq!(stale.cost_microusd, Some(0));
+        assert_eq!(stale.resource_units, 0);
+    }
+
+    #[test]
+    fn running_usage_checkpoint_becomes_a_referee_event() {
+        let manifest_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../arenas/first-build/agents-real.toml");
+        let manifest = ArenaManifest::load(&manifest_path).expect("build manifest");
+        let mut referee = BuildReferee::from_manifest(&manifest);
+        let mut world = WorldState::default();
+        let root = std::env::temp_dir().join(format!(
+            "aoe-controller-usage-checkpoint-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let log_path = root.join("events.jsonl");
+        std::fs::create_dir_all(root.join("agents/deepseek-builder")).expect("agent dir");
+        let mut log = EventLog::open(&log_path).expect("event log");
+        let mut events = Vec::new();
+        append(
+            &mut log,
+            &mut world,
+            &mut events,
+            referee.start().expect("start"),
+        )
+        .expect("append start");
+        for agent in &manifest.agents {
+            let event = referee
+                .record(
+                    Event::AgentStarted {
+                        agent: agent.id.clone(),
+                        territory: agent.territory.clone(),
+                        model: agent.model.clone(),
+                    },
+                    0,
+                )
+                .expect("agent started");
+            append(&mut log, &mut world, &mut events, [event]).expect("append agent");
+        }
+        std::fs::write(
+            root.join("agents/deepseek-builder/usage.json"),
+            serde_json::to_vec(&AgentUsageCheckpoint {
+                schema_version: 1,
+                agent: "deepseek-builder".into(),
+                territory: "builder-one".into(),
+                usage: AgentUsage {
+                    input_tokens: Some(2_000),
+                    output_tokens: Some(50),
+                    cost_microusd: Some(9_000),
+                    resource_units: 1,
+                    ..AgentUsage::default()
+                },
+            })
+            .expect("checkpoint"),
+        )
+        .expect("checkpoint file");
+        record_build_usage_checkpoints(
+            &root,
+            &mut HashMap::new(),
+            &mut referee,
+            &mut log,
+            &mut world,
+            &mut events,
+            5_000,
+        )
+        .expect("record checkpoint");
+        let agent = world.agents.get("deepseek-builder").expect("agent view");
+        assert!(agent.running);
+        assert_eq!(agent.input_tokens, 2_000);
+        assert_eq!(agent.output_tokens, 50);
+        assert_eq!(agent.cost_microusd, 9_000);
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
 
     #[test]
     fn late_agent_result_is_recorded_without_charging_finished_match() {
@@ -1122,6 +1377,10 @@ mod tests {
         let _ = std::fs::remove_file(&path);
         let mut log = EventLog::open(&path).expect("event log");
         let mut events = Vec::new();
+        let output = std::env::temp_dir().join(format!(
+            "aoe-controller-build-drain-output-{}",
+            std::process::id()
+        ));
         append(
             &mut log,
             &mut world,
@@ -1164,6 +1423,8 @@ mod tests {
             &mut log,
             &mut world,
             &mut events,
+            &mut HashMap::new(),
+            &output,
             40_000,
             std::time::Duration::from_millis(100),
         )
@@ -1209,6 +1470,10 @@ mod tests {
         let _ = std::fs::remove_file(&path);
         let mut log = EventLog::open(&path).expect("event log");
         let mut events = Vec::new();
+        let output = std::env::temp_dir().join(format!(
+            "aoe-controller-build-timeout-output-{}",
+            std::process::id()
+        ));
         append(
             &mut log,
             &mut world,
@@ -1249,6 +1514,8 @@ mod tests {
             &mut log,
             &mut world,
             &mut events,
+            &mut HashMap::new(),
+            &output,
             40_000,
             std::time::Duration::from_millis(20),
         )
