@@ -105,6 +105,10 @@ fn generates_archive_and_match_artifacts() {
     assert!(match_page.contains("model/a"));
     assert!(match_page.contains("12,345"));
     assert!(match_page.contains("Match finished"));
+    assert!(match_page.contains("Watch the race unfold"));
+    assert!(match_page.contains("data-match-replay"));
+    assert!(match_page.contains("data-scrubber"));
+    assert!(match_page.contains("match_finished"));
     assert!(
         output
             .join("matches/build-race-001/artifacts/agent-a-transcript.json")
@@ -135,6 +139,61 @@ fn accepts_historical_events_with_duplicate_elapsed_time() {
     generate_reports(&source, &output).expect("historical report");
     let page = fs::read_to_string(output.join("matches/old-match/index.html")).expect("page");
     assert!(page.contains("Durable deployment completed"));
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
+fn replay_collapses_repeated_failures_into_stall_spans() {
+    let root = temp_dir("stalls");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).expect("match dir");
+    let mut state = WorldState {
+        elapsed_ms: 12_000,
+        ..WorldState::default()
+    };
+    state.territories.insert(
+        "slow-agent".into(),
+        TerritoryView {
+            agent: Some("agent-a".into()),
+            ..TerritoryView::default()
+        },
+    );
+    state.agents.insert(
+        "agent-a".into(),
+        AgentView {
+            territory: "slow-agent".into(),
+            model: "model/slow".into(),
+            ..AgentView::default()
+        },
+    );
+    fs::write(
+        root.join("world.json"),
+        serde_json::to_vec(&state).expect("world"),
+    )
+    .expect("world file");
+    fs::write(
+        root.join("events.jsonl"),
+        [
+            json!({"sequence":0,"elapsed_ms":1000,"kind":"milestone_failed","territory":"slow-agent","milestone":"service-up","detail":"connection refused"}),
+            json!({"sequence":1,"elapsed_ms":3000,"kind":"milestone_failed","territory":"slow-agent","milestone":"service-up","detail":"connection refused"}),
+            json!({"sequence":2,"elapsed_ms":9000,"kind":"milestone_passed","territory":"slow-agent","milestone":"service-up","points":10}),
+        ]
+        .iter()
+        .map(serde_json::Value::to_string)
+        .collect::<Vec<_>>()
+        .join("\n"),
+    )
+    .expect("events");
+
+    let output = root.join("site");
+    generate_reports(&root, &output).expect("report");
+    let match_name = root.file_name().expect("match name");
+    let page = fs::read_to_string(output.join("matches").join(match_name).join("index.html"))
+        .expect("page");
+    assert!(page.contains("\"retries\":2"));
+    assert!(page.contains("\"start_ms\":1000"));
+    assert!(page.contains("\"end_ms\":9000"));
+    assert!(page.contains("lane-stall"));
     fs::remove_dir_all(root).expect("cleanup");
 }
 
