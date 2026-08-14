@@ -1,6 +1,8 @@
 use std::fs;
 
-use aoe_controller::generate_reports;
+use aoe_controller::{
+    SeriesRound, SeriesStanding, SeriesSummary, generate_reports, generate_reports_with_series,
+};
 use aoe_domain::{
     AgentTerminalState, CompetitorState, Event, EventEnvelope, FailureSource, MatchState,
     TerritoryState,
@@ -287,5 +289,142 @@ fn separates_current_compatibility_key_from_history() {
     assert!(index[current..historical].contains("race-003"));
     assert!(!index[current..historical].contains("race-001"));
     assert!(index[historical..].contains("race-001"));
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
+fn generates_series_battle_card_and_round_links() {
+    let root = temp_dir("series-site");
+    let _ = fs::remove_dir_all(&root);
+    let matches = root.join("matches");
+    let archive = matches.join("archive-001");
+    fs::create_dir_all(&archive).expect("archive dir");
+    fs::write(
+        archive.join("world.json"),
+        serde_json::to_vec(&WorldState::default()).expect("world"),
+    )
+    .expect("world file");
+    fs::write(archive.join("events.jsonl"), "").expect("events");
+
+    let series = root.join("series/first-build-series");
+    let provenance = json!({
+        "schema_version": 1,
+        "controller_version": "0.1.0",
+        "source_revision": null,
+        "arena_id": "first-build",
+        "arena_mode": "buildrace",
+        "manifest_sha256": "manifest",
+        "verifier_sha256": "verifier",
+        "adapter_sha256": {},
+        "compatibility_key": "series-current"
+    });
+    for round in 1..=2 {
+        let source = series.join(format!("round-{round:03}"));
+        fs::create_dir_all(&source).expect("round dir");
+        fs::write(
+            source.join("world.json"),
+            serde_json::to_vec(&WorldState::default()).expect("world"),
+        )
+        .expect("world file");
+        fs::write(source.join("events.jsonl"), "").expect("events");
+        fs::write(
+            source.join("match.json"),
+            serde_json::to_vec(&provenance).expect("provenance"),
+        )
+        .expect("match provenance");
+    }
+    let summary = SeriesSummary {
+        schema_version: 1,
+        arena_id: "first-build".into(),
+        rounds_requested: 2,
+        rounds_completed: 2,
+        rounds: vec![
+            SeriesRound {
+                round: 1,
+                output: "round-001".into(),
+                seats: [
+                    ("deepseek".into(), "builder-one".into()),
+                    ("luna".into(), "builder-two".into()),
+                ]
+                .into(),
+                winner_territory: Some("builder-one".into()),
+                winner_agent: Some("deepseek".into()),
+                duration_ms: 50_000,
+                usage_agents: vec!["deepseek".into(), "luna".into()],
+            },
+            SeriesRound {
+                round: 2,
+                output: "round-002".into(),
+                seats: [
+                    ("deepseek".into(), "builder-two".into()),
+                    ("luna".into(), "builder-one".into()),
+                ]
+                .into(),
+                winner_territory: Some("builder-two".into()),
+                winner_agent: Some("deepseek".into()),
+                duration_ms: 55_000,
+                usage_agents: vec!["deepseek".into(), "luna".into()],
+            },
+        ],
+        standings: vec![
+            SeriesStanding {
+                agent: "deepseek".into(),
+                model: "deepseek/v4".into(),
+                appearances: 2,
+                wins: 2,
+                durable_deployments: 2,
+                median_durable_ms: Some(55_000),
+                usage_recorded: 2,
+                input_tokens: Some(40_000),
+                output_tokens: Some(4_000),
+                cost_microusd: Some(2_300),
+                cost_per_durable_microusd: Some(1_150),
+            },
+            SeriesStanding {
+                agent: "luna".into(),
+                model: "openai/luna".into(),
+                appearances: 2,
+                wins: 0,
+                durable_deployments: 0,
+                median_durable_ms: None,
+                usage_recorded: 2,
+                input_tokens: Some(60_000),
+                output_tokens: Some(6_000),
+                cost_microusd: Some(9_800),
+                cost_per_durable_microusd: None,
+            },
+        ],
+    };
+    fs::write(
+        series.join("series.json"),
+        serde_json::to_vec_pretty(&summary).expect("series"),
+    )
+    .expect("series file");
+
+    let output = root.join("site");
+    let generated = generate_reports_with_series(&matches, &[series], &output).expect("report");
+    assert_eq!(generated.matches, 3);
+    assert_eq!(generated.series, 1);
+    let index = fs::read_to_string(output.join("index.html")).expect("index");
+    assert!(index.contains("Seat-rotated races"));
+    assert!(index.contains("first-build-series"));
+    assert!(index.contains("deepseek"));
+    let page = fs::read_to_string(output.join("series/first-build-series/index.html"))
+        .expect("series page");
+    assert!(page.contains("Battle card"));
+    assert!(page.contains("Seat rotation"));
+    assert!(page.contains("deepseek/v4"));
+    assert!(page.contains("$0.0011"));
+    assert!(page.contains("../../matches/first-build-series-round-001/"));
+    assert!(
+        output
+            .join("matches/first-build-series-round-002/index.html")
+            .is_file()
+    );
+    assert!(
+        output
+            .join("series/first-build-series/artifacts/series.json")
+            .is_file()
+    );
     fs::remove_dir_all(root).expect("cleanup");
 }
