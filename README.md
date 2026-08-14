@@ -12,6 +12,24 @@ Think a real-time strategy build order, played through a shell.
 See [SPEC.md](SPEC.md) for the initial design and `.arf/specs/` for the
 dependency-ordered implementation plan.
 
+## Bring your own arena
+
+Arena packages are a public plugin boundary. They own disposable guest images,
+agent instructions, milestones, and controller-side verification while the
+engine owns isolation, lifecycle, scoring, replay, and reporting. Any agent
+adapter can compete without changing what counts as success.
+
+Scaffold and validate a self-contained arena:
+
+```bash
+cargo run --release --bin agents-of-empires -- arena init cache-race
+cargo run --release --bin agents-of-empires -- arena validate arenas/cache-race
+```
+
+See the [Arena SDK](docs/arena-sdk.md) and the
+[Hello Service example](examples/hello-service-arena) for the package contract,
+oracle workflow, tests, and publishing checklist.
+
 The build-race redesign is in progress. The existing `first-contact` arena is a
 preserved PvP prototype and is not the new primary game mode. See [SPEC.md](SPEC.md)
 and the dependency-ordered plan under `.arf/specs/` for the current design.

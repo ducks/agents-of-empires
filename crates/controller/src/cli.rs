@@ -9,6 +9,9 @@ pub struct Cli {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
+    Arena {
+        command: ArenaCommand,
+    },
     Validate {
         manifest: PathBuf,
         json: bool,
@@ -54,6 +57,12 @@ pub enum Command {
     Help,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ArenaCommand {
+    Validate { path: PathBuf, json: bool },
+    Init { name: String, output: PathBuf },
+}
+
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ParseError {
     #[error("missing command")]
@@ -81,6 +90,7 @@ impl Cli {
         let command = match command.as_str() {
             "help" | "--help" | "-h" => Command::Help,
             "validate" => parse_validate(args)?,
+            "arena" => parse_arena(args)?,
             "run" => parse_run(args)?,
             "series" => parse_series(args)?,
             "replay" => parse_replay(args)?,
@@ -91,6 +101,30 @@ impl Cli {
         };
         Ok(Self { command })
     }
+}
+
+fn parse_arena(mut args: Vec<String>) -> Result<Command, ParseError> {
+    let subcommand = take_positional(&mut args, "ARENA_COMMAND")?;
+    let command = match subcommand.as_str() {
+        "validate" => {
+            let path = PathBuf::from(take_positional(&mut args, "ARENA_DIR_OR_MANIFEST")?);
+            let json = take_bool(&mut args, "--json");
+            reject_remaining(args)?;
+            ArenaCommand::Validate { path, json }
+        }
+        "init" => {
+            let name = take_positional(&mut args, "NAME")?;
+            let output = if args.iter().any(|arg| arg == "--output") {
+                PathBuf::from(take_flag_value(&mut args, "--output")?)
+            } else {
+                PathBuf::from("arenas").join(&name)
+            };
+            reject_remaining(args)?;
+            ArenaCommand::Init { name, output }
+        }
+        _ => return Err(ParseError::Unexpected(subcommand)),
+    };
+    Ok(Command::Arena { command })
 }
 
 fn parse_report(mut args: Vec<String>) -> Result<Command, ParseError> {
