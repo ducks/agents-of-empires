@@ -76,6 +76,32 @@ fn parses_report_directories() {
         Command::Report {
             input: PathBuf::from("matches"),
             output: PathBuf::from("docs"),
+            series: Vec::new(),
+        }
+    );
+}
+
+#[test]
+fn parses_series_report_inputs() {
+    let cli = Cli::parse(
+        [
+            "report",
+            "matches",
+            "--series",
+            "series/first-build",
+            "--series",
+            "series/failover",
+        ]
+        .into_iter()
+        .map(str::to_owned),
+    )
+    .expect("parse");
+    assert_eq!(
+        cli.command,
+        Command::Report {
+            input: PathBuf::from("matches"),
+            output: PathBuf::from("site"),
+            series: vec!["series/first-build".into(), "series/failover".into()],
         }
     );
 }

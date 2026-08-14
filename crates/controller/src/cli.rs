@@ -46,6 +46,7 @@ pub enum Command {
     Report {
         input: PathBuf,
         output: PathBuf,
+        series: Vec<String>,
     },
     Doctor {
         json: bool,
@@ -99,8 +100,13 @@ fn parse_report(mut args: Vec<String>) -> Result<Command, ParseError> {
     } else {
         PathBuf::from("site")
     };
+    let series = repeated_flag(&mut args, "--series")?;
     reject_remaining(args)?;
-    Ok(Command::Report { input, output })
+    Ok(Command::Report {
+        input,
+        output,
+        series,
+    })
 }
 
 fn take_positional(args: &mut Vec<String>, name: &str) -> Result<String, ParseError> {

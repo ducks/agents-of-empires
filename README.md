@@ -144,6 +144,7 @@ a directory:
 
 ```bash
 agents-of-empires report matches --output site
+agents-of-empires report matches --series series --output site
 ```
 
 Open `site/index.html` locally or publish `site/` with GitHub Pages. Each match
@@ -153,6 +154,11 @@ agent transcripts captured before or during the post-match drain. An interactive
 replay plots each agent on a shared clock with milestone, state, usage, and
 terminal markers. It supports playback speeds, scrubbing, and raw event
 inspection without changing or reinterpreting the referee's result.
+
+Pass one or more `--series` inputs to add battle cards to the same archive.
+Each series page ranks the fleet by durable outcomes and cost, shows the full
+seat rotation, and links every round to its ordinary match replay and audit
+artifacts.
 
 Harness adapters may atomically publish cumulative usage to `AOE_USAGE_FILE`
 while they run. The controller records only the increase since the previous

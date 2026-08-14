@@ -372,10 +372,11 @@ fn duration(milliseconds: u64) -> String {
 }
 
 fn money(microusd: u64) -> String {
+    let ten_thousandths = microusd.saturating_add(50) / 100;
     format!(
         "${}.{:04}",
-        microusd / 1_000_000,
-        (microusd % 1_000_000) / 100
+        ten_thousandths / 10_000,
+        ten_thousandths % 10_000
     )
 }
 
@@ -384,7 +385,7 @@ mod tests {
     use aoe_domain::ArenaManifest;
     use aoe_replay::WorldState;
 
-    use super::{build_summary, rotate_seats, round_ports};
+    use super::{build_summary, render_series, rotate_seats, round_ports};
 
     const MANIFEST: &str = include_str!("../../runtime/tests/fixture.toml");
 
@@ -467,6 +468,8 @@ mod tests {
         assert_eq!(summary.standings[0].median_durable_ms, Some(2_000));
         assert_eq!(summary.standings[0].input_tokens, Some(100));
         assert_eq!(summary.standings[0].cost_per_durable_microusd, Some(900));
+        assert!(render_series(&summary).contains("$0.0009"));
+        assert_eq!(super::money(1_150), "$0.0012");
     }
 
     #[test]

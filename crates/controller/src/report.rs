@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -8,10 +9,12 @@ use serde::Serialize;
 use thiserror::Error;
 
 use crate::provenance::{MatchProvenance, read_provenance};
+use crate::series::SeriesSummary;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReportSummary {
     pub matches: usize,
+    pub series: usize,
     pub index: PathBuf,
 }
 
@@ -27,16 +30,32 @@ pub enum ReportError {
     },
     #[error("invalid world state in {path}: {detail}")]
     World { path: PathBuf, detail: String },
+    #[error("invalid series summary in {path}: {detail}")]
+    Series { path: PathBuf, detail: String },
     #[error("no completed match artifacts found below {0}")]
     NoMatches(PathBuf),
+    #[error("no completed series artifacts found below {0}")]
+    NoSeries(PathBuf),
 }
 
 struct MatchReport {
     name: String,
+    slug: String,
+    listed: bool,
     state: WorldState,
     events: Vec<ReportEvent>,
     source: PathBuf,
     report_dir: PathBuf,
+    provenance: Option<MatchProvenance>,
+    current: bool,
+}
+
+struct SeriesReport {
+    name: String,
+    slug: String,
+    summary: SeriesSummary,
+    report_dir: PathBuf,
+    round_slugs: Vec<String>,
     provenance: Option<MatchProvenance>,
     current: bool,
 }
@@ -49,8 +68,23 @@ struct MatchReport {
 /// Returns an error for missing artifacts, malformed event/world data, or file
 /// system failures.
 pub fn generate_reports(input: &Path, output: &Path) -> Result<ReportSummary, ReportError> {
+    generate_reports_with_series(input, &[], output)
+}
+
+/// Generate a static archive containing ordinary matches and match series.
+///
+/// # Errors
+///
+/// Returns an error for missing artifacts, malformed match or series data, or
+/// file system failures.
+pub fn generate_reports_with_series(
+    input: &Path,
+    series_inputs: &[PathBuf],
+    output: &Path,
+) -> Result<ReportSummary, ReportError> {
     let match_dirs = discover_matches(input)?;
     fs::create_dir_all(output.join("matches"))?;
+    fs::create_dir_all(output.join("series"))?;
     let mut reports = Vec::with_capacity(match_dirs.len());
     for source in match_dirs {
         let name = source
@@ -58,37 +92,122 @@ pub fn generate_reports(input: &Path, output: &Path) -> Result<ReportSummary, Re
             .and_then(|name| name.to_str())
             .unwrap_or("match")
             .to_owned();
-        let report_dir = output.join("matches").join(safe_name(&name));
-        fs::create_dir_all(&report_dir)?;
-        let state = read_world(&source.join("world.json"))?;
-        let events = read_report_events(&source.join("events.jsonl"))?;
-        let provenance = read_provenance(&source.join("match.json")).ok();
-        let report = MatchReport {
-            name,
-            state,
-            events,
-            source,
-            report_dir,
-            provenance,
-            current: false,
-        };
-        copy_public_artifacts(&report)?;
-        reports.push(report);
+        let slug = safe_name(&name);
+        reports.push(load_match_report(source, name, slug, true, output)?);
+    }
+
+    let mut series_reports = Vec::new();
+    for series_input in series_inputs {
+        for source in discover_series(series_input)? {
+            let name = source
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("series")
+                .to_owned();
+            let slug = safe_name(&name);
+            let summary = read_series(&source.join("series.json"))?;
+            let mut round_slugs = Vec::with_capacity(summary.rounds.len());
+            for round in &summary.rounds {
+                let round_name = format!("{} · round {}", name, round.round);
+                let round_slug = format!("{}-round-{:03}", slug, round.round);
+                let round_source = source.join(format!("round-{:03}", round.round));
+                reports.push(load_match_report(
+                    round_source,
+                    round_name,
+                    round_slug.clone(),
+                    false,
+                    output,
+                )?);
+                round_slugs.push(round_slug);
+            }
+            let report_dir = output.join("series").join(&slug);
+            fs::create_dir_all(report_dir.join("artifacts"))?;
+            fs::copy(
+                source.join("series.json"),
+                report_dir.join("artifacts/series.json"),
+            )?;
+            let provenance = summary.rounds.first().and_then(|round| {
+                read_provenance(
+                    &source
+                        .join(format!("round-{:03}", round.round))
+                        .join("match.json"),
+                )
+                .ok()
+            });
+            series_reports.push(SeriesReport {
+                name,
+                slug,
+                summary,
+                report_dir,
+                round_slugs,
+                provenance,
+                current: false,
+            });
+        }
     }
     reports.sort_by(|left, right| right.name.cmp(&left.name));
+    series_reports.sort_by(|left, right| right.name.cmp(&left.name));
     mark_current(&mut reports);
+    mark_current_series(&mut series_reports);
     for report in &reports {
         fs::write(report.report_dir.join("index.html"), render_match(report))?;
     }
+    for report in &series_reports {
+        fs::write(report.report_dir.join("index.html"), render_series(report))?;
+    }
     let index = output.join("index.html");
-    fs::write(&index, render_index(&reports))?;
+    fs::write(&index, render_index(&reports, &series_reports))?;
     Ok(ReportSummary {
         matches: reports.len(),
+        series: series_reports.len(),
         index,
     })
 }
 
+fn load_match_report(
+    source: PathBuf,
+    name: String,
+    slug: String,
+    listed: bool,
+    output: &Path,
+) -> Result<MatchReport, ReportError> {
+    let report_dir = output.join("matches").join(&slug);
+    fs::create_dir_all(&report_dir)?;
+    let state = read_world(&source.join("world.json"))?;
+    let events = read_report_events(&source.join("events.jsonl"))?;
+    let provenance = read_provenance(&source.join("match.json")).ok();
+    let report = MatchReport {
+        name,
+        slug,
+        listed,
+        state,
+        events,
+        source,
+        report_dir,
+        provenance,
+        current: false,
+    };
+    copy_public_artifacts(&report)?;
+    Ok(report)
+}
+
 fn mark_current(reports: &mut [MatchReport]) {
+    let mut current = std::collections::HashMap::new();
+    for report in reports.iter() {
+        if let Some(provenance) = &report.provenance {
+            current
+                .entry(provenance.arena_id.clone())
+                .or_insert_with(|| provenance.compatibility_key.clone());
+        }
+    }
+    for report in reports {
+        report.current = report.provenance.as_ref().is_some_and(|provenance| {
+            current.get(&provenance.arena_id) == Some(&provenance.compatibility_key)
+        });
+    }
+}
+
+fn mark_current_series(reports: &mut [SeriesReport]) {
     let mut current = std::collections::HashMap::new();
     for report in reports.iter() {
         if let Some(provenance) = &report.provenance {
@@ -157,6 +276,25 @@ fn discover_matches(input: &Path) -> Result<Vec<PathBuf>, ReportError> {
     }
 }
 
+fn discover_series(input: &Path) -> Result<Vec<PathBuf>, ReportError> {
+    if input.join("series.json").is_file() {
+        return Ok(vec![input.to_owned()]);
+    }
+    let mut series = Vec::new();
+    for entry in fs::read_dir(input)? {
+        let path = entry?.path();
+        if path.join("series.json").is_file() {
+            series.push(path);
+        }
+    }
+    series.sort();
+    if series.is_empty() {
+        Err(ReportError::NoSeries(input.to_owned()))
+    } else {
+        Ok(series)
+    }
+}
+
 fn is_match_dir(path: &Path) -> bool {
     path.join("events.jsonl").is_file() && path.join("world.json").is_file()
 }
@@ -164,6 +302,14 @@ fn is_match_dir(path: &Path) -> bool {
 fn read_world(path: &Path) -> Result<WorldState, ReportError> {
     let source = fs::read(path)?;
     serde_json::from_slice(&source).map_err(|error| ReportError::World {
+        path: path.to_owned(),
+        detail: error.to_string(),
+    })
+}
+
+fn read_series(path: &Path) -> Result<SeriesSummary, ReportError> {
+    let source = fs::read(path)?;
+    serde_json::from_slice(&source).map_err(|error| ReportError::Series {
         path: path.to_owned(),
         detail: error.to_string(),
     })
@@ -189,9 +335,24 @@ fn copy_public_artifacts(report: &MatchReport) -> Result<(), ReportError> {
     Ok(())
 }
 
-fn render_index(reports: &[MatchReport]) -> String {
-    let current = render_cards(reports.iter().filter(|report| report.current));
-    let historical = render_cards(reports.iter().filter(|report| !report.current));
+fn render_index(reports: &[MatchReport], series: &[SeriesReport]) -> String {
+    let current_series = render_series_cards(series.iter().filter(|report| report.current));
+    let historical_series = render_series_cards(series.iter().filter(|report| !report.current));
+    let current_series = if current_series.is_empty() {
+        "<p class=\"empty\">No match series recorded yet.</p>".to_owned()
+    } else {
+        current_series
+    };
+    let current = render_cards(
+        reports
+            .iter()
+            .filter(|report| report.listed && report.current),
+    );
+    let historical = render_cards(
+        reports
+            .iter()
+            .filter(|report| report.listed && !report.current),
+    );
     let current = if current.is_empty() {
         "<p class=\"empty\">No matches recorded under the current rules yet.</p>".to_owned()
     } else {
@@ -200,7 +361,7 @@ fn render_index(reports: &[MatchReport]) -> String {
     page(
         "Agents of Empires · Match Archive",
         &format!(
-            "<header class=\"hero\"><span class=\"eyebrow\">Match archive</span><h1>Agents of Empires</h1><p>Build races decided by durable deployments, not confident answers.</p></header><main><section class=\"about\"><span class=\"eyebrow\">About the arena</span><h2>What am I looking at?</h2><p>Agents of Empires drops AI infrastructure agents into identical disposable NixOS machines and gives them the same service contract. A referee checks recovered state, fresh work, service restarts, and host reboots. The first agent to produce a durable deployment wins.</p><p><a href=\"https://github.com/ducks/agents-of-empires\">Read how the arena works and view the source →</a></p></section><section><div class=\"section-heading\"><h2>Current</h2><p>Matches sharing the newest manifest and verifier compatibility key for each arena.</p></div><div class=\"match-list\">{current}</div></section><section><div class=\"section-heading\"><h2>Historical</h2><p>Prototype or superseded runs retained for auditability, not direct comparison.</p></div><div class=\"match-list historical\">{historical}</div></section></main>"
+            "<header class=\"hero\"><span class=\"eyebrow\">Match archive</span><h1>Agents of Empires</h1><p>Build races decided by durable deployments, not confident answers.</p></header><main><section class=\"about\"><span class=\"eyebrow\">About the arena</span><h2>What am I looking at?</h2><p>Agents of Empires drops AI infrastructure agents into identical disposable NixOS machines and gives them the same service contract. A referee checks recovered state, fresh work, service restarts, and host reboots. The first agent to produce a durable deployment wins.</p><p><a href=\"https://github.com/ducks/agents-of-empires\">Read how the arena works and view the source →</a></p></section><section><div class=\"section-heading\"><h2>Series</h2><p>Seat-rotated races that separate agent performance from territory advantage.</p></div><div class=\"match-list series-list\">{current_series}</div></section><section><div class=\"section-heading\"><h2>Current</h2><p>Matches sharing the newest manifest and verifier compatibility key for each arena.</p></div><div class=\"match-list\">{current}</div></section><section><div class=\"section-heading\"><h2>Historical</h2><p>Prototype or superseded runs retained for auditability, not direct comparison.</p></div><div class=\"match-list historical\">{historical}{historical_series}</div></section></main>"
         ),
     )
 }
@@ -218,7 +379,7 @@ fn render_cards<'a>(reports: impl Iterator<Item = &'a MatchReport>) -> String {
         let _ = write!(
             body,
             "<a class=\"match-card\" href=\"matches/{}/\"><div><span class=\"eyebrow\">{}</span><h2>{}</h2><p>{}</p></div><div class=\"metrics\"><strong>{}</strong><span>{}</span></div></a>",
-            escape(&safe_name(&report.name)),
+            escape(&report.slug),
             escape(&format!("{:?}", report.state.match_state).to_lowercase()),
             escape(&report.name),
             escape(
@@ -237,6 +398,191 @@ fn render_cards<'a>(reports: impl Iterator<Item = &'a MatchReport>) -> String {
         );
     }
     body
+}
+
+fn render_series_cards<'a>(reports: impl Iterator<Item = &'a SeriesReport>) -> String {
+    let mut body = String::new();
+    for report in reports {
+        let leader = report.summary.standings.first();
+        let leader_name = leader.map_or("No leader", |standing| standing.agent.as_str());
+        let record = leader.map_or_else(
+            || "No completed rounds".to_owned(),
+            |standing| {
+                format!(
+                    "{} win{} · {}",
+                    standing.wins,
+                    if standing.wins == 1 { "" } else { "s" },
+                    standing.cost_per_durable_microusd.map_or_else(
+                        || "cost unavailable".to_owned(),
+                        |cost| { format!("{} per durable", money(cost)) }
+                    )
+                )
+            },
+        );
+        let _ = write!(
+            body,
+            "<a class=\"match-card series-card\" href=\"series/{}/\"><div><span class=\"eyebrow\">{} rounds · seat rotated</span><h2>{}</h2><p>{}</p></div><div class=\"metrics\"><strong>{}</strong><span>{}</span></div></a>",
+            escape(&report.slug),
+            report.summary.rounds_completed,
+            escape(&report.name),
+            escape(&report.summary.arena_id),
+            escape(leader_name),
+            escape(&record),
+        );
+    }
+    body
+}
+
+fn render_series(report: &SeriesReport) -> String {
+    let leader = report.summary.standings.first();
+    let leader_name = leader.map_or("No leader", |standing| standing.agent.as_str());
+    let all_usage = report.summary.standings.iter().all(|standing| {
+        standing.input_tokens.is_some()
+            && standing.output_tokens.is_some()
+            && standing.cost_microusd.is_some()
+    });
+    let total_cost = all_usage.then(|| {
+        report
+            .summary
+            .standings
+            .iter()
+            .filter_map(|standing| standing.cost_microusd)
+            .sum::<u64>()
+    });
+    let total_tokens = all_usage.then(|| {
+        report
+            .summary
+            .standings
+            .iter()
+            .filter_map(|standing| {
+                standing
+                    .input_tokens
+                    .zip(standing.output_tokens)
+                    .map(|(input, output)| input.saturating_add(output))
+            })
+            .sum::<u64>()
+    });
+
+    let mut standings = String::new();
+    for (index, standing) in report.summary.standings.iter().enumerate() {
+        let tokens = standing
+            .input_tokens
+            .zip(standing.output_tokens)
+            .map(|(input, output)| input.saturating_add(output));
+        let _ = write!(
+            standings,
+            "<tr class=\"{}\"><td><strong>{}</strong><small>{}</small></td><td>{}</td><td>{}/{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}/{}</td></tr>",
+            if index == 0 { "winner-row" } else { "" },
+            escape(&standing.agent),
+            escape(&standing.model),
+            standing.wins,
+            standing.durable_deployments,
+            standing.appearances,
+            standing
+                .median_durable_ms
+                .map_or_else(|| "n/a".to_owned(), duration),
+            tokens.map_or_else(|| "n/a".to_owned(), grouped),
+            standing
+                .cost_microusd
+                .map_or_else(|| "n/a".to_owned(), money),
+            standing
+                .cost_per_durable_microusd
+                .map_or_else(|| "n/a".to_owned(), money),
+            standing.usage_recorded,
+            standing.appearances,
+        );
+    }
+
+    let territories: BTreeSet<_> = report
+        .summary
+        .rounds
+        .iter()
+        .flat_map(|round| round.seats.values().cloned())
+        .collect();
+    let territory_headers = territories
+        .iter()
+        .fold(String::new(), |mut body, territory| {
+            let _ = write!(body, "<th>{}</th>", escape(territory));
+            body
+        });
+    let models: std::collections::HashMap<_, _> = report
+        .summary
+        .standings
+        .iter()
+        .map(|standing| (standing.agent.as_str(), standing.model.as_str()))
+        .collect();
+    let mut rounds = String::new();
+    for (index, round) in report.summary.rounds.iter().enumerate() {
+        let seats: std::collections::HashMap<_, _> = round
+            .seats
+            .iter()
+            .map(|(agent, territory)| (territory.as_str(), agent.as_str()))
+            .collect();
+        let mut cells = String::new();
+        for territory in &territories {
+            let agent = seats
+                .get(territory.as_str())
+                .copied()
+                .unwrap_or("unassigned");
+            let class = if round.winner_territory.as_deref() == Some(territory.as_str()) {
+                "seat-winner"
+            } else {
+                ""
+            };
+            let _ = write!(
+                cells,
+                "<td class=\"{class}\"><strong>{}</strong><small>{}</small></td>",
+                escape(agent),
+                escape(models.get(agent).copied().unwrap_or("unknown")),
+            );
+        }
+        let round_slug = report.round_slugs.get(index).map_or("", String::as_str);
+        let _ = write!(
+            rounds,
+            "<tr><td><a href=\"../../matches/{}/\">Round {}</a><small>{}</small></td>{cells}<td><strong>{}</strong><small>{}</small></td></tr>",
+            escape(round_slug),
+            round.round,
+            duration(round.duration_ms),
+            escape(round.winner_agent.as_deref().unwrap_or("No winner")),
+            escape(round.winner_territory.as_deref().unwrap_or("unfinished")),
+        );
+    }
+
+    let provenance = report.provenance.as_ref().map_or_else(
+        || "historical · provenance unavailable".to_owned(),
+        |value| {
+            format!(
+                "{} · {} · {}",
+                if report.current {
+                    "current"
+                } else {
+                    "historical"
+                },
+                value.arena_id,
+                value
+                    .compatibility_key
+                    .get(..12)
+                    .unwrap_or(&value.compatibility_key)
+            )
+        },
+    );
+    let content = format!(
+        "<nav><a href=\"../../\">← Archive</a><span>Agents of Empires · {}</span></nav>
+        <header class=\"hero match-hero\"><span class=\"eyebrow\">Seat-rotated series · {}</span><h1>{}</h1><p>Every agent races the same verifier from every territory. Failed attempts remain in total spend.</p>
+        <div class=\"hero-stats\"><div><small>Leader</small><strong>{}</strong></div><div><small>Rounds</small><strong>{}/{}</strong></div><div><small>Recorded cost</small><strong>{}</strong></div><div><small>Tokens</small><strong>{}</strong></div></div></header>
+        <main><section><div class=\"section-heading\"><h2>Battle card</h2><p>Ranked by wins, then durable deployments, time, and total cost.</p></div><div class=\"table-wrap\"><table><thead><tr><th>Agent</th><th>Wins</th><th>Durable</th><th>Median</th><th>Tokens</th><th>Cost</th><th>Cost / durable</th><th>Usage</th></tr></thead><tbody>{standings}</tbody></table></div></section>
+        <section><div class=\"section-heading\"><h2>Seat rotation</h2><p>The highlighted cell won that round. Open any round for its replay and immutable event log.</p></div><div class=\"table-wrap\"><table class=\"seat-matrix\"><thead><tr><th>Round</th>{territory_headers}<th>Winner</th></tr></thead><tbody>{rounds}</tbody></table></div></section>
+        <footer><a href=\"artifacts/series.json\">series.json</a></footer></main>",
+        escape(&provenance),
+        escape(&report.summary.arena_id),
+        escape(&report.name),
+        escape(leader_name),
+        report.summary.rounds_completed,
+        report.summary.rounds_requested,
+        total_cost.map_or_else(|| "n/a".to_owned(), money),
+        total_tokens.map_or_else(|| "n/a".to_owned(), grouped),
+    );
+    page(&format!("{} · Agents of Empires", report.name), &content)
 }
 
 fn render_match(report: &MatchReport) -> String {
@@ -595,7 +941,7 @@ fn page(title: &str, content: &str) -> String {
 }
 
 const STYLE: &str = r#"
-:root{--bg:#10130f;--panel:#191e18;--line:#333d31;--text:#edf4e9;--muted:#9ca997;--gold:#e7bb55;--green:#85d68b;--red:#ef857c;--orange:#e5a65f}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 75% 0,#253120 0,transparent 32rem),var(--bg);color:var(--text);font:16px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}a{color:var(--gold)}nav,main,.hero{width:min(1120px,calc(100% - 2rem));margin:auto}nav{display:flex;justify-content:space-between;padding:1.25rem 0;color:var(--muted)}nav a{text-decoration:none}.hero{padding:6rem 0 3rem}.match-hero{padding-top:3.5rem}.eyebrow{color:var(--gold);font-size:.75rem;letter-spacing:.14em;text-transform:uppercase}h1{font-family:Georgia,serif;font-size:clamp(2.7rem,8vw,6.8rem);line-height:.9;margin:.35rem 0 1.2rem;max-width:900px}h2{font-family:Georgia,serif;font-size:2rem;margin:0}.hero>p,.section-heading p{color:var(--muted);max-width:680px}.about{border:1px solid var(--line);background:linear-gradient(135deg,#20271e,var(--panel));padding:2rem}.about h2{margin:.35rem 0 1rem}.about p{color:var(--muted);max-width:850px}.about p:last-child{margin-bottom:0}.about a{text-decoration:none}.hero-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;margin-top:3rem;background:var(--line);border:1px solid var(--line)}.hero-stats div{background:var(--panel);padding:1.25rem}.hero-stats small,td small{display:block;color:var(--muted);margin-bottom:.35rem}.hero-stats strong{font-size:1.25rem}section{margin:1rem 0 4rem}.section-heading{display:flex;align-items:end;justify-content:space-between;gap:2rem;margin-bottom:1rem}.section-heading p{margin:0}.table-wrap{overflow:auto;border:1px solid var(--line)}table{border-collapse:collapse;width:100%;background:var(--panel)}th,td{padding:1rem;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.08em}.winner-row{background:#252b19}.pill{display:inline-block;border:1px solid var(--line);border-radius:99px;padding:.15rem .55rem;font-size:.8rem}.pill.good{color:var(--green)}.pill.warn{color:var(--orange)}.pill.bad{color:var(--red)}.timeline{list-style:none;padding:0;border-top:1px solid var(--line)}.timeline li{display:grid;grid-template-columns:6rem 1fr;gap:1rem;padding:1rem 0;border-bottom:1px solid var(--line)}.timeline time{color:var(--gold)}.timeline span{color:var(--muted);margin-left:.75rem}.timeline details{margin-top:.4rem;color:var(--muted)}pre{white-space:pre-wrap;word-break:break-word;background:#090b09;padding:1rem;overflow:auto}.match-list{display:grid;gap:1rem}.match-card{display:flex;justify-content:space-between;gap:2rem;padding:1.5rem;border:1px solid var(--line);background:var(--panel);text-decoration:none;color:var(--text)}.match-card:hover{border-color:var(--gold)}.match-card h2{font-size:1.5rem}.match-card p{color:var(--muted);margin:.25rem 0 0}.metrics{text-align:right}.metrics strong,.metrics span{display:block}.metrics span{color:var(--muted)}footer{display:flex;gap:1rem;padding:2rem 0 5rem;border-top:1px solid var(--line)}@media(max-width:720px){.hero{padding-top:3rem}.hero-stats{grid-template-columns:1fr 1fr}.section-heading{display:block}.timeline li{grid-template-columns:4rem 1fr}.match-card{display:block}.metrics{text-align:left;margin-top:1rem}th,td{padding:.75rem}}
+:root{--bg:#10130f;--panel:#191e18;--line:#333d31;--text:#edf4e9;--muted:#9ca997;--gold:#e7bb55;--green:#85d68b;--red:#ef857c;--orange:#e5a65f}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 75% 0,#253120 0,transparent 32rem),var(--bg);color:var(--text);font:16px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}a{color:var(--gold)}nav,main,.hero{width:min(1120px,calc(100% - 2rem));margin:auto}nav{display:flex;justify-content:space-between;padding:1.25rem 0;color:var(--muted)}nav a{text-decoration:none}.hero{padding:6rem 0 3rem}.match-hero{padding-top:3.5rem}.eyebrow{color:var(--gold);font-size:.75rem;letter-spacing:.14em;text-transform:uppercase}h1{font-family:Georgia,serif;font-size:clamp(2.7rem,8vw,6.8rem);line-height:.9;margin:.35rem 0 1.2rem;max-width:900px}h2{font-family:Georgia,serif;font-size:2rem;margin:0}.hero>p,.section-heading p{color:var(--muted);max-width:680px}.about{border:1px solid var(--line);background:linear-gradient(135deg,#20271e,var(--panel));padding:2rem}.about h2{margin:.35rem 0 1rem}.about p{color:var(--muted);max-width:850px}.about p:last-child{margin-bottom:0}.about a{text-decoration:none}.hero-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;margin-top:3rem;background:var(--line);border:1px solid var(--line)}.hero-stats div{background:var(--panel);padding:1.25rem}.hero-stats small,td small{display:block;color:var(--muted);margin-bottom:.35rem}.hero-stats strong{font-size:1.25rem}section{margin:1rem 0 4rem}.section-heading{display:flex;align-items:end;justify-content:space-between;gap:2rem;margin-bottom:1rem}.section-heading p{margin:0}.table-wrap{overflow:auto;border:1px solid var(--line)}table{border-collapse:collapse;width:100%;background:var(--panel)}th,td{padding:1rem;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.08em}.winner-row,.seat-winner{background:#252b19}.seat-winner{box-shadow:inset 0 0 0 1px var(--gold)}.pill{display:inline-block;border:1px solid var(--line);border-radius:99px;padding:.15rem .55rem;font-size:.8rem}.pill.good{color:var(--green)}.pill.warn{color:var(--orange)}.pill.bad{color:var(--red)}.timeline{list-style:none;padding:0;border-top:1px solid var(--line)}.timeline li{display:grid;grid-template-columns:6rem 1fr;gap:1rem;padding:1rem 0;border-bottom:1px solid var(--line)}.timeline time{color:var(--gold)}.timeline span{color:var(--muted);margin-left:.75rem}.timeline details{margin-top:.4rem;color:var(--muted)}pre{white-space:pre-wrap;word-break:break-word;background:#090b09;padding:1rem;overflow:auto}.match-list{display:grid;gap:1rem}.match-card{display:flex;justify-content:space-between;gap:2rem;padding:1.5rem;border:1px solid var(--line);background:var(--panel);text-decoration:none;color:var(--text)}.match-card:hover{border-color:var(--gold)}.match-card h2{font-size:1.5rem}.match-card p{color:var(--muted);margin:.25rem 0 0}.metrics{text-align:right}.metrics strong,.metrics span{display:block}.metrics span{color:var(--muted)}footer{display:flex;gap:1rem;padding:2rem 0 5rem;border-top:1px solid var(--line)}@media(max-width:720px){.hero{padding-top:3rem}.hero-stats{grid-template-columns:1fr 1fr}.section-heading{display:block}.timeline li{grid-template-columns:4rem 1fr}.match-card{display:block}.metrics{text-align:left;margin-top:1rem}th,td{padding:.75rem}}
 "#;
 
 const REPLAY_STYLE: &str = r#"
