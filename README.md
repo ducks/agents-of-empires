@@ -167,7 +167,36 @@ sequentially and retain their normal match artifacts under `round-NNN/`.
 The runner atomically updates `series.json` after every completed round and
 prints aggregate wins, durable deployments, median durable time, token usage,
 total cost, and cost per durable deployment. Usage totals are reported as
-unavailable when any contributing round lacks usage telemetry.
+unavailable when any contributing round lacks usage telemetry. Re-running the
+same command resumes a compatible checkpoint. If a round was interrupted
+before it could be checkpointed, its artifacts are preserved as
+`round-NNN.interrupted-N` before that round is retried.
+
+Run the complete infrastructure benchmark across all four build-race arenas:
+
+```bash
+export OPENROUTER_API_KEY=...
+credentials="$(scripts/prepare-infra-core-credentials.sh)"
+credential_args=()
+for file in "$credentials"/*.env; do
+  territory="$(basename "$file" .env)"
+  credential_args+=(--credential "$territory=$file")
+done
+cargo run --release --bin agents-of-empires -- benchmark \
+  suites/infra-core.toml \
+  --adapter claux=adapters/claux.sh \
+  "${credential_args[@]}" \
+  --output "benchmarks/infra-core-$(date -u +%Y%m%d-%H%M%S)"
+```
+
+A suite is a strict TOML manifest containing an ID, a default round count, and
+an ordered list of arena manifests. Every arena must be a build race using the
+same model fleet; an arena can override the default with `rounds = N`. Arenas
+run sequentially, and `benchmark.json` is atomically updated after each one.
+Re-running the command resumes the checkpoint. The terminal and JSON reports
+aggregate wins, durable deployments, milestone coverage, median durable time,
+usage, cost, cost per durable deployment, and failure sources by model rather
+than by arena-specific agent ID.
 
 The match writes an append-only `events.jsonl` and final `world.json`. Live and
 replay views use the same reducer:

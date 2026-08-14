@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write as _;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use aoe_domain::{ArenaManifest, MatchState};
 use aoe_replay::WorldState;
@@ -64,8 +64,8 @@ pub enum SeriesError {
     Manifest(#[from] aoe_domain::ManifestError),
     #[error("series must contain at least one round")]
     Empty,
-    #[error("series output already exists: {0}")]
-    OutputExists(String),
+    #[error("existing series checkpoint does not match this run: {0}")]
+    ResumeMismatch(String),
     #[error("series port range exceeds 65535")]
     PortRange,
     #[error("round {round} failed: {source}")]
@@ -84,8 +84,9 @@ pub enum SeriesError {
 ///
 /// # Errors
 ///
-/// Returns an error when the manifest is invalid, output already exists, a
-/// round fails to run, or the aggregate summary cannot be written.
+/// Returns an error when the manifest is invalid, an existing checkpoint does
+/// not describe the same series, a round fails, or the summary cannot be
+/// written. A compatible checkpoint is resumed automatically.
 pub async fn run_series(options: SeriesOptions) -> Result<SeriesSummary, SeriesError> {
     let original = ArenaManifest::load(&options.run.manifest)?;
     let requested = options.rounds.unwrap_or(original.territories.len());
@@ -93,19 +94,23 @@ pub async fn run_series(options: SeriesOptions) -> Result<SeriesSummary, SeriesE
         return Err(SeriesError::Empty);
     }
     let summary_path = options.run.output.join("series.json");
-    if summary_path.exists() {
-        return Err(SeriesError::OutputExists(
-            options.run.output.display().to_string(),
-        ));
-    }
     fs::create_dir_all(&options.run.output)?;
 
-    let mut rounds = Vec::with_capacity(requested);
-    let mut states = Vec::with_capacity(requested);
-    for index in 0..requested {
+    let (mut rounds, mut states) =
+        load_checkpoint(&summary_path, &options.run.output, &original, requested)?;
+    if states
+        .last()
+        .is_some_and(|state| state.match_state == MatchState::Aborted)
+        || rounds.len() == requested
+    {
+        return Ok(build_summary(&original, requested, rounds, &states));
+    }
+
+    for index in rounds.len()..requested {
         let mut manifest = original.clone();
         rotate_seats(&mut manifest, index);
         let output = options.run.output.join(format!("round-{:03}", index + 1));
+        archive_incomplete_round(&output)?;
         let mut run = options.run.clone();
         run.output.clone_from(&output);
         (run.base_port, run.multicast_port) = round_ports(
@@ -139,6 +144,72 @@ pub async fn run_series(options: SeriesOptions) -> Result<SeriesSummary, SeriesE
         }
     }
     Ok(build_summary(&original, requested, rounds, &states))
+}
+
+fn load_checkpoint(
+    summary_path: &Path,
+    output: &Path,
+    manifest: &ArenaManifest,
+    requested: usize,
+) -> Result<(Vec<SeriesRound>, Vec<WorldState>), SeriesError> {
+    if !summary_path.exists() {
+        return Ok((Vec::with_capacity(requested), Vec::with_capacity(requested)));
+    }
+    let summary: SeriesSummary = serde_json::from_slice(&fs::read(summary_path)?)?;
+    if summary.schema_version != SERIES_SCHEMA_VERSION {
+        return Err(SeriesError::ResumeMismatch(format!(
+            "schema version is {}, expected {SERIES_SCHEMA_VERSION}",
+            summary.schema_version
+        )));
+    }
+    if summary.arena_id != manifest.arena.id {
+        return Err(SeriesError::ResumeMismatch(format!(
+            "arena is {}, checkpoint is {}",
+            manifest.arena.id, summary.arena_id
+        )));
+    }
+    if summary.rounds_requested != requested
+        || summary.rounds.len() > requested
+        || summary.rounds_completed != summary.rounds.len()
+    {
+        return Err(SeriesError::ResumeMismatch(format!(
+            "requested {requested} rounds, checkpoint requested {}",
+            summary.rounds_requested
+        )));
+    }
+    for (index, round) in summary.rounds.iter().enumerate() {
+        if round.round != index + 1 {
+            return Err(SeriesError::ResumeMismatch(
+                "completed rounds are not contiguous".into(),
+            ));
+        }
+    }
+    let states = summary
+        .rounds
+        .iter()
+        .map(|round| {
+            let path = output
+                .join(format!("round-{:03}", round.round))
+                .join("world.json");
+            serde_json::from_slice(&fs::read(path)?).map_err(SeriesError::from)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok((summary.rounds, states))
+}
+
+fn archive_incomplete_round(output: &Path) -> Result<(), SeriesError> {
+    if !output.exists() {
+        return Ok(());
+    }
+    let mut index = 1;
+    loop {
+        let archive = output.with_extension(format!("interrupted-{index}"));
+        if !archive.exists() {
+            fs::rename(output, archive)?;
+            return Ok(());
+        }
+        index += 1;
+    }
 }
 
 /// Render a compact terminal table for a completed series.
@@ -342,14 +413,14 @@ fn median(mut values: Vec<u64>) -> Option<u64> {
     values.get(values.len() / 2).copied()
 }
 
-fn write_summary(path: &PathBuf, summary: &SeriesSummary) -> Result<(), SeriesError> {
+fn write_summary(path: &Path, summary: &SeriesSummary) -> Result<(), SeriesError> {
     let temporary = path.with_extension("json.partial");
     fs::write(&temporary, serde_json::to_vec_pretty(summary)?)?;
     fs::rename(temporary, path)?;
     Ok(())
 }
 
-fn read_usage_agents(path: &PathBuf) -> Result<Vec<String>, SeriesError> {
+fn read_usage_agents(path: &Path) -> Result<Vec<String>, SeriesError> {
     let source = fs::read_to_string(path)?;
     let mut agents = BTreeSet::new();
     for line in source.lines().filter(|line| !line.trim().is_empty()) {
@@ -382,10 +453,16 @@ fn money(microusd: u64) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+    use std::path::PathBuf;
+
     use aoe_domain::ArenaManifest;
     use aoe_replay::WorldState;
 
-    use super::{build_summary, render_series, rotate_seats, round_ports};
+    use super::{
+        archive_incomplete_round, build_summary, load_checkpoint, render_series, rotate_seats,
+        round_ports, write_summary,
+    };
 
     const MANIFEST: &str = include_str!("../../runtime/tests/fixture.toml");
 
@@ -492,5 +569,65 @@ mod tests {
                     && standing.output_tokens.is_none()
                     && standing.cost_microusd.is_none())
         );
+    }
+
+    #[test]
+    fn loads_a_compatible_series_checkpoint() {
+        let root = temporary_directory("resume");
+        let manifest = ArenaManifest::parse(MANIFEST).expect("manifest");
+        let state = WorldState::default();
+        let round_output = root.join("round-001");
+        fs::create_dir_all(&round_output).expect("round directory");
+        fs::write(
+            round_output.join("world.json"),
+            serde_json::to_vec_pretty(&state).expect("world json"),
+        )
+        .expect("world");
+        let rounds = vec![super::round_summary(
+            1,
+            round_output,
+            &manifest,
+            &state,
+            Vec::new(),
+        )];
+        let summary = build_summary(&manifest, 2, rounds, &[state]);
+        let summary_path = root.join("series.json");
+        write_summary(&summary_path, &summary).expect("summary");
+
+        let (rounds, states) =
+            load_checkpoint(&summary_path, &root, &manifest, 2).expect("checkpoint");
+        assert_eq!(rounds.len(), 1);
+        assert_eq!(states.len(), 1);
+        assert!(load_checkpoint(&summary_path, &root, &manifest, 3).is_err());
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn archives_an_uncheckpointed_round_before_retrying() {
+        let root = temporary_directory("archive");
+        let round = root.join("round-002");
+        fs::create_dir_all(&round).expect("round directory");
+        fs::write(round.join("evidence"), "kept").expect("evidence");
+
+        archive_incomplete_round(&round).expect("archive");
+        assert!(!round.exists());
+        assert_eq!(
+            fs::read_to_string(root.join("round-002.interrupted-1/evidence"))
+                .expect("archived evidence"),
+            "kept"
+        );
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    fn temporary_directory(label: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "agents-of-empires-series-{label}-{}",
+            std::process::id()
+        ));
+        if path.exists() {
+            fs::remove_dir_all(&path).expect("stale test directory");
+        }
+        fs::create_dir_all(&path).expect("test directory");
+        path
     }
 }

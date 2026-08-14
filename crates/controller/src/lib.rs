@@ -1,4 +1,5 @@
 pub mod arena;
+pub mod benchmark;
 pub mod cli;
 pub mod commands;
 pub mod provenance;
@@ -7,6 +8,10 @@ pub mod runner;
 pub mod series;
 
 pub use arena::{ArenaPackageReport, init_arena, validate_arena_package};
+pub use benchmark::{
+    BenchmarkArenaSummary, BenchmarkError, BenchmarkOptions, BenchmarkPlanEntry, BenchmarkStanding,
+    BenchmarkSummary, render_benchmark, run_benchmark,
+};
 pub use cli::{ArenaCommand, Cli, Command, ParseError};
 pub use commands::{DoctorReport, ValidationReport, doctor, inspect, replay_log, validate};
 pub use provenance::{MatchProvenance, read_provenance, write_provenance};
