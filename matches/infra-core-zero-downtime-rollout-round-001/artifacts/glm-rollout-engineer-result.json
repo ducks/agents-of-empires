@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "agent": "glm-rollout-engineer",
+  "territory": "rollout-three",
+  "status": "completed",
+  "summary": "Now I understand the setup. `/opt/rollout/v2.py` doesn't exist (that's why v2 failed). The DB already has the records table and customer data. Let me write v2, matching v1's style.Now reset the failed state and start v2:v2 is running. Now verify it directly on 8082 before switching traffic:v2 is fully ready and serving all existing records. Now verify the public endpoint is currently on v1 (baseline), then atomically switch upstream:Upstream switched atomically. Now verify the public endpoint serves v2 with health, version, and all existing records:Public endpoint is fully on v2. Now verify durability — v2 service restart and full host reboot survival:Now verify reboot survival setup — all three services must be enabled and the upstream file + DB persist:Rollout complete. v2 is live on the public endpoint with zero downtime.\n\n## Summary\n\n**What was wrong:** The `rollout-v2.service` slot existed but `/opt/rollout/v2.py` was missing, so v2 was stuck in `start-limit-hit` failure. The proxy was still forwarding to v1 on port 8081.\n\n**What I did:**\n1. **Implemented v2** at `/opt/rollout/v2.py` — modeled on v1's code, listening on `127.0.0.1:8082`, reading/writing the same `/var/lib/rollout/records.sqlite3` (so existing customer records are preserved), with `/health`→`ready`, `/version`→`v2`, and `PUT`/`GET /records/<id>` per contract.\n2. **Brought v2 up cleanly:** `systemctl reset-failed` then `start` — v2 went active.\n3. **Verified v2 directly on 8082** before touching traffic: health, version, both existing records, and 404 on missing — all correct.\n4. **Atomic cutover:** `printf '8082' > upstream.tmp && mv upstream.tmp upstream`. The proxy reads `/var/lib/rollout/upstream` per request, so the very next request after the rename hit v2. No proxy restart, no v1 restart — both forbidden and unnecessary.\n5. **Verified the public endpoint** post-switch: health `ready`, version `v2`, existing records intact, PUT+GET round-trip working.\n6. **Survival checks:**\n   - **v2 restart:** `systemctl restart rollout-v2.service` → recovered, all records still served (DB-backed, `Restart=always`).\n   - **Reboot survival:** all three units are `enabled`; `upstream` file (`8082`), the sqlite DB, and `/opt/rollout/v2.py` are all on persistent storage, so they survive a full host reboot without agent help.\n\n**Constraints honored:** proxy and v1 were never stopped or restarted; no request failed during cutover (baseline v1 was healthy, v2 was verified healthy before the swap, and the swap was a single atomic rename); records were preserved throughout.\n\n**Current state:** `rollout-v2.service` active and enabled, `rollout-proxy.service` active and enabled, upstream pinned to `8082`.",
+  "usage": {
+    "rounds": null,
+    "tool_calls": null,
+    "input_tokens": 76193,
+    "output_tokens": 3044,
+    "cost_microusd": 17467,
+    "resource_units": 1
+  },
+  "transcript": "benchmarks/infra-core-smoke-20260815-003451/03-zero-downtime-rollout/round-001/agents/glm-rollout-engineer/transcript.json"
+}
