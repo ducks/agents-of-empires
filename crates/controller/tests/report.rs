@@ -7,8 +7,8 @@ use aoe_controller::{
     generate_reports_with_series,
 };
 use aoe_domain::{
-    AgentTerminalState, CompetitorState, Event, EventEnvelope, FailureSource, MatchState,
-    TerritoryState,
+    AgentTerminalState, ArenaManifest, CompetitorState, Event, EventEnvelope, FailureSource,
+    MatchState, TerritoryState,
 };
 use aoe_replay::{AgentView, MilestoneView, TerritoryView, WorldState};
 use serde_json::json;
@@ -111,6 +111,15 @@ fn generates_archive_and_match_artifacts() {
         "[]",
     )
     .expect("transcript");
+    let manifest_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("arenas/first-build/arena.toml");
+    let manifest = ArenaManifest::load(manifest_path).expect("arena manifest");
+    fs::write(
+        source.join("arena.json"),
+        serde_json::to_vec_pretty(&manifest).expect("arena JSON"),
+    )
+    .expect("arena snapshot");
 
     let output = root.join("site");
     let summary = generate_reports(&root.join("matches"), &output).expect("report");
@@ -130,9 +139,17 @@ fn generates_archive_and_match_artifacts() {
     assert!(match_page.contains("data-match-replay"));
     assert!(match_page.contains("data-scrubber"));
     assert!(match_page.contains("match_finished"));
+    assert!(match_page.contains("Service map"));
+    assert!(match_page.contains("State Store"));
+    assert!(match_page.contains("data-topology"));
     assert!(
         output
             .join("matches/build-race-001/artifacts/agent-a-transcript.json")
+            .is_file()
+    );
+    assert!(
+        output
+            .join("matches/build-race-001/artifacts/arena.json")
             .is_file()
     );
 

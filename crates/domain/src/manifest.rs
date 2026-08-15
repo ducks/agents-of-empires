@@ -16,9 +16,64 @@ pub struct ArenaManifest {
     pub network: NetworkConfig,
     pub rules: MatchRules,
     pub build: Option<BuildContract>,
+    #[serde(default)]
+    pub visualization: Option<ArenaVisualization>,
     pub classes: Vec<TerritoryClass>,
     pub territories: Vec<TerritoryConfig>,
     pub agents: Vec<AgentConfig>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArenaVisualization {
+    pub nodes: Vec<TopologyNode>,
+    #[serde(default)]
+    pub links: Vec<TopologyLink>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TopologyNode {
+    pub id: String,
+    pub display_name: String,
+    pub kind: TopologyNodeKind,
+    pub milestone: Option<String>,
+    pub x: u8,
+    pub y: u8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TopologyNodeKind {
+    Client,
+    Proxy,
+    Service,
+    Worker,
+    Queue,
+    Database,
+    Storage,
+    Host,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TopologyLink {
+    pub from: String,
+    pub to: String,
+    #[serde(default)]
+    pub kind: TopologyLinkKind,
+    pub label: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TopologyLinkKind {
+    #[default]
+    Traffic,
+    Queue,
+    Replication,
+    Storage,
+    Lifecycle,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -257,6 +312,11 @@ impl ArenaManifest {
             self.build.as_ref(),
             self.rules.duration_seconds,
         );
+        validate_visualization(
+            &mut errors,
+            self.visualization.as_ref(),
+            self.build.as_ref(),
+        );
 
         let class_ids = validate_classes(&mut errors, &self.classes);
         let territory_ids = validate_territories(
@@ -267,6 +327,81 @@ impl ArenaManifest {
         );
         validate_agents(&mut errors, &self.agents, &territory_ids);
         errors
+    }
+}
+
+fn validate_visualization(
+    errors: &mut Vec<ValidationError>,
+    visualization: Option<&ArenaVisualization>,
+    build: Option<&BuildContract>,
+) {
+    let Some(visualization) = visualization else {
+        return;
+    };
+    if visualization.nodes.is_empty() {
+        push_error(errors, "visualization.nodes", "must not be empty");
+    }
+    let milestones: HashSet<_> = build
+        .into_iter()
+        .flat_map(|contract| &contract.milestones)
+        .map(|milestone| milestone.id.as_str())
+        .collect();
+    let mut node_ids = HashSet::new();
+    for (index, node) in visualization.nodes.iter().enumerate() {
+        let path = format!("visualization.nodes[{index}]");
+        validate_id(errors, &format!("{path}.id"), &node.id);
+        if !node_ids.insert(node.id.as_str()) {
+            push_error(errors, format!("{path}.id"), "must be unique");
+        }
+        if node.display_name.trim().is_empty() {
+            push_error(errors, format!("{path}.display_name"), "must not be empty");
+        }
+        if node.x > 100 {
+            push_error(errors, format!("{path}.x"), "must be between 0 and 100");
+        }
+        if node.y > 100 {
+            push_error(errors, format!("{path}.y"), "must be between 0 and 100");
+        }
+        if let Some(milestone) = &node.milestone
+            && !milestones.contains(milestone.as_str())
+        {
+            push_error(
+                errors,
+                format!("{path}.milestone"),
+                format!("references unknown milestone {milestone}"),
+            );
+        }
+    }
+    for (index, link) in visualization.links.iter().enumerate() {
+        let path = format!("visualization.links[{index}]");
+        if !node_ids.contains(link.from.as_str()) {
+            push_error(
+                errors,
+                format!("{path}.from"),
+                format!("references unknown node {}", link.from),
+            );
+        }
+        if !node_ids.contains(link.to.as_str()) {
+            push_error(
+                errors,
+                format!("{path}.to"),
+                format!("references unknown node {}", link.to),
+            );
+        }
+        if link.from == link.to {
+            push_error(errors, path, "must connect two different nodes");
+        }
+        if link
+            .label
+            .as_ref()
+            .is_some_and(|label| label.trim().is_empty())
+        {
+            push_error(
+                errors,
+                format!("visualization.links[{index}].label"),
+                "must not be empty",
+            );
+        }
     }
 }
 

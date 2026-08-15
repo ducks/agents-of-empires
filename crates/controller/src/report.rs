@@ -3,7 +3,7 @@ use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use aoe_domain::AgentTerminalState;
+use aoe_domain::{AgentTerminalState, ArenaManifest, ArenaVisualization};
 use aoe_replay::WorldState;
 use serde::Serialize;
 use thiserror::Error;
@@ -32,6 +32,8 @@ pub enum ReportError {
     },
     #[error("invalid world state in {path}: {detail}")]
     World { path: PathBuf, detail: String },
+    #[error("invalid arena snapshot in {path}: {detail}")]
+    Arena { path: PathBuf, detail: String },
     #[error("invalid series summary in {path}: {detail}")]
     Series { path: PathBuf, detail: String },
     #[error("invalid benchmark summary in {path}: {detail}")]
@@ -53,6 +55,7 @@ struct MatchReport {
     source: PathBuf,
     report_dir: PathBuf,
     provenance: Option<MatchProvenance>,
+    visualization: Option<ArenaVisualization>,
     current: bool,
 }
 
@@ -301,6 +304,7 @@ fn load_match_report(
     let state = read_world(&source.join("world.json"))?;
     let events = read_report_events(&source.join("events.jsonl"))?;
     let provenance = read_provenance(&source.join("match.json")).ok();
+    let visualization = read_arena_visualization(&source.join("arena.json"))?;
     let report = MatchReport {
         name,
         slug,
@@ -310,6 +314,7 @@ fn load_match_report(
         source,
         report_dir,
         provenance,
+        visualization,
         current: false,
     };
     copy_public_artifacts(&report)?;
@@ -451,6 +456,19 @@ fn read_world(path: &Path) -> Result<WorldState, ReportError> {
     })
 }
 
+fn read_arena_visualization(path: &Path) -> Result<Option<ArenaVisualization>, ReportError> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let source = fs::read(path)?;
+    let manifest: ArenaManifest =
+        serde_json::from_slice(&source).map_err(|error| ReportError::Arena {
+            path: path.to_owned(),
+            detail: error.to_string(),
+        })?;
+    Ok(manifest.visualization)
+}
+
 fn read_series(path: &Path) -> Result<SeriesSummary, ReportError> {
     let source = fs::read(path)?;
     serde_json::from_slice(&source).map_err(|error| ReportError::Series {
@@ -474,6 +492,9 @@ fn copy_public_artifacts(report: &MatchReport) -> Result<(), ReportError> {
     fs::copy(report.source.join("world.json"), raw.join("world.json"))?;
     if report.source.join("match.json").is_file() {
         fs::copy(report.source.join("match.json"), raw.join("match.json"))?;
+    }
+    if report.source.join("arena.json").is_file() {
+        fs::copy(report.source.join("arena.json"), raw.join("arena.json"))?;
     }
     for agent in report.state.agents.keys() {
         let source = report.source.join("agents").join(agent);
@@ -974,6 +995,11 @@ fn render_match(report: &MatchReport) -> String {
         .sum();
     let replay = render_replay(report);
     let timeline = render_timeline(&report.events);
+    let arena_artifact = if report.source.join("arena.json").is_file() {
+        "<a href=\"artifacts/arena.json\">arena.json</a>"
+    } else {
+        ""
+    };
     let provenance = report.provenance.as_ref().map_or_else(
         || "historical · provenance unavailable".to_owned(),
         |value| {
@@ -999,7 +1025,7 @@ fn render_match(report: &MatchReport) -> String {
         <main>{replay}<section><div class=\"section-heading\"><h2>Territories</h2><p>The referee-owned result frozen when the first deployment became durable.</p></div><div class=\"table-wrap\"><table><thead><tr><th>Territory</th><th>State</th><th>Milestones</th><th>Points</th><th>Durable at</th></tr></thead><tbody>{territories}</tbody></table></div></section>
         <section><div class=\"section-heading\"><h2>Agents</h2><p>Usage includes cumulative checkpoints captured while agents were still running.</p></div><div class=\"table-wrap\"><table><thead><tr><th>Agent</th><th>Model</th><th>Outcome</th><th>Input</th><th>Output</th><th>Cost</th><th>Artifact</th></tr></thead><tbody>{agents}</tbody></table></div></section>
         <section><div class=\"section-heading\"><h2>Event timeline</h2><p>{} immutable events. The match clock remains frozen during post-match collection.</p></div><ol class=\"timeline\">{timeline}</ol></section>
-        <footer><a href=\"artifacts/events.jsonl\">events.jsonl</a><a href=\"artifacts/world.json\">world.json</a></footer></main>",
+        <footer><a href=\"artifacts/events.jsonl\">events.jsonl</a><a href=\"artifacts/world.json\">world.json</a>{arena_artifact}</footer></main>",
         state.match_state,
         escape(state.finish_reason.as_deref().unwrap_or("unfinished")),
         escape(&report.name),
@@ -1061,6 +1087,7 @@ fn render_replay(report: &MatchReport) -> String {
     let payload = serde_json::json!({
         "duration": report.state.elapsed_ms,
         "lanes": lanes,
+        "topology": report.visualization,
         "events": report.events.iter().map(|event| &event.value).collect::<Vec<_>>(),
         "stalls": replay_stalls(&report.events, report.state.elapsed_ms),
     });
@@ -1071,7 +1098,7 @@ fn render_replay(report: &MatchReport) -> String {
         .replace('&', "\\u0026");
     format!(
         r#"<section class="replay" data-match-replay><div class="section-heading"><div><span class="eyebrow">Match replay</span><h2>Watch the race unfold</h2></div><p>Play the referee's event stream or scrub directly to any moment.</p></div>
-        <div class="replay-shell"><div class="replay-controls"><button type="button" data-play>Play</button><strong data-clock>0:00</strong><input data-scrubber aria-label="Match clock" type="range" min="0" max="{duration}" value="0" step="100"><select data-speed aria-label="Playback speed"><option value="1">1×</option><option value="5">5×</option><option value="20" selected>20×</option><option value="60">60×</option></select></div><div class="replay-ruler"><span>Start</span><span>{finish}</span></div><div class="replay-lanes" data-lanes></div><aside class="replay-inspector" data-inspector><span class="eyebrow">Selected event</span><strong>Press play or select a marker</strong><p>Milestones, state changes, usage, and terminal outcomes appear on the shared clock.</p></aside></div>
+        <div class="replay-shell"><div class="replay-controls"><button type="button" data-play>Play</button><strong data-clock>0:00</strong><input data-scrubber aria-label="Match clock" type="range" min="0" max="{duration}" value="0" step="100"><select data-speed aria-label="Playback speed"><option value="1">1×</option><option value="5">5×</option><option value="20" selected>20×</option><option value="60">60×</option></select></div><div class="topology" data-topology hidden></div><div class="replay-ruler"><span>Start</span><span>{finish}</span></div><div class="replay-lanes" data-lanes></div><aside class="replay-inspector" data-inspector><span class="eyebrow">Selected event</span><strong>Press play or select a marker</strong><p>Milestones, state changes, usage, and terminal outcomes appear on the shared clock.</p></aside></div>
         <script type="application/json" data-replay-data>{payload}</script><script>{REPLAY_SCRIPT}</script></section>"#,
         duration = report.state.elapsed_ms,
         finish = duration(report.state.elapsed_ms),
@@ -1255,9 +1282,26 @@ const STYLE: &str = r#"
 "#;
 
 const REPLAY_STYLE: &str = r#"
-button,select,input{font:inherit}.replay-shell{border:1px solid var(--line);background:linear-gradient(145deg,#1d241b,var(--panel));padding:1.25rem}.replay-controls{display:grid;grid-template-columns:auto 4rem 1fr auto;gap:1rem;align-items:center}.replay-controls button,.replay-controls select{color:var(--text);background:#0c0f0b;border:1px solid var(--line);padding:.55rem .8rem}.replay-controls button{color:var(--gold);cursor:pointer}.replay-controls input{accent-color:var(--gold);width:100%}.replay-hud,.replay-ruler{display:flex;justify-content:space-between;color:var(--muted);font-size:.75rem}.replay-hud{margin:.75rem 0;border-top:1px solid var(--line);padding-top:.75rem}.replay-ruler{margin:1rem 0 .35rem;padding-left:15.5rem}.replay-lane{display:grid;grid-template-columns:14rem 1fr;gap:1.5rem;align-items:center;padding:1rem 0;border-top:1px solid var(--line)}.lane-label strong,.lane-label small,.lane-label span{display:block}.lane-label small{color:var(--muted);overflow:hidden;text-overflow:ellipsis}.lane-label span{color:var(--gold);font-size:.75rem;margin-top:.3rem}.lane-track{height:2.6rem;position:relative;background:#0d100c;border:1px solid #293126}.lane-progress{position:absolute;inset:0 auto 0 0;width:0;background:linear-gradient(90deg,#39452eaa,#68603388);transition:width .08s linear}.lane-stall{position:absolute;top:.28rem;height:2rem;padding:0 .4rem;border:1px solid #cb6e62;border-radius:.25rem;background:repeating-linear-gradient(135deg,#8f403c88 0,#8f403c88 6px,#6d312d88 6px,#6d312d88 12px);color:#ffe2dc;font-size:.68rem;line-height:1.8rem;text-align:center;overflow:hidden;cursor:pointer;opacity:.18;white-space:nowrap}.lane-stall.visible{opacity:.85}.lane-stall.resolved{border-color:var(--orange);background:repeating-linear-gradient(135deg,#895b3188 0,#895b3188 6px,#60422488 6px,#60422488 12px)}.lane-stall.selected{outline:2px solid var(--gold);z-index:2}.lane-marker{position:absolute;top:50%;translate:-50% -50%;width:.85rem;height:.85rem;padding:0;border:2px solid var(--panel);border-radius:50%;background:var(--muted);cursor:pointer;opacity:.2;transition:opacity .15s,scale .15s}.lane-marker.visible{opacity:1}.lane-marker:hover,.lane-marker.selected{scale:1.5;z-index:3}.lane-marker.milestone_passed,.lane-marker.durable_deployment_completed{background:var(--green)}.lane-marker.competitor_state_changed{background:var(--gold)}.lane-marker.agent_interrupted,.lane-marker.agent_terminated,.lane-marker.agent_failed{background:var(--red)}.lane-marker.usage_charged{background:var(--orange)}.replay-inspector{min-height:7rem;border-top:1px solid var(--line);margin-top:.5rem;padding:1rem 0 0}.replay-inspector strong{display:block;margin:.3rem 0}.replay-inspector p{color:var(--muted);margin:.25rem 0}.replay-inspector pre{max-height:18rem}@media(max-width:720px){.replay-controls{grid-template-columns:auto 3.5rem 1fr}.replay-controls select{grid-column:1/-1}.replay-ruler{padding-left:0}.replay-lane{grid-template-columns:1fr;gap:.5rem}}
+button,select,input{font:inherit}.replay-shell{border:1px solid var(--line);background:linear-gradient(145deg,#1d241b,var(--panel));padding:1.25rem}.replay-controls{display:grid;grid-template-columns:auto 4rem 1fr auto;gap:1rem;align-items:center}.replay-controls button,.replay-controls select{color:var(--text);background:#0c0f0b;border:1px solid var(--line);padding:.55rem .8rem}.replay-controls button{color:var(--gold);cursor:pointer}.replay-controls input{accent-color:var(--gold);width:100%}.replay-hud,.replay-ruler{display:flex;justify-content:space-between;color:var(--muted);font-size:.75rem}.replay-hud{margin:.75rem 0;border-top:1px solid var(--line);padding-top:.75rem}.replay-ruler{margin:1rem 0 .35rem;padding-left:15.5rem}.replay-lane{display:grid;grid-template-columns:14rem 1fr;gap:1.5rem;align-items:center;padding:1rem 0;border-top:1px solid var(--line)}.lane-label strong,.lane-label small,.lane-label span{display:block}.lane-label small{color:var(--muted);overflow:hidden;text-overflow:ellipsis}.lane-label span{color:var(--gold);font-size:.75rem;margin-top:.3rem}.lane-track{height:2.6rem;position:relative;background:#0d100c;border:1px solid #293126}.lane-progress{position:absolute;inset:0 auto 0 0;width:0;background:linear-gradient(90deg,#39452eaa,#68603388);transition:width .08s linear}.lane-stall{position:absolute;top:.28rem;height:2rem;padding:0 .4rem;border:1px solid #cb6e62;border-radius:.25rem;background:repeating-linear-gradient(135deg,#8f403c88 0,#8f403c88 6px,#6d312d88 6px,#6d312d88 12px);color:#ffe2dc;font-size:.68rem;line-height:1.8rem;text-align:center;overflow:hidden;cursor:pointer;opacity:.18;white-space:nowrap}.lane-stall.visible{opacity:.85}.lane-stall.resolved{border-color:var(--orange);background:repeating-linear-gradient(135deg,#895b3188 0,#895b3188 6px,#60422488 6px,#60422488 12px)}.lane-stall.selected{outline:2px solid var(--gold);z-index:2}.lane-marker{position:absolute;top:50%;translate:-50% -50%;width:.85rem;height:.85rem;padding:0;border:2px solid var(--panel);border-radius:50%;background:var(--muted);cursor:pointer;opacity:.2;transition:opacity .15s,scale .15s}.lane-marker.visible{opacity:1}.lane-marker:hover,.lane-marker.selected{scale:1.5;z-index:3}.lane-marker.milestone_passed,.lane-marker.durable_deployment_completed{background:var(--green)}.lane-marker.competitor_state_changed{background:var(--gold)}.lane-marker.agent_interrupted,.lane-marker.agent_terminated,.lane-marker.agent_failed{background:var(--red)}.lane-marker.usage_charged{background:var(--orange)}.replay-inspector{min-height:7rem;border-top:1px solid var(--line);margin-top:.5rem;padding:1rem 0 0}.replay-inspector strong{display:block;margin:.3rem 0}.replay-inspector p{color:var(--muted);margin:.25rem 0}.replay-inspector pre{max-height:18rem}.topology{margin:1.25rem 0 1.75rem}.topology-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:.7rem;color:var(--muted);font-size:.75rem}.topology-legend{display:flex;gap:.75rem;flex-wrap:wrap}.topology-legend span::before{content:"";display:inline-block;width:.55rem;height:.55rem;border-radius:50%;margin-right:.3rem;background:var(--muted)}.topology-legend .verifying::before{background:var(--gold)}.topology-legend .healthy::before{background:var(--green)}.topology-legend .failed::before{background:var(--red)}.topology-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(285px,1fr));gap:.8rem}.topology-card{border:1px solid var(--line);background:#0d100c}.topology-card>header{display:flex;justify-content:space-between;gap:.5rem;padding:.65rem .8rem;border-bottom:1px solid var(--line)}.topology-card>header small{color:var(--muted);overflow:hidden;text-overflow:ellipsis}.topology-board{position:relative;aspect-ratio:16/10;min-height:190px;background:radial-gradient(circle at 50% 50%,#273022 0,transparent 65%)}.topology-links{position:absolute;inset:0;width:100%;height:100%;overflow:visible}.topology-link{stroke:#64705f;stroke-width:1.2;stroke-dasharray:3 2}.topology-link.replication{stroke:var(--gold)}.topology-link.lifecycle{stroke:var(--orange);stroke-dasharray:1 3}.topology-node{position:absolute;translate:-50% -50%;min-width:4.5rem;max-width:6.5rem;padding:.4rem .45rem;border:1px solid #64705f;border-radius:.3rem;background:#20261e;color:var(--text);text-align:center;transition:border-color .15s,background .15s,box-shadow .15s}.topology-node b,.topology-node small{display:block;overflow:hidden;text-overflow:ellipsis}.topology-node b{font-size:.72rem;white-space:nowrap}.topology-node small{color:var(--muted);font-size:.58rem;text-transform:uppercase}.topology-node.verifying{border-color:var(--gold);box-shadow:0 0 0 2px #e7bb5533}.topology-node.healthy{border-color:var(--green);background:#1b3520}.topology-node.failed{border-color:var(--red);background:#3b1d1a}.topology-node.durable{border-color:var(--gold);background:#343019;box-shadow:0 0 0 2px #e7bb5544}@media(max-width:720px){.replay-controls{grid-template-columns:auto 3.5rem 1fr}.replay-controls select{grid-column:1/-1}.replay-ruler{padding-left:0}.replay-lane{grid-template-columns:1fr;gap:.5rem}.topology-grid{grid-template-columns:1fr}.topology-header{display:block}.topology-legend{margin-top:.4rem}}
 "#;
 
 const REPLAY_SCRIPT: &str = r#"
-(()=>{const root=document.currentScript.closest('[data-match-replay]');if(!root)return;const data=JSON.parse(root.querySelector('[data-replay-data]').textContent);const lanes=root.querySelector('[data-lanes]'),slider=root.querySelector('[data-scrubber]'),clock=root.querySelector('[data-clock]'),play=root.querySelector('[data-play]'),speed=root.querySelector('[data-speed]'),inspector=root.querySelector('[data-inspector]');const laneMap=new Map(),agentMap=new Map(data.lanes.map(x=>[x.agent,x.territory]));const plotted=new Set(['competitor_state_changed','milestone_passed','durable_deployment_completed','usage_charged','agent_interrupted','agent_terminated','agent_failed']);const fmt=ms=>`${Math.floor(ms/60000)}:${String(Math.floor(ms/1000)%60).padStart(2,'0')}`;const label=e=>e.milestone||e.to||e.reason||e.kind.replaceAll('_',' ');const text=v=>{const span=document.createElement('span');span.textContent=v??'';return span.innerHTML};for(const lane of data.lanes){const el=document.createElement('div');el.className='replay-lane';el.innerHTML=`<div class="lane-label"><strong>${text(lane.territory)}${lane.winner?' ★':''}</strong><small>${text(lane.model)}</small><span data-state>waiting</span></div><div class="lane-track"><div class="lane-progress"></div></div>`;lanes.append(el);laneMap.set(lane.territory,el)}const markers=[];for(const e of data.events){const territory=e.territory||agentMap.get(e.agent);if(!territory||!plotted.has(e.kind)||!laneMap.has(territory))continue;const marker=document.createElement('button');marker.type='button';marker.className=`lane-marker ${e.kind}`;marker.style.left=`${Math.min(100,(e.elapsed_ms||0)/Math.max(1,data.duration)*100)}%`;marker.title=`${fmt(e.elapsed_ms||0)} · ${label(e)}`;marker.addEventListener('click',()=>inspect(e,marker));laneMap.get(territory).querySelector('.lane-track').append(marker);markers.push([marker,e])}function inspect(e,marker){root.querySelectorAll('.lane-marker.selected').forEach(x=>x.classList.remove('selected'));if(marker)marker.classList.add('selected');inspector.innerHTML=`<span class="eyebrow">${fmt(e.elapsed_ms||0)} · event #${e.sequence??'?'}</span><strong>${text(label(e))}</strong><p>${text(e.territory||e.agent||'match')}</p><details><summary>Raw referee event</summary><pre>${text(JSON.stringify(e,null,2))}</pre></details>`}function render(now){slider.value=now;clock.textContent=fmt(now);for(const [territory,lane] of laneMap){lane.querySelector('.lane-progress').style.width=`${Math.min(100,now/Math.max(1,data.duration)*100)}%`;let state='working';for(const e of data.events){if((e.elapsed_ms||0)>now)break;const actor=e.territory||agentMap.get(e.agent);if(actor!==territory)continue;if(e.kind==='milestone_evaluation_started')state=`verifying ${e.milestone}`;else if(e.kind==='milestone_passed')state=`passed ${e.milestone}`;else if(e.kind==='competitor_state_changed')state=e.to;else if(e.kind==='agent_terminated'||e.kind==='agent_interrupted'||e.kind==='agent_failed')state=e.kind.replace('agent_','')}lane.querySelector('[data-state]').textContent=state}for(const [marker,e] of markers)marker.classList.toggle('visible',(e.elapsed_ms||0)<=now)}let running=false,last=0,current=0;function tick(ts){if(!running)return;if(!last)last=ts;current=Math.min(data.duration,current+(ts-last)*Number(speed.value));last=ts;render(current);if(current>=data.duration){running=false;play.textContent='Replay';return}requestAnimationFrame(tick)}play.addEventListener('click',()=>{if(running){running=false;play.textContent='Play';return}if(current>=data.duration)current=0;running=true;last=0;play.textContent='Pause';requestAnimationFrame(tick)});slider.addEventListener('input',()=>{current=Number(slider.value);render(current)});render(0)})();
+(()=>{
+const root=document.currentScript.closest('[data-match-replay]');if(!root)return;
+const data=JSON.parse(root.querySelector('[data-replay-data]').textContent);
+const lanes=root.querySelector('[data-lanes]'),slider=root.querySelector('[data-scrubber]'),clock=root.querySelector('[data-clock]'),play=root.querySelector('[data-play]'),speed=root.querySelector('[data-speed]'),inspector=root.querySelector('[data-inspector]'),topologyRoot=root.querySelector('[data-topology]');
+const laneMap=new Map(),topologyMap=new Map(),agentMap=new Map(data.lanes.map(x=>[x.agent,x.territory]));
+const plotted=new Set(['competitor_state_changed','milestone_passed','durable_deployment_completed','usage_charged','agent_interrupted','agent_terminated','agent_failed']);
+const kindLabel={client:'client',proxy:'proxy',service:'service',worker:'worker',queue:'queue',database:'database',storage:'storage',host:'host'};
+const fmt=ms=>`${Math.floor(ms/60000)}:${String(Math.floor(ms/1000)%60).padStart(2,'0')}`;
+const label=e=>e.milestone||e.to||e.reason||e.kind.replaceAll('_',' ');
+const text=v=>{const span=document.createElement('span');span.textContent=v??'';return span.innerHTML};
+for(const lane of data.lanes){const el=document.createElement('div');el.className='replay-lane';el.innerHTML=`<div class="lane-label"><strong>${text(lane.territory)}${lane.winner?' ★':''}</strong><small>${text(lane.model)}</small><span data-state>waiting</span></div><div class="lane-track"><div class="lane-progress"></div></div>`;lanes.append(el);laneMap.set(lane.territory,el)}
+if(data.topology?.nodes?.length){topologyRoot.hidden=false;topologyRoot.innerHTML='<div class="topology-header"><strong>Service map</strong><div class="topology-legend"><span>pending</span><span class="verifying">verifying</span><span class="healthy">healthy</span><span class="failed">failed</span></div></div><div class="topology-grid"></div>';const grid=topologyRoot.querySelector('.topology-grid');for(const lane of data.lanes){const card=document.createElement('article');card.className='topology-card';const links=data.topology.links.map(link=>{const from=data.topology.nodes.find(node=>node.id===link.from),to=data.topology.nodes.find(node=>node.id===link.to);if(!from||!to)return'';return `<line class="topology-link ${text(link.kind)}" x1="${from.x}%" y1="${from.y}%" x2="${to.x}%" y2="${to.y}%"><title>${text(link.label||`${link.from} to ${link.to}`)}</title></line>`}).join('');const nodes=data.topology.nodes.map(node=>`<div class="topology-node pending" data-node="${text(node.id)}" data-milestone="${text(node.milestone||'')}" style="left:${node.x}%;top:${node.y}%"><b>${text(node.display_name)}</b><small>${text(kindLabel[node.kind]||node.kind)}</small></div>`).join('');card.innerHTML=`<header><strong>${text(lane.territory)}${lane.winner?' ★':''}</strong><small>${text(lane.model)}</small></header><div class="topology-board"><svg class="topology-links" aria-hidden="true">${links}</svg>${nodes}</div>`;grid.append(card);topologyMap.set(lane.territory,card)}}
+const markers=[];for(const e of data.events){const territory=e.territory||agentMap.get(e.agent);if(!territory||!plotted.has(e.kind)||!laneMap.has(territory))continue;const marker=document.createElement('button');marker.type='button';marker.className=`lane-marker ${e.kind}`;marker.style.left=`${Math.min(100,(e.elapsed_ms||0)/Math.max(1,data.duration)*100)}%`;marker.title=`${fmt(e.elapsed_ms||0)} · ${label(e)}`;marker.addEventListener('click',()=>inspect(e,marker));laneMap.get(territory).querySelector('.lane-track').append(marker);markers.push([marker,e])}
+function inspect(e,marker){root.querySelectorAll('.lane-marker.selected').forEach(x=>x.classList.remove('selected'));if(marker)marker.classList.add('selected');inspector.innerHTML=`<span class="eyebrow">${fmt(e.elapsed_ms||0)} · event #${e.sequence??'?'}</span><strong>${text(label(e))}</strong><p>${text(e.territory||e.agent||'match')}</p><details><summary>Raw referee event</summary><pre>${text(JSON.stringify(e,null,2))}</pre></details>`}
+function renderTopology(territory,now){const card=topologyMap.get(territory);if(!card)return;const states=new Map(data.topology.nodes.filter(node=>node.milestone).map(node=>[node.milestone,'pending']));let durable=false;for(const e of data.events){if((e.elapsed_ms||0)>now)break;if((e.territory||agentMap.get(e.agent))!==territory)continue;if(e.kind==='milestone_evaluation_started')states.set(e.milestone,'verifying');else if(e.kind==='milestone_passed')states.set(e.milestone,'healthy');else if(e.kind==='milestone_failed'||e.kind==='milestone_revoked')states.set(e.milestone,'failed');else if(e.kind==='durable_deployment_completed')durable=true}for(const node of card.querySelectorAll('.topology-node')){node.classList.remove('pending','verifying','healthy','failed','durable');const milestone=node.dataset.milestone;node.classList.add(milestone?(durable&&states.get(milestone)==='healthy'?'durable':states.get(milestone)||'pending'):'pending')}}
+function render(now){slider.value=now;clock.textContent=fmt(now);for(const [territory,lane] of laneMap){lane.querySelector('.lane-progress').style.width=`${Math.min(100,now/Math.max(1,data.duration)*100)}%`;let state='working';for(const e of data.events){if((e.elapsed_ms||0)>now)break;const actor=e.territory||agentMap.get(e.agent);if(actor!==territory)continue;if(e.kind==='milestone_evaluation_started')state=`verifying ${e.milestone}`;else if(e.kind==='milestone_passed')state=`passed ${e.milestone}`;else if(e.kind==='competitor_state_changed')state=e.to;else if(e.kind==='agent_terminated'||e.kind==='agent_interrupted'||e.kind==='agent_failed')state=e.kind.replace('agent_','')}lane.querySelector('[data-state]').textContent=state;renderTopology(territory,now)}for(const [marker,e] of markers)marker.classList.toggle('visible',(e.elapsed_ms||0)<=now)}
+let running=false,last=0,current=0;function tick(ts){if(!running)return;if(!last)last=ts;current=Math.min(data.duration,current+(ts-last)*Number(speed.value));last=ts;render(current);if(current>=data.duration){running=false;play.textContent='Replay';return}requestAnimationFrame(tick)}play.addEventListener('click',()=>{if(running){running=false;play.textContent='Play';return}if(current>=data.duration)current=0;running=true;last=0;play.textContent='Pause';requestAnimationFrame(tick)});slider.addEventListener('input',()=>{current=Number(slider.value);render(current)});render(0)
+})();
 "#;
