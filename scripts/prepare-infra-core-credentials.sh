@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${OPENROUTER_API_KEY:=}"
+: "${OPENROUTER_API_KEY:?set OPENROUTER_API_KEY before preparing benchmark credentials}"
 root="$(mktemp -d "${TMPDIR:-/var/tmp}/agents-of-empires-infra-core.XXXXXX")"
 
 for entry in \

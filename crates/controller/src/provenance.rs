@@ -41,13 +41,8 @@ pub fn write_provenance(
     let manifest_source = fs::read(manifest_path)?;
     let verifier_sha256 = verifier_digest(manifest_path, manifest)?;
     let manifest_sha256 = digest(&manifest_source);
-    let compatibility_key = digest(
-        format!(
-            "{}\n{}\n{}\n{}",
-            MATCH_ARTIFACT_VERSION, manifest.arena.id, manifest_sha256, verifier_sha256
-        )
-        .as_bytes(),
-    );
+    let compatibility_key =
+        compatibility_key(&manifest.arena.id, &manifest_sha256, &verifier_sha256);
     let provenance = MatchProvenance {
         schema_version: MATCH_ARTIFACT_VERSION,
         controller_version: env!("CARGO_PKG_VERSION").to_owned(),
@@ -64,6 +59,32 @@ pub fn write_provenance(
         serde_json::to_vec_pretty(&provenance)?,
     )?;
     Ok(provenance)
+}
+
+/// Calculate the compatibility key for an arena manifest and its verifiers.
+///
+/// # Errors
+///
+/// Returns an error when the manifest or one of its verifier files cannot be
+/// read.
+pub fn arena_compatibility_key(
+    manifest_path: &Path,
+    manifest: &ArenaManifest,
+) -> Result<String, std::io::Error> {
+    let manifest_sha256 = digest(&fs::read(manifest_path)?);
+    let verifier_sha256 = verifier_digest(manifest_path, manifest)?;
+    Ok(compatibility_key(
+        &manifest.arena.id,
+        &manifest_sha256,
+        &verifier_sha256,
+    ))
+}
+
+fn compatibility_key(arena_id: &str, manifest_sha256: &str, verifier_sha256: &str) -> String {
+    digest(
+        format!("{MATCH_ARTIFACT_VERSION}\n{arena_id}\n{manifest_sha256}\n{verifier_sha256}")
+            .as_bytes(),
+    )
 }
 
 fn adapter_digests(
