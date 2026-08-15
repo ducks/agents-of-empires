@@ -59,6 +59,7 @@ pub enum Command {
         input: PathBuf,
         output: PathBuf,
         series: Vec<String>,
+        benchmarks: Vec<String>,
     },
     Doctor {
         json: bool,
@@ -145,11 +146,13 @@ fn parse_report(mut args: Vec<String>) -> Result<Command, ParseError> {
         PathBuf::from("site")
     };
     let series = repeated_flag(&mut args, "--series")?;
+    let benchmarks = repeated_flag(&mut args, "--benchmark")?;
     reject_remaining(args)?;
     Ok(Command::Report {
         input,
         output,
         series,
+        benchmarks,
     })
 }
 
