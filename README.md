@@ -228,6 +228,11 @@ replay plots each agent on a shared clock with milestone, state, usage, and
 terminal markers. It supports playback speeds, scrubbing, and raw event
 inspection without changing or reinterpreting the referee's result.
 
+The generated home page shows only runs using the newest compatibility key for
+each arena. Superseded and provenance-free runs move to `archive/index.html`,
+where they remain inspectable without being mixed into current results. Archive
+cards record why each result was excluded from the current season.
+
 Pass one or more `--series` inputs to add battle cards to the same archive.
 Each series page ranks the fleet by durable outcomes and cost, shows the full
 seat rotation, and links every round to its ordinary match replay and audit
