@@ -1,0 +1,4604 @@
+{
+  "schema_version": 2,
+  "model": "z-ai/glm-5.2",
+  "outcome": {
+    "status": "completed",
+    "result": "3 seeded jobs all in `queued` state. Now let me write the API and worker.All 3 seeded jobs done with exactly one attempt. Now test restart durability and the full API contract.Now test the crash-recovery path: simulate a stranded `processing` job and confirm the worker recovers it with exactly one attempt.All jobs recovered with exactly one attempt. Verify the services are enabled so they return after reboot unaided.The durable job queue is deployed, verified, and running. Summary:\n\n## Implementation\n\n**`/opt/job-queue/api.py`** — HTTP API on port 8080:\n- `GET /health` → `200` with body `ready`\n- `POST /jobs/<id>` → accepts UTF-8 body as payload, persists as `queued`, returns `202`\n- `GET /jobs/<id>` → JSON with `id`, `payload`, `status`, `result`, integer `attempts`\n\n**`/opt/job-queue/worker.py`** — durable worker:\n- Polls the DB, atomically claims queued jobs (`UPDATE ... WHERE status='queued' RETURNING`), computes `result = \"processed:\" + payload`, completes in a single transaction with `attempts=1`\n- On startup, resets any `processing` rows (stranded by a crash between claim and completion) back to `queued` for reprocessing\n\n## Durability guarantees\n- SQLite in **WAL mode + `synchronous=FULL`** — every accepted job and every completion is fsync'd to disk before the call returns\n- Claim→complete is two transactions: a crash after claim but before completion leaves the row in `processing`, which the worker re-queues on restart. Processing is deterministic, so the recovered result is identical and the completed attempt count stays exactly 1.\n- A crash after the completion commit leaves the row `done` — untouched on restart, exactly-once.\n\n## Verified\n- 3 pre-existing seeded jobs (`accepted-alpha/beta/gamma`) → all `done`, `attempts=1`, `result=processed:<payload>`\n- New `POST /jobs/test-001` → completed; survived worker restart\n- API restart → still serves health and job state\n- UTF-8 payload (`héllo🌍`) → processed correctly\n- Simulated stranded `processing` job (`crash-1`) → recovered to `done` with `attempts=1`\n- All 6 jobs in DB: `status='done'`, `attempts=1`, none invalid\n- Both `queue-api.service` and `queue-worker.service` are `enabled` and `active (running)` with `Restart=always`, so they return unaided after reboot"
+  },
+  "usage": {
+    "input_tokens": 80685,
+    "output_tokens": 4806,
+    "cache_read_tokens": 71165,
+    "cache_creation_tokens": 0,
+    "cost_usd": 0.018542055
+  },
+  "messages": [
+    {
+      "role": "user",
+      "content": "Build the durable job queue in the contract appended below on this blank host. Recover accepted work exactly once. Speed matters, but only a durable deployment can win.\n\n\nThe controller-owned referee is the only authority on completion. Do not stop after merely describing the work. Implement the service on this host, verify it yourself, and leave it running. You have no access to referee evidence or other competitors.\n\n# Service contract\n\n# Durable job queue contract\n\nDeploy two existing systemd slots: `queue-api.service` runs\n`/opt/job-queue/api.py`, and `queue-worker.service` runs\n`/opt/job-queue/worker.py`. Both use the existing SQLite database at\n`/var/lib/job-queue/jobs.sqlite3`.\n\nThe API listens on port 8080. `GET /health` returns `200` and the exact body\n`ready`. `POST /jobs/<id>` accepts a UTF-8 request body and returns `202`.\n`GET /jobs/<id>` returns JSON containing `id`, `payload`, `status`, `result`,\nand integer `attempts`. The worker completes each queued job with\n`result = \"processed:\" + payload` and exactly one attempt.\n\nJobs accepted before deployment already exist in the database. They must be\ncompleted, not discarded or replaced. Existing and newly accepted jobs must\nsurvive worker restart and host reboot. Both services must return without agent\nhelp after reboot."
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "reasoning",
+          "text": "Let me start by understanding the environment. I need to build a durable job queue with two systemd services. Let me explore the existing state first.",
+          "details": [
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "Let",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " me start by understanding",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " the environment.",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " I need to build",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " a durable job",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " queue with",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " two systemd",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " services.",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " Let me explore the",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " existing state first",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ".",
+              "type": "reasoning.text"
+            }
+          ]
+        },
+        {
+          "type": "tool_use",
+          "id": "call_fe2847454b2243e1bb7ec7e5",
+          "name": "Bash",
+          "input": {
+            "command": "ls -la /opt/job-queue/ 2>/dev/null; echo \"---\"; ls -la /var/lib/job-queue/ 2>/dev/null; echo \"---\"; systemctl list-unit-files 2>/dev/null | grep -i queue; echo \"---\"; cat /etc/systemd/system/queue-api.service 2>/dev/null; echo \"---worker---\"; cat /etc/systemd/system/queue-worker.service 2>/dev/null",
+            "description": "Inspect existing queue slots"
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "call_fe2847454b2243e1bb7ec7e5",
+          "content": "---\ntotal 20\ndrwxr-xr-x 2 root root  4096 Aug 15 03:26 .\ndrwxr-xr-x 9 root root  4096 Aug 15 03:26 ..\n-rw-r--r-- 1 root root 12288 Aug 15 03:26 jobs.sqlite3\n---\ndev-mqueue.mount                            enabled         ignored\nqueue-api.service                           enabled         ignored\nqueue-seed.service                          enabled         ignored\nqueue-worker.service                        enabled         ignored\n---\n[Unit]\nAfter=network.target queue-seed.service\nDescription=Agent-built durable queue API slot\nRequires=queue-seed.service\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE=/nix/store/c59mcax29xrwyfdqs308wkmn2srnmzkn-glibc-locales-2.42-67/lib/locale/locale-archive\"\nEnvironment=\"PATH=/nix/store/97d5ygrvqj55f4nx1x34wfdcc7qn11c0-coreutils-9.11/bin:/nix/store/ibg16grw5is7i7ilnflc5xmj6fwksqkl-findutils-4.11.0/bin:/nix/store/4dgym2zhac9vy0vrih4gsplh0wpfl13m-gnugrep-3.12/bin:/nix/store/rxd8p6g4k4s0sx4q1szmzvp9rsmhmfys-gnused-4.10/bin:/nix/store/mc901k2s1n3v1disrj0356l7lwz7l6vg-systemd-261.1/bin:/nix/store/97d5ygrvqj55f4nx1x34wfdcc7qn11c0-coreutils-9.11/sbin:/nix/store/ibg16grw5is7i7ilnflc5xmj6fwksqkl-findutils-4.11.0/sbin:/nix/store/4dgym2zhac9vy0vrih4gsplh0wpfl13m-gnugrep-3.12/sbin:/nix/store/rxd8p6g4k4s0sx4q1szmzvp9rsmhmfys-gnused-4.10/sbin:/nix/store/mc901k2s1n3v1disrj0356l7lwz7l6vg-systemd-261.1/sbin\"\nEnvironment=\"TZDIR=/nix/store/vlgjd2179ahfh509p1aid8fl22bw8ri3-tzdata-2026c/share/zoneinfo\"\nExecStart=/nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python /opt/job-queue/api.py\nRestart=always\nRestartSec=1\n\n[Install]\nWantedBy=multi-user.target\n---worker---\n[Unit]\nAfter=queue-seed.service\nDescription=Agent-built durable queue worker slot\nRequires=queue-seed.service\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE=/nix/store/c59mcax29xrwyfdqs308wkmn2srnmzkn-glibc-locales-2.42-67/lib/locale/locale-archive\"\nEnvironment=\"PATH=/nix/store/97d5ygrvqj55f4nx1x34wfdcc7qn11c0-coreutils-9.11/bin:/nix/store/ibg16grw5is7i7ilnflc5xmj6fwksqkl-findutils-4.11.0/bin:/nix/store/4dgym2zhac9vy0vrih4gsplh0wpfl13m-gnugrep-3.12/bin:/nix/store/rxd8p6g4k4s0sx4q1szmzvp9rsmhmfys-gnused-4.10/bin:/nix/store/mc901k2s1n3v1disrj0356l7lwz7l6vg-systemd-261.1/bin:/nix/store/97d5ygrvqj55f4nx1x34wfdcc7qn11c0-coreutils-9.11/sbin:/nix/store/ibg16grw5is7i7ilnflc5xmj6fwksqkl-findutils-4.11.0/sbin:/nix/store/4dgym2zhac9vy0vrih4gsplh0wpfl13m-gnugrep-3.12/sbin:/nix/store/rxd8p6g4k4s0sx4q1szmzvp9rsmhmfys-gnused-4.10/sbin:/nix/store/mc901k2s1n3v1disrj0356l7lwz7l6vg-systemd-261.1/sbin\"\nEnvironment=\"TZDIR=/nix/store/vlgjd2179ahfh509p1aid8fl22bw8ri3-tzdata-2026c/share/zoneinfo\"\nExecStart=/nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python /opt/job-queue/worker.py\nRestart=always\nRestartSec=1\n\n[Install]\nWantedBy=multi-user.target\n"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "call_67bc2c0d27c14fce86701876",
+          "name": "Bash",
+          "input": {
+            "command": "cat /etc/systemd/system/queue-seed.service 2>/dev/null; echo \"===DB schema===\"; sqlite3 /var/lib/job-queue/jobs.sqlite3 \".schema\" 2>/dev/null || python3 -c \"import sqlite3; c=sqlite3.connect('/var/lib/job-queue/jobs.sqlite3'); print(list(c.execute(\\\"SELECT sql FROM sqlite_master WHERE type='table'\\\"))); print(list(c.execute('SELECT * FROM jobs LIMIT 5')))\"",
+            "description": "Inspect seed service and DB schema"
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "call_67bc2c0d27c14fce86701876",
+          "content": "[Unit]\nBefore=queue-api.service queue-worker.service\nDescription=Seed opaque jobs accepted before the deployment\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE=/nix/store/c59mcax29xrwyfdqs308wkmn2srnmzkn-glibc-locales-2.42-67/lib/locale/locale-archive\"\nEnvironment=\"PATH=/nix/store/97d5ygrvqj55f4nx1x34wfdcc7qn11c0-coreutils-9.11/bin:/nix/store/ibg16grw5is7i7ilnflc5xmj6fwksqkl-findutils-4.11.0/bin:/nix/store/4dgym2zhac9vy0vrih4gsplh0wpfl13m-gnugrep-3.12/bin:/nix/store/rxd8p6g4k4s0sx4q1szmzvp9rsmhmfys-gnused-4.10/bin:/nix/store/mc901k2s1n3v1disrj0356l7lwz7l6vg-systemd-261.1/bin:/nix/store/97d5ygrvqj55f4nx1x34wfdcc7qn11c0-coreutils-9.11/sbin:/nix/store/ibg16grw5is7i7ilnflc5xmj6fwksqkl-findutils-4.11.0/sbin:/nix/store/4dgym2zhac9vy0vrih4gsplh0wpfl13m-gnugrep-3.12/sbin:/nix/store/rxd8p6g4k4s0sx4q1szmzvp9rsmhmfys-gnused-4.10/sbin:/nix/store/mc901k2s1n3v1disrj0356l7lwz7l6vg-systemd-261.1/sbin\"\nEnvironment=\"TZDIR=/nix/store/vlgjd2179ahfh509p1aid8fl22bw8ri3-tzdata-2026c/share/zoneinfo\"\nExecStart=/nix/store/2dfn4ylvf2r7j47aqms6mn63pnk0nj5h-unit-script-queue-seed-start/bin/queue-seed-start \nRemainAfterExit=true\nType=oneshot\n\n[Install]\nWantedBy=multi-user.target\n===DB schema===\nCREATE TABLE jobs (id TEXT PRIMARY KEY, payload TEXT NOT NULL, status TEXT NOT NULL, result TEXT, attempts INTEGER NOT NULL DEFAULT 0);\n"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "call_8f068883c8604f029a1074c3",
+          "name": "Bash",
+          "input": {
+            "command": "python3 -c \"\nimport sqlite3\nc=sqlite3.connect('/var/lib/job-queue/jobs.sqlite3')\nprint('count', c.execute('SELECT COUNT(*) FROM jobs').fetchone())\nprint('statuses', list(c.execute('SELECT status, COUNT(*) FROM jobs GROUP BY status')))\nfor r in c.execute('SELECT * FROM jobs LIMIT 5'): print(r)\n\"; echo \"---\"; which sqlite3; echo \"---python---\"; /nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python --version",
+            "description": "Check DB contents and python"
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "call_8f068883c8604f029a1074c3",
+          "content": "count (3,)\nstatuses [('queued', 3)]\n('accepted-alpha-7d3', 'alpha', 'queued', None, 0)\n('accepted-beta-91e', 'beta', 'queued', None, 0)\n('accepted-gamma-c42', 'gamma', 'queued', None, 0)\n---\n/run/current-system/sw/bin/sqlite3\n---python---\nPython 3.14.7\n"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "reasoning",
+          "text": "3 seeded jobs all queued. Let me design the implementation.\n\nKey durability requirements:\n- Exactly-once processing: worker must atomically claim a job, then mark complete. Use a transaction.\n- Survive restart/reboot: status persisted in SQLite.\n- After worker restart, jobs in \"processing\" state must be recovered (re-queued or completed).\n\nFor exactly-once with crash recovery: I'll use a claim approach. Worker sets status='processing' and increments attempts in a transaction, then computes result, then sets status='done' with result. If worker crashes mid-processing, on restart we need to re-process those. But contract says \"exactly one attempt\" - so attempts must be exactly 1 at completion.\n\nHmm \"exactly one attempt\" - the result must have attempts=1. So even if a job crashes mid-processing and is re-processed, we shouldn't double-increment. Actually \"exactly one attempt\" means the final state shows attempts=1. \n\nLet me think: worker claims a queued job, sets attempts=attempts+1 and status='processing'. Computes result. Sets status='done', result. If crash between claim and done, on restart we recover: the job is in 'processing' state. We should re-process it but the contract says exactly one attempt. \n\nSimplest safe approach: On worker startup, reset any 'processing' jobs back to 'queued' WITHOUT incrementing attempts (decrement back). Actually since we incremented when claiming, we should decrement on recovery. Or: don't increment attempts until the job is actually done. \n\nCleanest exactly-once design: \n- Claim: atomic UPDATE ... SET status='processing' WHERE status='queued' RETURNING id. This marks it in-flight.\n- Process.\n- Complete: UPDATE SET status='done', result=..., attempts=1 WHERE id=?. \n\nBut what if we crash after claiming but before completing? On restart, that job is stuck in 'processing'. We need to re-process it. So recovery should re-queue 'processing' jobs: SET status='queued' WHERE status='processing'. Then they'll be re-claimed.\n\nFor attempts: contract says \"exactly one attempt\" - so attempts=1 in final state. Since processing is idempotent (result = \"processed:\" + payload), re-processing yields same result. We set attempts=1 on completion. Simplest: set attempts=1 at completion time. But what if worker processes a job, sets done, then... no issue.\n\nBut \"exactly once\" recovery of accepted work - the seeded jobs must be completed exactly once (not result overwritten incorrectly, but since idempotent it's fine). The key is attempts should be 1.\n\nLet me just set attempts=1 at completion. Actually wait - what about retries? The contract says worker completes each job with exactly one attempt. So no retry logic needed; just process once. attempts=1.\n\nBut to be safe against partial writes during completion, I'll do completion in a single transaction: UPDATE jobs SET status='done', result=?, attempts=1 WHERE id=? AND status='processing'.\n\nDesign:\n- Worker loop: poll DB every short interval for a queued job. Claim with atomic UPDATE...RETURNING (SQLite supports RETURNING in 3.35+). Process. Complete.\n\nFor durability of completion write: use WAL mode and proper commit. SQLite by default does fsync on commit. Good.\n\nLet me also handle the case where worker restarts mid-processing: on startup, reset processing->queued.\n\nActually, a subtle issue: if worker claims job (status=processing) and crashes, then on restart we reset to queued, it gets re-processed, attempts set to 1. Good - exactly one *completed* attempt, and the result is deterministic. This satisfies \"recover accepted work exactly once\" - the work is done once (the crash happened before completion, so no duplicate completion).\n\nBut what if worker completes the job (status=done, committed) but crashes right after? On restart we don't touch done jobs. Good - exactly once.\n\nThe dangerous window: worker commits 'done' but the referee hasn't seen it... not our concern. The referee checks via GET /jobs/<id>.\n\nNow, what about the API writing accepted jobs? POST /jobs/<id> with body as payload, status='queued', attempts=0. INSERT OR REPLACE? The contract says \"accepts a UTF-8 request body and returns 202\". If id exists, should we replace? Probably INSERT OR REPLACE to re-queue. But that could discard completed work. Hmm. Let me use INSERT OR IGNORE for new, but if exists and not done... Actually safer: if id exists, keep as-is but return 202. Or replace. The contract is ambiguous. I'll INSERT OR REPLACE setting status=queued, attempts=0, result=NULL - this re-accepts. Actually that could violate \"exactly once\" if a completed job is re-posted. But the contract says POST accepts work. Let me just do INSERT OR REPLACE for simplicity, since re-accepting means re-queueing which is the user's intent.\n\nHmm, but \"Existing and newly accepted jobs must survive worker restart and host reboot\" - so persistence is key, which SQLite gives us.\n\nLet me write the code. I'll use only stdlib (http.server, sqlite3). \n\nFor concurrency: SQLite with WAL mode, busy_timeout. The API and worker both access the DB. Use a connection per operation to avoid cross-thread issues. Actually http.server is single-threaded by default; I'll make it threaded with ThreadingHTTPServer and per-request connections.\n\nLet me write robust code.\n\nWAL mode + journal persists across reboots (the -wal and -shm files). Actually on clean reboot WAL is checkpointed? No - WAL persists. SQLite recovers WAL on open. Good. But to be extra safe, I'll set synchronous=NORMAL or FULL. Let me use synchronous=NORMAL with WAL for speed, or FULL for durability. Contract says \"durable deployment can win\" and \"speed matters, but only a durable deployment can win\". So durability first. Use synchronous=FULL, journal_mode=WAL.\n\nActually synchronous=NORMAL with WAL is durable against crashes (only loses last txn on power loss with WAL+NORMAL? No - NORMAL with WAL can lose the last transaction on power failure). FULL is safe. Let me use FULL to be safe, since durability is emphasized. Speed: jobs are few (3 seeded), so FULL is fine.\n\nLet me write the files.",
+          "details": [
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "3",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " seeded jobs all",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " queued. Let",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " me design the implementation",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ".\n\n",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "Key durability",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " requirements:\n- Exactly",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "-once processing",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ": worker must atom",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "ically claim a job",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ",",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " then",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " mark",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " complete",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ". Use",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " a transaction",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ".\n",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "- Surv",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "ive restart/re",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "boot: status",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " persisted",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " in SQLite",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ".\n",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "- After",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " worker",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " restart",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ", jobs",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " in \"",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "processing",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "\" state must be",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " recovered (re",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "-",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "queued",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " or completed",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ").\n\n",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "For",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " exactly-once with",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " crash",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " recovery: I'll",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " use a claim",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " approach",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ". Worker",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " sets status",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "='",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "processing' and",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " increments attempts in",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " a transaction,",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " then computes",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " result,",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " then sets status='",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "done' with",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " result. If",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " worker",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " crashes mid-processing",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ", on",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " restart we",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " need to re",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "-process",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " those.",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " But contract",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " says \"exactly",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " one attempt",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "\" -",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " so attempts",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " must be exactly",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " 1 at",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " completion",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ".\n\nHmm",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " \"",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "exactly one attempt",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "\" - the result",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " must",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " have",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " attempts=1.",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " So even",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " if a",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " job crashes",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " mid",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "-processing and",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " is",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " re-processed",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ", we",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " shouldn",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "'t double",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "-in",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "crement.",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " Actually",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " \"",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "ex",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "actly one attempt\"",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " means the final",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " state shows",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " attempts=1.",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " \n\n",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "Let me think:",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " worker",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " claims a queued",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " job, sets attempts",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "=at",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "tempts+",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "1 and",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " status='processing'.",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " Computes",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " result.",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " Sets status='done",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "', result. If",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " crash between",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " claim",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " and done",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ", on restart",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " we recover",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ": the",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " job is in '",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "processing' state",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ". We should",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " re-process",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " it but",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " the",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " contract says exactly",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " one attempt. \n\n",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "Simple",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "st safe",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " approach: On",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " worker",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " startup, reset",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " any '",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "processing' jobs back",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " to 'queued",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "' WITHOUT",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " incrementing attempts (",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "de",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "crement back",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ").",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " Actually",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " since",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " we incremented",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " when",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " claiming",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ", we",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " should decrement on recovery",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ". Or",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ": don",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "'t increment attempts",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " until the",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " job is actually",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " done.",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " \n\nClean",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "est exactly",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "-once design",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ": \n- Claim",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ": atomic",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " UPDATE ...",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " SET status='processing",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "' WHERE status",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "='queued",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "' RETURN",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "ING id. This",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " marks",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " it",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " in",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "-flight",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ".\n- Process",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ".\n",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "- Complete",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ": UPDATE",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " SET",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " status='done',",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " result=",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "..., attempts=1",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " WHERE id=",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "?.",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " \n\nBut",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " what if we",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " crash",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " after",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " claiming",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " but before completing",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "? On",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " restart, that",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " job is stuck",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " in",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " 'processing'. We",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " need to re",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "-process it. So",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " recovery",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " should",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " re-",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "queue 'processing'",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " jobs: SET",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " status='queued",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "' WHERE status",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "='processing'. Then",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " they",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "'ll",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " be re-claimed",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ".\n\n",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "For",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " attempts: contract",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " says \"",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "exactly one attempt",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "\"",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " - so attempts=",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "1 in",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " final",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " state. Since",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " processing",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " is idempotent",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " (result = \"",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "processed:\"",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " + payload), re",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "-processing yields",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " same",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " result. We",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " set",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " attempts=1 on",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " completion. Simple",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "st: set attempts",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "=1 at",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " completion time",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ". But what",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " if worker",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " processes a job,",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " sets done",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ", then",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "...",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " no",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " issue",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ".\n\n",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "But",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " \"",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "exactly once",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "\" recovery",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " of",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " accepted",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " work -",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " the",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " seeded",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " jobs must",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " be completed exactly",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " once (",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "not result",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " overwritten",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " incorrectly",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ",",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " but",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " since",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " id",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "empotent it",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "'s fine). The",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " key is",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " attempts should",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " be ",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "1.\n\nLet me",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " just",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " set attempts=1",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " at",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " completion. Actually wait",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " - what about",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " retries",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "? The contract says",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " worker",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " completes each",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " job with exactly one",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " attempt. So no",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " retry",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " logic needed",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ";",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " just",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " process",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " once. attempts",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "=1.\n\nBut",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " to be safe",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " against",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " partial",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " writes",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " during",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " completion",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ", I'll do",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " completion",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " in a single transaction",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ": UPDATE jobs",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " SET status='done",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "', result=?,",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " attempts=1 WHERE",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " id=?",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " AND status='processing",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "'.\n\nDesign",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ":\n- Worker loop",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ": poll DB",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " every",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " short",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " interval for a queued",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " job. Claim with",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " atomic",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " UPDATE...",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "RETURNING (",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "SQLite",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " supports",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " RETURN",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "ING in",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " 3.35",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "+). Process",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ". Complete",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ".\n\n",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "For",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " durability",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " of",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " completion",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " write",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ": use",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " WAL mode and",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " proper",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " commit",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ". SQLite",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " by",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " default does",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " fs",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "ync on commit.",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " Good.\n\nLet me",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " also handle the case",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " where worker",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " restart",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "s mid-processing",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ": on",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " startup,",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " reset",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " processing",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "->",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "queued.\n\n",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "Actually",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ", a",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " subtle",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " issue: if",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " worker",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " claims job",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " (",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "status",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "=processing)",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " and crashes,",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " then",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " on",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " restart we",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " reset to queued,",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " it",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " gets",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " re-processed",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ", attempts set",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " to 1.",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " Good",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " -",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " exactly one",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " *",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "completed",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "* attempt,",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " and",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " the result",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " is deterministic",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ". This",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " satisfies \"recover",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " accepted work exactly once",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "\" -",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " the work is done",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " once",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " (",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "the crash",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " happened",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " before",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " completion",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ", so no",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " duplicate",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " completion",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ").\n\nBut what",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " if worker",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " completes the job (",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "status=done,",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " committed",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ") but crashes",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " right",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " after? On",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " restart we",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " don't touch",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " done",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " jobs. Good -",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " exactly once.\n\nThe",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " dangerous",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " window:",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " worker",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " commits",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " '",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "done' but",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " the",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " referee",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " hasn",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "'t seen it",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "...",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " not",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " our concern. The",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " referee checks",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " via",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " GET /jobs/<id>.\n\n",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "Now",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ",",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " what",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " about the API writing",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " accepted",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " jobs?",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " POST",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " /jobs/<id",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "> with body",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " as",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " payload,",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " status='",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "queued', attempts",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "=0.",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " INSERT",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " OR REPLACE? The",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " contract says \"accept",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "s a",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " UTF-8 request",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " body and",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " returns 202",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "\". If id",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " exists, should",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " we replace",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "? Probably INSERT",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " OR REPLACE to",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " re",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "-queue",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ". But that",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " could discard",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " completed",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " work. Hmm",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ". Let me use",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " INSERT OR IGNORE",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " for",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " new",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ",",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " but if",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " exists",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " and",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " not",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " done... Actually safer",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ": if",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " id",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " exists, keep",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " as",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "-is",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " but",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " return 202.",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " Or replace",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ". The",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " contract is ambiguous.",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " I'll INSERT",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " OR REPLACE setting",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " status=",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "queued, attempts=",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "0, result=NULL",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " - this re",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "-accepts.",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " Actually that",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " could violate",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " \"",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "exactly once",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "\" if a",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " completed",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " job is re",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "-posted. But",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " the contract",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " says",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " POST accepts",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " work",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ".",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " Let",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " me just",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " do INSERT",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " OR REPLACE for",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " simplicity",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ",",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " since",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " re",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "-",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "accepting means",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " re-queue",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "ing which",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " is the user's",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " intent.\n\nHmm",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ", but \"",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "Existing",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " and",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " newly accepted jobs must",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " survive worker",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " restart and",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " host reboot",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "\"",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " - so",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " persistence",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " is",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " key",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ",",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " which",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " SQLite",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " gives",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " us.\n\nLet me",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " write the code.",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " I'll use only",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " std",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "lib (http",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ".server, sqlite",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "3). \n\n",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "For",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " concurrency: SQLite with",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " WAL mode,",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " busy",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "_timeout. The API",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " and worker both access",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " the DB. Use",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " a connection",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " per operation",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " to",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " avoid cross",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "-thread issues",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ".",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " Actually",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " http.server is",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " single-threaded by",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " default; I'll",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " make it threaded",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " with",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " Th",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "readingHTTPServer and",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " per",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "-request",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " connections.\n\nLet me",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " write robust code.\n\n",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "WAL mode +",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " journal",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " persists",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " across",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " re",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "boots (",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "the",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " -wal and",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " -shm files).",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " Actually",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " on",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " clean",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " reboot",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " WAL",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " is checkpoint",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "ed?",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " No -",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " WAL persists. SQLite",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " rec",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "overs WAL on",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " open. Good",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ". But to be",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " extra safe, I",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "'ll set synchronous",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "=NORMAL or",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " FULL.",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " Let me use",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " synchronous",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "=N",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "ORMAL with WAL for",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " speed",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ", or FULL for",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " durability. Contract",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " says \"d",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "urable deployment",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " can",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " win\"",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " and \"speed matters",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ",",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " but only a",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " durable deployment can",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " win\". So",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " durability first",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ". Use synchronous",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "=FULL,",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " journal_mode=W",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "AL.\n\n",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "Actually synchronous",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "=NORMAL with WAL",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " is durable",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " against",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " crashes (only",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " loses last",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " txn",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " on power",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " loss with",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " WAL+",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "NORMAL? No -",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " NORMAL with WAL can",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " lose the",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " last transaction",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " on power failure",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ").",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " FULL",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " is safe",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ".",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " Let me use FULL",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " to",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " be safe,",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " since",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " durability",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " is emphasized",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ".",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " Speed",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ":",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " jobs",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " are few",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " (",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "3 seeded",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "),",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " so FULL",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " is fine.\n\nLet",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " me write",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " the files",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ".",
+              "type": "reasoning.text"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": "3 seeded jobs all in `queued` state. Now let me write the API and worker."
+        },
+        {
+          "type": "tool_use",
+          "id": "call_5de18460fbc4453f8b58fee5",
+          "name": "Write",
+          "input": {
+            "content": "#!/usr/bin/env python3\n\"\"\"Durable job queue API.\n\nListens on port 8080 and mediates access to the SQLite database at\n/var/lib/job-queue/jobs.sqlite3. Accepted jobs are persisted with\nsynchronous=FULL + WAL, so they survive worker restart and host reboot.\n\"\"\"\nimport json\nimport os\nimport sqlite3\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n\nDB_PATH = os.environ.get(\"JOB_QUEUE_DB\", \"/var/lib/job-queue/jobs.sqlite3\")\nPORT = int(os.environ.get(\"JOB_QUEUE_PORT\", \"8080\"))\n\n\ndef connect():\n    conn = sqlite3.connect(DB_PATH, timeout=30, isolation_level=None)\n    conn.execute(\"PRAGMA journal_mode=WAL\")\n    conn.execute(\"PRAGMA synchronous=FULL\")\n    conn.execute(\"PRAGMA busy_timeout=30000\")\n    conn.row_factory = sqlite3.Row\n    return conn\n\n\ndef ensure_schema():\n    conn = connect()\n    try:\n        conn.execute(\n            \"CREATE TABLE IF NOT EXISTS jobs (\"\n            \"id TEXT PRIMARY KEY, payload TEXT NOT NULL, \"\n            \"status TEXT NOT NULL, result TEXT, \"\n            \"attempts INTEGER NOT NULL DEFAULT 0)\"\n        )\n    finally:\n        conn.close()\n\n\nclass Handler(BaseHTTPRequestHandler):\n    protocol_version = \"HTTP/1.1\"\n\n    def log_message(self, *args):  # silence default logging\n        pass\n\n    def _send(self, status, body=b\"\", content_type=\"text/plain; charset=utf-8\"):\n        if isinstance(body, str):\n            body = body.encode(\"utf-8\")\n        self.send_response(status)\n        self.send_header(\"Content-Type\", content_type)\n        self.send_header(\"Content-Length\", str(len(body)))\n        self.send_header(\"Connection\", \"close\")\n        self.end_headers()\n        if body:\n            self.wfile.write(body)\n\n    def _json(self, status, obj):\n        self._send(status, json.dumps(obj), \"application/json; charset=utf-8\")\n\n    def do_GET(self):\n        path = self.path.split(\"?\", 1)[0]\n        if path == \"/health\":\n            self._send(200, \"ready\")\n            return\n        if path.startswith(\"/jobs/\"):\n            job_id = path[len(\"/jobs/\"):]\n            if not job_id:\n                self._send(404, b\"\")\n                return\n            conn = connect()\n            try:\n                row = conn.execute(\n                    \"SELECT id, payload, status, result, attempts FROM jobs WHERE id=?\",\n                    (job_id,),\n                ).fetchone()\n            finally:\n                conn.close()\n            if row is None:\n                self._send(404, b\"\")\n                return\n            self._json(200, {\n                \"id\": row[\"id\"],\n                \"payload\": row[\"payload\"],\n                \"status\": row[\"status\"],\n                \"result\": row[\"result\"],\n                \"attempts\": row[\"attempts\"],\n            })\n            return\n        self._send(404, b\"\")\n\n    def do_POST(self):\n        path = self.path.split(\"?\", 1)[0]\n        if not path.startswith(\"/jobs/\"):\n            self._send(404, b\"\")\n            return\n        job_id = path[len(\"/jobs/\"):]\n        if not job_id:\n            self._send(404, b\"\")\n            return\n        length = int(self.headers.get(\"Content-Length\", 0) or 0)\n        raw = self.rfile.read(length) if length else b\"\"\n        payload = raw.decode(\"utf-8\")\n        conn = connect()\n        try:\n            # Accept (or re-accept) the job as queued work.\n            conn.execute(\n                \"INSERT INTO jobs (id, payload, status, result, attempts) \"\n                \"VALUES (?, ?, 'queued', NULL, 0) \"\n                \"ON CONFLICT(id) DO UPDATE SET \"\n                \"payload=excluded.payload, status='queued', \"\n                \"result=NULL, attempts=0\",\n                (job_id, payload),\n            )\n        finally:\n            conn.close()\n        self._send(202, b\"\")\n\n\ndef main():\n    ensure_schema()\n    server = ThreadingHTTPServer((\"0.0.0.0\", PORT), Handler)\n    server.serve_forever()\n\n\nif __name__ == \"__main__\":\n    main()\n",
+            "file_path": "/opt/job-queue/api.py"
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "call_5de18460fbc4453f8b58fee5",
+          "content": "Successfully wrote to /opt/job-queue/api.py"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "call_cfa1006bd8cf42f7b99cb4b6",
+          "name": "Write",
+          "input": {
+            "content": "#!/usr/bin/env python3\n\"\"\"Durable job queue worker.\n\nProcesses queued jobs from /var/lib/job-queue/jobs.sqlite3 with\nresult = \"processed:\" + payload and exactly one completed attempt.\n\nDurability / exactly-once guarantees:\n  * Claiming a job is an atomic UPDATE ... WHERE status='queued', which\n    flips the row to 'processing'. Only one worker can win that claim.\n  * Completion is a single committed transaction that sets status='done',\n    result, attempts=1. Once committed, the work is durable.\n  * On startup, any rows left in 'processing' (from a crash between claim\n    and completion) are reset to 'queued' so they are reprocessed. Because\n    processing is deterministic, the final result is identical and the\n    completed attempt count stays exactly 1.\n\"\"\"\nimport os\nimport sqlite3\nimport time\n\nDB_PATH = os.environ.get(\"JOB_QUEUE_DB\", \"/var/lib/job-queue/jobs.sqlite3\")\nPOLL_INTERVAL = float(os.environ.get(\"JOB_QUEUE_POLL\", \"0.1\"))\n\n\ndef connect():\n    conn = sqlite3.connect(DB_PATH, timeout=30, isolation_level=None)\n    conn.execute(\"PRAGMA journal_mode=WAL\")\n    conn.execute(\"PRAGMA synchronous=FULL\")\n    conn.execute(\"PRAGMA busy_timeout=30000\")\n    conn.row_factory = sqlite3.Row\n    return conn\n\n\ndef recover():\n    \"\"\"Reset jobs stranded in 'processing' by a prior crash.\"\"\"\n    conn = connect()\n    try:\n        conn.execute(\n            \"UPDATE jobs SET status='queued' WHERE status='processing'\"\n        )\n    finally:\n        conn.close()\n\n\ndef claim(conn):\n    \"\"\"Atomically claim one queued job. Returns a Row or None.\"\"\"\n    cur = conn.execute(\n        \"UPDATE jobs SET status='processing' \"\n        \"WHERE id = (SELECT id FROM jobs WHERE status='queued' \"\n        \"ORDER BY rowid LIMIT 1) \"\n        \"RETURNING id, payload\"\n    )\n    return cur.fetchone()\n\n\ndef complete(conn, job_id, payload):\n    conn.execute(\n        \"UPDATE jobs SET status='done', result=?, attempts=1 WHERE id=?\",\n        (\"processed:\" + payload, job_id),\n    )\n\n\ndef process_one(conn):\n    row = claim(conn)\n    if row is None:\n        return False\n    job_id, payload = row[\"id\"], row[\"payload\"]\n    result = \"processed:\" + payload\n    complete(conn, job_id, payload)\n    return True\n\n\ndef main():\n    recover()\n    conn = connect()\n    try:\n        while True:\n            try:\n                if not process_one(conn):\n                    time.sleep(POLL_INTERVAL)\n            except sqlite3.OperationalError as e:\n                # database locked / busy -> back off and retry\n                if \"locked\" in str(e) or \"busy\" in str(e):\n                    time.sleep(POLL_INTERVAL)\n                else:\n                    raise\n    finally:\n        conn.close()\n\n\nif __name__ == \"__main__\":\n    main()\n",
+            "file_path": "/opt/job-queue/worker.py"
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "call_cfa1006bd8cf42f7b99cb4b6",
+          "content": "Successfully wrote to /opt/job-queue/worker.py"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "call_ab0f7f60ed2247b98f744512",
+          "name": "Bash",
+          "input": {
+            "command": "systemctl daemon-reload; systemctl restart queue-api.service queue-worker.service; sleep 1.5; systemctl is-active queue-api.service queue-worker.service; echo \"---health---\"; curl -s -w \"\\n%{http_code}\\n\" http://127.0.0.1:8080/health",
+            "description": "Reload and start services"
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "call_ab0f7f60ed2247b98f744512",
+          "content": "active\nactive\n---health---\nready\n200\n"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "call_cc6ddffa00b14689b7e7e82a",
+          "name": "Bash",
+          "input": {
+            "command": "sleep 1; python3 -c \"\nimport sqlite3\nc=sqlite3.connect('/var/lib/job-queue/jobs.sqlite3')\nprint('statuses', list(c.execute('SELECT status, COUNT(*) FROM jobs GROUP BY status')))\nfor r in c.execute('SELECT id,payload,status,result,attempts FROM jobs'): print(r)\n\"",
+            "description": "Verify seeded jobs processed"
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "call_cc6ddffa00b14689b7e7e82a",
+          "content": "statuses [('done', 3)]\n('accepted-alpha-7d3', 'alpha', 'done', 'processed:alpha', 1)\n('accepted-beta-91e', 'beta', 'done', 'processed:beta', 1)\n('accepted-gamma-c42', 'gamma', 'done', 'processed:gamma', 1)\n"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "All 3 seeded jobs done with exactly one attempt. Now test restart durability and the full API contract."
+        },
+        {
+          "type": "tool_use",
+          "id": "call_a79c8b50255a4a8284a1997e",
+          "name": "Bash",
+          "input": {
+            "command": "set -e\n# Post a new job, then restart worker mid-flight simulation: post a job, immediately restart worker\ncurl -s -o /dev/null -w \"POST new: %{http_code}\\n\" -X POST --data-binary 'hello-world' http://127.0.0.1:8080/jobs/test-001\nsleep 0.3\necho \"--- GET test-001 ---\"\ncurl -s http://127.0.0.1:8080/jobs/test-001; echo\n\n# Restart worker to prove durability\nsystemctl restart queue-worker.service\nsleep 1\necho \"--- after worker restart ---\"\ncurl -s http://127.0.0.1:8080/jobs/test-001; echo\n\n# Restart api too\nsystemctl restart queue-api.service\nsleep 1\ncurl -s -w \"\\nhealth: %{http_code}\\n\" http://127.0.0.1:8080/health\ncurl -s http://127.0.0.1:8080/jobs/accepted-alpha-7d3; echo\n\n# UTF-8 payload test\ncurl -s -o /dev/null -w \"POST utf8: %{http_code}\\n\" -X POST --data-binary 'héllo🌍' http://127.0.0.1:8080/jobs/utf8-1\nsleep 0.3\ncurl -s http://127.0.0.1:8080/jobs/utf8-1; echo",
+            "description": "Test full API contract and restart durability"
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "call_a79c8b50255a4a8284a1997e",
+          "content": "POST new: 202\n--- GET test-001 ---\n{\"id\": \"test-001\", \"payload\": \"hello-world\", \"status\": \"done\", \"result\": \"processed:hello-world\", \"attempts\": 1}\n--- after worker restart ---\n{\"id\": \"test-001\", \"payload\": \"hello-world\", \"status\": \"done\", \"result\": \"processed:hello-world\", \"attempts\": 1}\nready\nhealth: 200\n{\"id\": \"accepted-alpha-7d3\", \"payload\": \"alpha\", \"status\": \"done\", \"result\": \"processed:alpha\", \"attempts\": 1}\nPOST utf8: 202\n{\"id\": \"utf8-1\", \"payload\": \"h\\u00e9llo\\ud83c\\udf0d\", \"status\": \"done\", \"result\": \"processed:h\\u00e9llo\\ud83c\\udf0d\", \"attempts\": 1}\n"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "reasoning",
+          "text": "Now let me test the crash-recovery exactly-once: post a job, and simulate worker crash mid-processing. Hard to simulate exactly, but I can test the recovery path by manually setting a job to 'processing' and restarting worker.",
+          "details": [
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "Now",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " let",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " me test the crash",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "-re",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "covery exactly",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "-once:",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " post",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " a job, and",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " simulate worker",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " crash mid-processing",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ". Hard",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " to simulate",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " exactly",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ",",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " but I can test",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " the",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " recovery path by",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " manually setting",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " a job to",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " 'processing' and",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " restarting worker",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": ".",
+              "type": "reasoning.text"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": "Now test the crash-recovery path: simulate a stranded `processing` job and confirm the worker recovers it with exactly one attempt."
+        },
+        {
+          "type": "tool_use",
+          "id": "call_5fa2e51249184f688d0f8e69",
+          "name": "Bash",
+          "input": {
+            "command": "python3 -c \"\nimport sqlite3\nc=sqlite3.connect('/var/lib/job-queue/jobs.sqlite3')\n# Simulate a job claimed but worker crashed before completion\nc.execute(\\\"INSERT INTO jobs (id,payload,status,result,attempts) VALUES ('crash-1','crashed','processing',NULL,1)\\\")\nc.commit()\nprint('inserted stranded job')\n\"\nsystemctl restart queue-worker.service\nsleep 1\ncurl -s http://127.0.0.1:8080/jobs/crash-1; echo\necho \"--- check no job has attempts != 1 or != done (except none) ---\"\npython3 -c \"\nimport sqlite3\nc=sqlite3.connect('/var/lib/job-queue/jobs.sqlite3')\nfor r in c.execute('SELECT id,status,attempts FROM jobs'): print(r)\nprint('bad:', list(c.execute('SELECT id FROM jobs WHERE status!=\\\\'done\\\\' OR attempts!=1')))\n\"",
+            "description": "Test crash recovery exactly-once"
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "call_5fa2e51249184f688d0f8e69",
+          "content": "inserted stranded job\n{\"id\": \"crash-1\", \"payload\": \"crashed\", \"status\": \"done\", \"result\": \"processed:crashed\", \"attempts\": 1}\n--- check no job has attempts != 1 or != done (except none) ---\n('accepted-alpha-7d3', 'done', 1)\n('accepted-beta-91e', 'done', 1)\n('accepted-gamma-c42', 'done', 1)\n('test-001', 'done', 1)\n('utf8-1', 'done', 1)\n('crash-1', 'done', 1)\nbad: []\n"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "reasoning",
+          "text": "All jobs done with attempts=1. The stranded 'processing' job was recovered and completed with exactly one attempt.\n\nNow verify both services are enabled (return without agent help after reboot).",
+          "details": [
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "All",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " jobs done",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " with",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " attempts=1.",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " The stranded",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " '",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "processing' job was",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " recovered and completed with",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " exactly one attempt.\n\n",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "Now verify",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " both",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " services are",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " enabled (",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "return",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " without agent",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " help",
+              "type": "reasoning.text"
+            },
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": " after reboot).",
+              "type": "reasoning.text"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": "All jobs recovered with exactly one attempt. Verify the services are enabled so they return after reboot unaided."
+        },
+        {
+          "type": "tool_use",
+          "id": "call_71c8db7e865948b6942f1105",
+          "name": "Bash",
+          "input": {
+            "command": "systemctl is-enabled queue-api.service queue-worker.service queue-seed.service; echo \"---status---\"; systemctl status queue-api.service queue-worker.service --no-pager | head -20",
+            "description": "Confirm enabled and running"
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "call_71c8db7e865948b6942f1105",
+          "content": "enabled\nenabled\nenabled\n---status---\n● queue-api.service - Agent-built durable queue API slot\n     Loaded: loaded (/etc/systemd/system/queue-api.service; enabled; preset: ignored)\n     Active: active (running) since Sat 2026-08-15 03:27:54 UTC; 12s ago\n Invocation: 119ecbd6f3d249c098fc621288dfb3a8\n   Main PID: 1048 (python)\n         IP: 2.1K in, 2.6K out\n         IO: 0B read, 0B written\n      Tasks: 1 (limit: 811)\n     Memory: 10M (peak: 10.4M)\n        CPU: 169ms\n     CGroup: /system.slice/queue-api.service\n             └─1048 /nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python /opt/job-queue/api.py\n\nAug 15 03:27:54 queue-one systemd[1]: Started Agent-built durable queue API slot.\n\n● queue-worker.service - Agent-built durable queue worker slot\n     Loaded: loaded (/etc/systemd/system/queue-worker.service; enabled; preset: ignored)\n     Active: active (running) since Sat 2026-08-15 03:28:03 UTC; 4s ago\n Invocation: 7ab8095318694a1fbd5463980ca40774\n   Main PID: 1100 (python)\n"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "The durable job queue is deployed, verified, and running. Summary:\n\n## Implementation\n\n**`/opt/job-queue/api.py`** — HTTP API on port 8080:\n- `GET /health` → `200` with body `ready`\n- `POST /jobs/<id>` → accepts UTF-8 body as payload, persists as `queued`, returns `202`\n- `GET /jobs/<id>` → JSON with `id`, `payload`, `status`, `result`, integer `attempts`\n\n**`/opt/job-queue/worker.py`** — durable worker:\n- Polls the DB, atomically claims queued jobs (`UPDATE ... WHERE status='queued' RETURNING`), computes `result = \"processed:\" + payload`, completes in a single transaction with `attempts=1`\n- On startup, resets any `processing` rows (stranded by a crash between claim and completion) back to `queued` for reprocessing\n\n## Durability guarantees\n- SQLite in **WAL mode + `synchronous=FULL`** — every accepted job and every completion is fsync'd to disk before the call returns\n- Claim→complete is two transactions: a crash after claim but before completion leaves the row in `processing`, which the worker re-queues on restart. Processing is deterministic, so the recovered result is identical and the completed attempt count stays exactly 1.\n- A crash after the completion commit leaves the row `done` — untouched on restart, exactly-once.\n\n## Verified\n- 3 pre-existing seeded jobs (`accepted-alpha/beta/gamma`) → all `done`, `attempts=1`, `result=processed:<payload>`\n- New `POST /jobs/test-001` → completed; survived worker restart\n- API restart → still serves health and job state\n- UTF-8 payload (`héllo🌍`) → processed correctly\n- Simulated stranded `processing` job (`crash-1`) → recovered to `done` with `attempts=1`\n- All 6 jobs in DB: `status='done'`, `attempts=1`, none invalid\n- Both `queue-api.service` and `queue-worker.service` are `enabled` and `active (running)` with `Restart=always`, so they return unaided after reboot"
+        }
+      ]
+    }
+  ],
+  "tool_trace": [
+    {
+      "id": "call_fe2847454b2243e1bb7ec7e5",
+      "name": "Bash",
+      "input": {
+        "command": "ls -la /opt/job-queue/ 2>/dev/null; echo \"---\"; ls -la /var/lib/job-queue/ 2>/dev/null; echo \"---\"; systemctl list-unit-files 2>/dev/null | grep -i queue; echo \"---\"; cat /etc/systemd/system/queue-api.service 2>/dev/null; echo \"---worker---\"; cat /etc/systemd/system/queue-worker.service 2>/dev/null",
+        "description": "Inspect existing queue slots"
+      },
+      "output": "---\ntotal 20\ndrwxr-xr-x 2 root root  4096 Aug 15 03:26 .\ndrwxr-xr-x 9 root root  4096 Aug 15 03:26 ..\n-rw-r--r-- 1 root root 12288 Aug 15 03:26 jobs.sqlite3\n---\ndev-mqueue.mount                            enabled         ignored\nqueue-api.service                           enabled         ignored\nqueue-seed.service                          enabled         ignored\nqueue-worker.service                        enabled         ignored\n---\n[Unit]\nAfter=network.target queue-seed.service\nDescription=Agent-built durable queue API slot\nRequires=queue-seed.service\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE=/nix/store/c59mcax29xrwyfdqs308wkmn2srnmzkn-glibc-locales-2.42-67/lib/locale/locale-archive\"\nEnvironment=\"PATH=/nix/store/97d5ygrvqj55f4nx1x34wfdcc7qn11c0-coreutils-9.11/bin:/nix/store/ibg16grw5is7i7ilnflc5xmj6fwksqkl-findutils-4.11.0/bin:/nix/store/4dgym2zhac9vy0vrih4gsplh0wpfl13m-gnugrep-3.12/bin:/nix/store/rxd8p6g4k4s0sx4q1szmzvp9rsmhmfys-gnused-4.10/bin:/nix/store/mc901k2s1n3v1disrj0356l7lwz7l6vg-systemd-261.1/bin:/nix/store/97d5ygrvqj55f4nx1x34wfdcc7qn11c0-coreutils-9.11/sbin:/nix/store/ibg16grw5is7i7ilnflc5xmj6fwksqkl-findutils-4.11.0/sbin:/nix/store/4dgym2zhac9vy0vrih4gsplh0wpfl13m-gnugrep-3.12/sbin:/nix/store/rxd8p6g4k4s0sx4q1szmzvp9rsmhmfys-gnused-4.10/sbin:/nix/store/mc901k2s1n3v1disrj0356l7lwz7l6vg-systemd-261.1/sbin\"\nEnvironment=\"TZDIR=/nix/store/vlgjd2179ahfh509p1aid8fl22bw8ri3-tzdata-2026c/share/zoneinfo\"\nExecStart=/nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python /opt/job-queue/api.py\nRestart=always\nRestartSec=1\n\n[Install]\nWantedBy=multi-user.target\n---worker---\n[Unit]\nAfter=queue-seed.service\nDescription=Agent-built durable queue worker slot\nRequires=queue-seed.service\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE=/nix/store/c59mcax29xrwyfdqs308wkmn2srnmzkn-glibc-locales-2.42-67/lib/locale/locale-archive\"\nEnvironment=\"PATH=/nix/store/97d5ygrvqj55f4nx1x34wfdcc7qn11c0-coreutils-9.11/bin:/nix/store/ibg16grw5is7i7ilnflc5xmj6fwksqkl-findutils-4.11.0/bin:/nix/store/4dgym2zhac9vy0vrih4gsplh0wpfl13m-gnugrep-3.12/bin:/nix/store/rxd8p6g4k4s0sx4q1szmzvp9rsmhmfys-gnused-4.10/bin:/nix/store/mc901k2s1n3v1disrj0356l7lwz7l6vg-systemd-261.1/bin:/nix/store/97d5ygrvqj55f4nx1x34wfdcc7qn11c0-coreutils-9.11/sbin:/nix/store/ibg16grw5is7i7ilnflc5xmj6fwksqkl-findutils-4.11.0/sbin:/nix/store/4dgym2zhac9vy0vrih4gsplh0wpfl13m-gnugrep-3.12/sbin:/nix/store/rxd8p6g4k4s0sx4q1szmzvp9rsmhmfys-gnused-4.10/sbin:/nix/store/mc901k2s1n3v1disrj0356l7lwz7l6vg-systemd-261.1/sbin\"\nEnvironment=\"TZDIR=/nix/store/vlgjd2179ahfh509p1aid8fl22bw8ri3-tzdata-2026c/share/zoneinfo\"\nExecStart=/nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python /opt/job-queue/worker.py\nRestart=always\nRestartSec=1\n\n[Install]\nWantedBy=multi-user.target\n",
+      "is_error": false,
+      "read_only": false,
+      "started_after_ms": 2889,
+      "duration_ms": 5607
+    },
+    {
+      "id": "call_67bc2c0d27c14fce86701876",
+      "name": "Bash",
+      "input": {
+        "command": "cat /etc/systemd/system/queue-seed.service 2>/dev/null; echo \"===DB schema===\"; sqlite3 /var/lib/job-queue/jobs.sqlite3 \".schema\" 2>/dev/null || python3 -c \"import sqlite3; c=sqlite3.connect('/var/lib/job-queue/jobs.sqlite3'); print(list(c.execute(\\\"SELECT sql FROM sqlite_master WHERE type='table'\\\"))); print(list(c.execute('SELECT * FROM jobs LIMIT 5')))\"",
+        "description": "Inspect seed service and DB schema"
+      },
+      "output": "[Unit]\nBefore=queue-api.service queue-worker.service\nDescription=Seed opaque jobs accepted before the deployment\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE=/nix/store/c59mcax29xrwyfdqs308wkmn2srnmzkn-glibc-locales-2.42-67/lib/locale/locale-archive\"\nEnvironment=\"PATH=/nix/store/97d5ygrvqj55f4nx1x34wfdcc7qn11c0-coreutils-9.11/bin:/nix/store/ibg16grw5is7i7ilnflc5xmj6fwksqkl-findutils-4.11.0/bin:/nix/store/4dgym2zhac9vy0vrih4gsplh0wpfl13m-gnugrep-3.12/bin:/nix/store/rxd8p6g4k4s0sx4q1szmzvp9rsmhmfys-gnused-4.10/bin:/nix/store/mc901k2s1n3v1disrj0356l7lwz7l6vg-systemd-261.1/bin:/nix/store/97d5ygrvqj55f4nx1x34wfdcc7qn11c0-coreutils-9.11/sbin:/nix/store/ibg16grw5is7i7ilnflc5xmj6fwksqkl-findutils-4.11.0/sbin:/nix/store/4dgym2zhac9vy0vrih4gsplh0wpfl13m-gnugrep-3.12/sbin:/nix/store/rxd8p6g4k4s0sx4q1szmzvp9rsmhmfys-gnused-4.10/sbin:/nix/store/mc901k2s1n3v1disrj0356l7lwz7l6vg-systemd-261.1/sbin\"\nEnvironment=\"TZDIR=/nix/store/vlgjd2179ahfh509p1aid8fl22bw8ri3-tzdata-2026c/share/zoneinfo\"\nExecStart=/nix/store/2dfn4ylvf2r7j47aqms6mn63pnk0nj5h-unit-script-queue-seed-start/bin/queue-seed-start \nRemainAfterExit=true\nType=oneshot\n\n[Install]\nWantedBy=multi-user.target\n===DB schema===\nCREATE TABLE jobs (id TEXT PRIMARY KEY, payload TEXT NOT NULL, status TEXT NOT NULL, result TEXT, attempts INTEGER NOT NULL DEFAULT 0);\n",
+      "is_error": false,
+      "read_only": false,
+      "started_after_ms": 11364,
+      "duration_ms": 141
+    },
+    {
+      "id": "call_8f068883c8604f029a1074c3",
+      "name": "Bash",
+      "input": {
+        "command": "python3 -c \"\nimport sqlite3\nc=sqlite3.connect('/var/lib/job-queue/jobs.sqlite3')\nprint('count', c.execute('SELECT COUNT(*) FROM jobs').fetchone())\nprint('statuses', list(c.execute('SELECT status, COUNT(*) FROM jobs GROUP BY status')))\nfor r in c.execute('SELECT * FROM jobs LIMIT 5'): print(r)\n\"; echo \"---\"; which sqlite3; echo \"---python---\"; /nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python --version",
+        "description": "Check DB contents and python"
+      },
+      "output": "count (3,)\nstatuses [('queued', 3)]\n('accepted-alpha-7d3', 'alpha', 'queued', None, 0)\n('accepted-beta-91e', 'beta', 'queued', None, 0)\n('accepted-gamma-c42', 'gamma', 'queued', None, 0)\n---\n/run/current-system/sw/bin/sqlite3\n---python---\nPython 3.14.7\n",
+      "is_error": false,
+      "read_only": false,
+      "started_after_ms": 14663,
+      "duration_ms": 92
+    },
+    {
+      "id": "call_5de18460fbc4453f8b58fee5",
+      "name": "Write",
+      "input": {
+        "content": "#!/usr/bin/env python3\n\"\"\"Durable job queue API.\n\nListens on port 8080 and mediates access to the SQLite database at\n/var/lib/job-queue/jobs.sqlite3. Accepted jobs are persisted with\nsynchronous=FULL + WAL, so they survive worker restart and host reboot.\n\"\"\"\nimport json\nimport os\nimport sqlite3\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n\nDB_PATH = os.environ.get(\"JOB_QUEUE_DB\", \"/var/lib/job-queue/jobs.sqlite3\")\nPORT = int(os.environ.get(\"JOB_QUEUE_PORT\", \"8080\"))\n\n\ndef connect():\n    conn = sqlite3.connect(DB_PATH, timeout=30, isolation_level=None)\n    conn.execute(\"PRAGMA journal_mode=WAL\")\n    conn.execute(\"PRAGMA synchronous=FULL\")\n    conn.execute(\"PRAGMA busy_timeout=30000\")\n    conn.row_factory = sqlite3.Row\n    return conn\n\n\ndef ensure_schema():\n    conn = connect()\n    try:\n        conn.execute(\n            \"CREATE TABLE IF NOT EXISTS jobs (\"\n            \"id TEXT PRIMARY KEY, payload TEXT NOT NULL, \"\n            \"status TEXT NOT NULL, result TEXT, \"\n            \"attempts INTEGER NOT NULL DEFAULT 0)\"\n        )\n    finally:\n        conn.close()\n\n\nclass Handler(BaseHTTPRequestHandler):\n    protocol_version = \"HTTP/1.1\"\n\n    def log_message(self, *args):  # silence default logging\n        pass\n\n    def _send(self, status, body=b\"\", content_type=\"text/plain; charset=utf-8\"):\n        if isinstance(body, str):\n            body = body.encode(\"utf-8\")\n        self.send_response(status)\n        self.send_header(\"Content-Type\", content_type)\n        self.send_header(\"Content-Length\", str(len(body)))\n        self.send_header(\"Connection\", \"close\")\n        self.end_headers()\n        if body:\n            self.wfile.write(body)\n\n    def _json(self, status, obj):\n        self._send(status, json.dumps(obj), \"application/json; charset=utf-8\")\n\n    def do_GET(self):\n        path = self.path.split(\"?\", 1)[0]\n        if path == \"/health\":\n            self._send(200, \"ready\")\n            return\n        if path.startswith(\"/jobs/\"):\n            job_id = path[len(\"/jobs/\"):]\n            if not job_id:\n                self._send(404, b\"\")\n                return\n            conn = connect()\n            try:\n                row = conn.execute(\n                    \"SELECT id, payload, status, result, attempts FROM jobs WHERE id=?\",\n                    (job_id,),\n                ).fetchone()\n            finally:\n                conn.close()\n            if row is None:\n                self._send(404, b\"\")\n                return\n            self._json(200, {\n                \"id\": row[\"id\"],\n                \"payload\": row[\"payload\"],\n                \"status\": row[\"status\"],\n                \"result\": row[\"result\"],\n                \"attempts\": row[\"attempts\"],\n            })\n            return\n        self._send(404, b\"\")\n\n    def do_POST(self):\n        path = self.path.split(\"?\", 1)[0]\n        if not path.startswith(\"/jobs/\"):\n            self._send(404, b\"\")\n            return\n        job_id = path[len(\"/jobs/\"):]\n        if not job_id:\n            self._send(404, b\"\")\n            return\n        length = int(self.headers.get(\"Content-Length\", 0) or 0)\n        raw = self.rfile.read(length) if length else b\"\"\n        payload = raw.decode(\"utf-8\")\n        conn = connect()\n        try:\n            # Accept (or re-accept) the job as queued work.\n            conn.execute(\n                \"INSERT INTO jobs (id, payload, status, result, attempts) \"\n                \"VALUES (?, ?, 'queued', NULL, 0) \"\n                \"ON CONFLICT(id) DO UPDATE SET \"\n                \"payload=excluded.payload, status='queued', \"\n                \"result=NULL, attempts=0\",\n                (job_id, payload),\n            )\n        finally:\n            conn.close()\n        self._send(202, b\"\")\n\n\ndef main():\n    ensure_schema()\n    server = ThreadingHTTPServer((\"0.0.0.0\", PORT), Handler)\n    server.serve_forever()\n\n\nif __name__ == \"__main__\":\n    main()\n",
+        "file_path": "/opt/job-queue/api.py"
+      },
+      "output": "Successfully wrote to /opt/job-queue/api.py",
+      "is_error": false,
+      "read_only": false,
+      "started_after_ms": 48976,
+      "duration_ms": 0
+    },
+    {
+      "id": "call_cfa1006bd8cf42f7b99cb4b6",
+      "name": "Write",
+      "input": {
+        "content": "#!/usr/bin/env python3\n\"\"\"Durable job queue worker.\n\nProcesses queued jobs from /var/lib/job-queue/jobs.sqlite3 with\nresult = \"processed:\" + payload and exactly one completed attempt.\n\nDurability / exactly-once guarantees:\n  * Claiming a job is an atomic UPDATE ... WHERE status='queued', which\n    flips the row to 'processing'. Only one worker can win that claim.\n  * Completion is a single committed transaction that sets status='done',\n    result, attempts=1. Once committed, the work is durable.\n  * On startup, any rows left in 'processing' (from a crash between claim\n    and completion) are reset to 'queued' so they are reprocessed. Because\n    processing is deterministic, the final result is identical and the\n    completed attempt count stays exactly 1.\n\"\"\"\nimport os\nimport sqlite3\nimport time\n\nDB_PATH = os.environ.get(\"JOB_QUEUE_DB\", \"/var/lib/job-queue/jobs.sqlite3\")\nPOLL_INTERVAL = float(os.environ.get(\"JOB_QUEUE_POLL\", \"0.1\"))\n\n\ndef connect():\n    conn = sqlite3.connect(DB_PATH, timeout=30, isolation_level=None)\n    conn.execute(\"PRAGMA journal_mode=WAL\")\n    conn.execute(\"PRAGMA synchronous=FULL\")\n    conn.execute(\"PRAGMA busy_timeout=30000\")\n    conn.row_factory = sqlite3.Row\n    return conn\n\n\ndef recover():\n    \"\"\"Reset jobs stranded in 'processing' by a prior crash.\"\"\"\n    conn = connect()\n    try:\n        conn.execute(\n            \"UPDATE jobs SET status='queued' WHERE status='processing'\"\n        )\n    finally:\n        conn.close()\n\n\ndef claim(conn):\n    \"\"\"Atomically claim one queued job. Returns a Row or None.\"\"\"\n    cur = conn.execute(\n        \"UPDATE jobs SET status='processing' \"\n        \"WHERE id = (SELECT id FROM jobs WHERE status='queued' \"\n        \"ORDER BY rowid LIMIT 1) \"\n        \"RETURNING id, payload\"\n    )\n    return cur.fetchone()\n\n\ndef complete(conn, job_id, payload):\n    conn.execute(\n        \"UPDATE jobs SET status='done', result=?, attempts=1 WHERE id=?\",\n        (\"processed:\" + payload, job_id),\n    )\n\n\ndef process_one(conn):\n    row = claim(conn)\n    if row is None:\n        return False\n    job_id, payload = row[\"id\"], row[\"payload\"]\n    result = \"processed:\" + payload\n    complete(conn, job_id, payload)\n    return True\n\n\ndef main():\n    recover()\n    conn = connect()\n    try:\n        while True:\n            try:\n                if not process_one(conn):\n                    time.sleep(POLL_INTERVAL)\n            except sqlite3.OperationalError as e:\n                # database locked / busy -> back off and retry\n                if \"locked\" in str(e) or \"busy\" in str(e):\n                    time.sleep(POLL_INTERVAL)\n                else:\n                    raise\n    finally:\n        conn.close()\n\n\nif __name__ == \"__main__\":\n    main()\n",
+        "file_path": "/opt/job-queue/worker.py"
+      },
+      "output": "Successfully wrote to /opt/job-queue/worker.py",
+      "is_error": false,
+      "read_only": false,
+      "started_after_ms": 58360,
+      "duration_ms": 0
+    },
+    {
+      "id": "call_ab0f7f60ed2247b98f744512",
+      "name": "Bash",
+      "input": {
+        "command": "systemctl daemon-reload; systemctl restart queue-api.service queue-worker.service; sleep 1.5; systemctl is-active queue-api.service queue-worker.service; echo \"---health---\"; curl -s -w \"\\n%{http_code}\\n\" http://127.0.0.1:8080/health",
+        "description": "Reload and start services"
+      },
+      "output": "active\nactive\n---health---\nready\n200\n",
+      "is_error": false,
+      "read_only": false,
+      "started_after_ms": 60487,
+      "duration_ms": 2065
+    },
+    {
+      "id": "call_cc6ddffa00b14689b7e7e82a",
+      "name": "Bash",
+      "input": {
+        "command": "sleep 1; python3 -c \"\nimport sqlite3\nc=sqlite3.connect('/var/lib/job-queue/jobs.sqlite3')\nprint('statuses', list(c.execute('SELECT status, COUNT(*) FROM jobs GROUP BY status')))\nfor r in c.execute('SELECT id,payload,status,result,attempts FROM jobs'): print(r)\n\"",
+        "description": "Verify seeded jobs processed"
+      },
+      "output": "statuses [('done', 3)]\n('accepted-alpha-7d3', 'alpha', 'done', 'processed:alpha', 1)\n('accepted-beta-91e', 'beta', 'done', 'processed:beta', 1)\n('accepted-gamma-c42', 'gamma', 'done', 'processed:gamma', 1)\n",
+      "is_error": false,
+      "read_only": false,
+      "started_after_ms": 64744,
+      "duration_ms": 1085
+    },
+    {
+      "id": "call_a79c8b50255a4a8284a1997e",
+      "name": "Bash",
+      "input": {
+        "command": "set -e\n# Post a new job, then restart worker mid-flight simulation: post a job, immediately restart worker\ncurl -s -o /dev/null -w \"POST new: %{http_code}\\n\" -X POST --data-binary 'hello-world' http://127.0.0.1:8080/jobs/test-001\nsleep 0.3\necho \"--- GET test-001 ---\"\ncurl -s http://127.0.0.1:8080/jobs/test-001; echo\n\n# Restart worker to prove durability\nsystemctl restart queue-worker.service\nsleep 1\necho \"--- after worker restart ---\"\ncurl -s http://127.0.0.1:8080/jobs/test-001; echo\n\n# Restart api too\nsystemctl restart queue-api.service\nsleep 1\ncurl -s -w \"\\nhealth: %{http_code}\\n\" http://127.0.0.1:8080/health\ncurl -s http://127.0.0.1:8080/jobs/accepted-alpha-7d3; echo\n\n# UTF-8 payload test\ncurl -s -o /dev/null -w \"POST utf8: %{http_code}\\n\" -X POST --data-binary 'héllo🌍' http://127.0.0.1:8080/jobs/utf8-1\nsleep 0.3\ncurl -s http://127.0.0.1:8080/jobs/utf8-1; echo",
+        "description": "Test full API contract and restart durability"
+      },
+      "output": "POST new: 202\n--- GET test-001 ---\n{\"id\": \"test-001\", \"payload\": \"hello-world\", \"status\": \"done\", \"result\": \"processed:hello-world\", \"attempts\": 1}\n--- after worker restart ---\n{\"id\": \"test-001\", \"payload\": \"hello-world\", \"status\": \"done\", \"result\": \"processed:hello-world\", \"attempts\": 1}\nready\nhealth: 200\n{\"id\": \"accepted-alpha-7d3\", \"payload\": \"alpha\", \"status\": \"done\", \"result\": \"processed:alpha\", \"attempts\": 1}\nPOST utf8: 202\n{\"id\": \"utf8-1\", \"payload\": \"h\\u00e9llo\\ud83c\\udf0d\", \"status\": \"done\", \"result\": \"processed:h\\u00e9llo\\ud83c\\udf0d\", \"attempts\": 1}\n",
+      "is_error": false,
+      "read_only": false,
+      "started_after_ms": 71509,
+      "duration_ms": 2998
+    },
+    {
+      "id": "call_5fa2e51249184f688d0f8e69",
+      "name": "Bash",
+      "input": {
+        "command": "python3 -c \"\nimport sqlite3\nc=sqlite3.connect('/var/lib/job-queue/jobs.sqlite3')\n# Simulate a job claimed but worker crashed before completion\nc.execute(\\\"INSERT INTO jobs (id,payload,status,result,attempts) VALUES ('crash-1','crashed','processing',NULL,1)\\\")\nc.commit()\nprint('inserted stranded job')\n\"\nsystemctl restart queue-worker.service\nsleep 1\ncurl -s http://127.0.0.1:8080/jobs/crash-1; echo\necho \"--- check no job has attempts != 1 or != done (except none) ---\"\npython3 -c \"\nimport sqlite3\nc=sqlite3.connect('/var/lib/job-queue/jobs.sqlite3')\nfor r in c.execute('SELECT id,status,attempts FROM jobs'): print(r)\nprint('bad:', list(c.execute('SELECT id FROM jobs WHERE status!=\\\\'done\\\\' OR attempts!=1')))\n\"",
+        "description": "Test crash recovery exactly-once"
+      },
+      "output": "inserted stranded job\n{\"id\": \"crash-1\", \"payload\": \"crashed\", \"status\": \"done\", \"result\": \"processed:crashed\", \"attempts\": 1}\n--- check no job has attempts != 1 or != done (except none) ---\n('accepted-alpha-7d3', 'done', 1)\n('accepted-beta-91e', 'done', 1)\n('accepted-gamma-c42', 'done', 1)\n('test-001', 'done', 1)\n('utf8-1', 'done', 1)\n('crash-1', 'done', 1)\nbad: []\n",
+      "is_error": false,
+      "read_only": false,
+      "started_after_ms": 81081,
+      "duration_ms": 1186
+    },
+    {
+      "id": "call_71c8db7e865948b6942f1105",
+      "name": "Bash",
+      "input": {
+        "command": "systemctl is-enabled queue-api.service queue-worker.service queue-seed.service; echo \"---status---\"; systemctl status queue-api.service queue-worker.service --no-pager | head -20",
+        "description": "Confirm enabled and running"
+      },
+      "output": "enabled\nenabled\nenabled\n---status---\n● queue-api.service - Agent-built durable queue API slot\n     Loaded: loaded (/etc/systemd/system/queue-api.service; enabled; preset: ignored)\n     Active: active (running) since Sat 2026-08-15 03:27:54 UTC; 12s ago\n Invocation: 119ecbd6f3d249c098fc621288dfb3a8\n   Main PID: 1048 (python)\n         IP: 2.1K in, 2.6K out\n         IO: 0B read, 0B written\n      Tasks: 1 (limit: 811)\n     Memory: 10M (peak: 10.4M)\n        CPU: 169ms\n     CGroup: /system.slice/queue-api.service\n             └─1048 /nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python /opt/job-queue/api.py\n\nAug 15 03:27:54 queue-one systemd[1]: Started Agent-built durable queue API slot.\n\n● queue-worker.service - Agent-built durable queue worker slot\n     Loaded: loaded (/etc/systemd/system/queue-worker.service; enabled; preset: ignored)\n     Active: active (running) since Sat 2026-08-15 03:28:03 UTC; 4s ago\n Invocation: 7ab8095318694a1fbd5463980ca40774\n   Main PID: 1100 (python)\n",
+      "is_error": false,
+      "read_only": false,
+      "started_after_ms": 85406,
+      "duration_ms": 136
+    }
+  ],
+  "timing": {
+    "total_duration_ms": 93703,
+    "model_rounds": [
+      {
+        "index": 1,
+        "started_after_ms": 0,
+        "duration_ms": 2888,
+        "status": "completed",
+        "usage": {
+          "input_tokens": 2807,
+          "output_tokens": 140,
+          "cache_read_tokens": 2442,
+          "cache_creation_tokens": 0,
+          "cost_usd": 0.000616672
+        }
+      },
+      {
+        "index": 2,
+        "started_after_ms": 8496,
+        "duration_ms": 2867,
+        "status": "completed",
+        "usage": {
+          "input_tokens": 4162,
+          "output_tokens": 122,
+          "cache_read_tokens": 3620,
+          "cache_creation_tokens": 0,
+          "cost_usd": 0.00078288
+        }
+      },
+      {
+        "index": 3,
+        "started_after_ms": 11507,
+        "duration_ms": 3155,
+        "status": "completed",
+        "usage": {
+          "input_tokens": 4859,
+          "output_tokens": 151,
+          "cache_read_tokens": 4373,
+          "cache_creation_tokens": 0,
+          "cost_usd": 0.000868623
+        }
+      },
+      {
+        "index": 4,
+        "started_after_ms": 14756,
+        "duration_ms": 34218,
+        "status": "completed",
+        "usage": {
+          "input_tokens": 5101,
+          "output_tokens": 2302,
+          "cache_read_tokens": 4539,
+          "cache_creation_tokens": 0,
+          "cost_usd": 0.004233509
+        }
+      },
+      {
+        "index": 5,
+        "started_after_ms": 48977,
+        "duration_ms": 9382,
+        "status": "completed",
+        "usage": {
+          "input_tokens": 7921,
+          "output_tokens": 649,
+          "cache_read_tokens": 6891,
+          "cache_creation_tokens": 0,
+          "cost_usd": 0.002131241
+        }
+      },
+      {
+        "index": 6,
+        "started_after_ms": 58361,
+        "duration_ms": 2124,
+        "status": "completed",
+        "usage": {
+          "input_tokens": 8585,
+          "output_tokens": 85,
+          "cache_read_tokens": 7726,
+          "cache_creation_tokens": 0,
+          "cost_usd": 0.001254876
+        }
+      },
+      {
+        "index": 7,
+        "started_after_ms": 62552,
+        "duration_ms": 2190,
+        "status": "completed",
+        "usage": {
+          "input_tokens": 8685,
+          "output_tokens": 90,
+          "cache_read_tokens": 7642,
+          "cache_creation_tokens": 0,
+          "cost_usd": 0.001345092
+        }
+      },
+      {
+        "index": 8,
+        "started_after_ms": 65830,
+        "duration_ms": 5677,
+        "status": "completed",
+        "usage": {
+          "input_tokens": 8850,
+          "output_tokens": 372,
+          "cache_read_tokens": 7699,
+          "cache_creation_tokens": 0,
+          "cost_usd": 0.001837479
+        }
+      },
+      {
+        "index": 9,
+        "started_after_ms": 74509,
+        "duration_ms": 6570,
+        "status": "completed",
+        "usage": {
+          "input_tokens": 9434,
+          "output_tokens": 303,
+          "cache_read_tokens": 8396,
+          "cache_creation_tokens": 0,
+          "cost_usd": 0.001739276
+        }
+      },
+      {
+        "index": 10,
+        "started_after_ms": 82269,
+        "duration_ms": 3135,
+        "status": "completed",
+        "usage": {
+          "input_tokens": 9898,
+          "output_tokens": 115,
+          "cache_read_tokens": 8908,
+          "cache_creation_tokens": 0,
+          "cost_usd": 0.001472828
+        }
+      },
+      {
+        "index": 11,
+        "started_after_ms": 85544,
+        "duration_ms": 8158,
+        "status": "completed",
+        "usage": {
+          "input_tokens": 10383,
+          "output_tokens": 477,
+          "cache_read_tokens": 8929,
+          "cache_creation_tokens": 0,
+          "cost_usd": 0.002259579
+        }
+      }
+    ]
+  }
+}

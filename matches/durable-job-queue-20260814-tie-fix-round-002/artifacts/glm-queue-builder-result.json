@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "agent": "glm-queue-builder",
+  "territory": "queue-one",
+  "status": "completed",
+  "summary": "3 seeded jobs all in `queued` state. Now let me write the API and worker.All 3 seeded jobs done with exactly one attempt. Now test restart durability and the full API contract.Now test the crash-recovery path: simulate a stranded `processing` job and confirm the worker recovers it with exactly one attempt.All jobs recovered with exactly one attempt. Verify the services are enabled so they return after reboot unaided.The durable job queue is deployed, verified, and running. Summary:\n\n## Implementation\n\n**`/opt/job-queue/api.py`** — HTTP API on port 8080:\n- `GET /health` → `200` with body `ready`\n- `POST /jobs/<id>` → accepts UTF-8 body as payload, persists as `queued`, returns `202`\n- `GET /jobs/<id>` → JSON with `id`, `payload`, `status`, `result`, integer `attempts`\n\n**`/opt/job-queue/worker.py`** — durable worker:\n- Polls the DB, atomically claims queued jobs (`UPDATE ... WHERE status='queued' RETURNING`), computes `result = \"processed:\" + payload`, completes in a single transaction with `attempts=1`\n- On startup, resets any `processing` rows (stranded by a crash between claim and completion) back to `queued` for reprocessing\n\n## Durability guarantees\n- SQLite in **WAL mode + `synchronous=FULL`** — every accepted job and every completion is fsync'd to disk before the call returns\n- Claim→complete is two transactions: a crash after claim but before completion leaves the row in `processing`, which the worker re-queues on restart. Processing is deterministic, so the recovered result is identical and the completed attempt count stays exactly 1.\n- A crash after the completion commit leaves the row `done` — untouched on restart, exactly-once.\n\n## Verified\n- 3 pre-existing seeded jobs (`accepted-alpha/beta/gamma`) → all `done`, `attempts=1`, `result=processed:<payload>`\n- New `POST /jobs/test-001` → completed; survived worker restart\n- API restart → still serves health and job state\n- UTF-8 payload (`héllo🌍`) → processed correctly\n- Simulated stranded `processing` job (`crash-1`) → recovered to `done` with `attempts=1`\n- All 6 jobs in DB: `status='done'`, `attempts=1`, none invalid\n- Both `queue-api.service` and `queue-worker.service` are `enabled` and `active (running)` with `Restart=always`, so they return unaided after reboot",
+  "usage": {
+    "rounds": null,
+    "tool_calls": null,
+    "input_tokens": 80685,
+    "output_tokens": 4806,
+    "cost_microusd": 18542,
+    "resource_units": 1
+  },
+  "transcript": "series/durable-job-queue-20260814-tie-fix/round-002/agents/glm-queue-builder/transcript.json"
+}
