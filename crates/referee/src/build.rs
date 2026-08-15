@@ -252,7 +252,14 @@ impl BuildReferee {
                 standing.territory.clone(),
             )
         });
-        let winner = standings.first().map(|standing| standing.territory.clone());
+        let winner = standings.first().and_then(|leader| {
+            let tied = standings.get(1).is_some_and(|runner_up| {
+                leader.durable_at_ms == runner_up.durable_at_ms
+                    && leader.points == runner_up.points
+                    && leader.passed == runner_up.passed
+            });
+            (!tied).then(|| leader.territory.clone())
+        });
         self.match_state = MatchState::Finished;
         self.outcome = Some(BuildOutcome {
             winner: winner.clone(),
