@@ -485,6 +485,8 @@ fn generates_benchmark_leaderboard_and_drill_down() {
 
     let standing = BenchmarkStanding {
         model: "deepseek/v4".into(),
+        adapter: "claux".into(),
+        reasoning_effort: "high".into(),
         appearances: 1,
         wins: 1,
         durable_deployments: 1,
@@ -500,13 +502,14 @@ fn generates_benchmark_leaderboard_and_drill_down() {
         failures: BTreeMap::new(),
     };
     let summary = BenchmarkSummary {
-        schema_version: 1,
+        schema_version: 2,
         suite_id: "infra-core".into(),
         arenas_requested: 1,
         arenas_completed: 1,
         plan: vec![BenchmarkPlanEntry {
             arena_id: "first-build-real".into(),
             manifest: "arenas/first-build/agents-real.toml".into(),
+            compatibility_key: "fixture-key".into(),
             rounds: 1,
             output: arena.clone(),
         }],
@@ -544,6 +547,7 @@ fn generates_benchmark_leaderboard_and_drill_down() {
         .expect("benchmark page");
     assert!(page.contains("Model leaderboard"));
     assert!(page.contains("deepseek/v4"));
+    assert!(page.contains("claux · high"));
     assert!(page.contains("4/4"));
     assert!(page.contains("../../series/infra-core-first-build-real/"));
     assert!(

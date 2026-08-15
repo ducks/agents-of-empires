@@ -8,6 +8,7 @@ use aoe_replay::WorldState;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::provenance::{arena_compatibility_key, read_provenance};
 use crate::runner::{RunError, RunOptions, run_match_with_manifest};
 
 const SERIES_SCHEMA_VERSION: u32 = 1;
@@ -78,6 +79,12 @@ pub enum SeriesError {
     Io(#[from] std::io::Error),
     #[error("could not encode series summary: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("invalid match provenance in {path}: {source}")]
+    Provenance {
+        path: PathBuf,
+        #[source]
+        source: crate::provenance::ProvenanceError,
+    },
 }
 
 /// Run repeated matches while rotating each agent through every territory.
@@ -95,9 +102,15 @@ pub async fn run_series(options: SeriesOptions) -> Result<SeriesSummary, SeriesE
     }
     let summary_path = options.run.output.join("series.json");
     fs::create_dir_all(&options.run.output)?;
+    let compatibility_key = arena_compatibility_key(&options.run.manifest, &original)?;
 
-    let (mut rounds, mut states) =
-        load_checkpoint(&summary_path, &options.run.output, &original, requested)?;
+    let (mut rounds, mut states) = load_checkpoint(
+        &summary_path,
+        &options.run.output,
+        &original,
+        requested,
+        &compatibility_key,
+    )?;
     if states
         .last()
         .is_some_and(|state| state.match_state == MatchState::Aborted)
@@ -151,6 +164,7 @@ fn load_checkpoint(
     output: &Path,
     manifest: &ArenaManifest,
     requested: usize,
+    compatibility_key: &str,
 ) -> Result<(Vec<SeriesRound>, Vec<WorldState>), SeriesError> {
     if !summary_path.exists() {
         return Ok((Vec::with_capacity(requested), Vec::with_capacity(requested)));
@@ -182,6 +196,20 @@ fn load_checkpoint(
             return Err(SeriesError::ResumeMismatch(
                 "completed rounds are not contiguous".into(),
             ));
+        }
+        let provenance_path = output
+            .join(format!("round-{:03}", round.round))
+            .join("match.json");
+        let provenance =
+            read_provenance(&provenance_path).map_err(|source| SeriesError::Provenance {
+                path: provenance_path,
+                source,
+            })?;
+        if provenance.compatibility_key != compatibility_key {
+            return Err(SeriesError::ResumeMismatch(format!(
+                "round {} has compatibility key {}, expected {compatibility_key}",
+                round.round, provenance.compatibility_key
+            )));
         }
     }
     let states = summary
@@ -583,6 +611,7 @@ mod tests {
             serde_json::to_vec_pretty(&state).expect("world json"),
         )
         .expect("world");
+        write_match_provenance(&round_output, "fixture-key");
         let rounds = vec![super::round_summary(
             1,
             round_output,
@@ -595,10 +624,11 @@ mod tests {
         write_summary(&summary_path, &summary).expect("summary");
 
         let (rounds, states) =
-            load_checkpoint(&summary_path, &root, &manifest, 2).expect("checkpoint");
+            load_checkpoint(&summary_path, &root, &manifest, 2, "fixture-key").expect("checkpoint");
         assert_eq!(rounds.len(), 1);
         assert_eq!(states.len(), 1);
-        assert!(load_checkpoint(&summary_path, &root, &manifest, 3).is_err());
+        assert!(load_checkpoint(&summary_path, &root, &manifest, 3, "fixture-key").is_err());
+        assert!(load_checkpoint(&summary_path, &root, &manifest, 2, "changed-key").is_err());
         fs::remove_dir_all(root).expect("cleanup");
     }
 
@@ -629,5 +659,24 @@ mod tests {
         }
         fs::create_dir_all(&path).expect("test directory");
         path
+    }
+
+    fn write_match_provenance(output: &std::path::Path, compatibility_key: &str) {
+        let value = serde_json::json!({
+            "schema_version": 1,
+            "controller_version": "test",
+            "source_revision": null,
+            "arena_id": "fixture",
+            "arena_mode": "buildrace",
+            "manifest_sha256": "manifest",
+            "verifier_sha256": "verifier",
+            "adapter_sha256": {},
+            "compatibility_key": compatibility_key,
+        });
+        fs::write(
+            output.join("match.json"),
+            serde_json::to_vec_pretty(&value).expect("provenance json"),
+        )
+        .expect("provenance");
     }
 }

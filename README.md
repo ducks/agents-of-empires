@@ -191,12 +191,16 @@ cargo run --release --bin agents-of-empires -- benchmark \
 
 A suite is a strict TOML manifest containing an ID, a default round count, and
 an ordered list of arena manifests. Every arena must be a build race using the
-same model fleet; an arena can override the default with `rounds = N`. Arenas
-run sequentially, and `benchmark.json` is atomically updated after each one.
-Re-running the command resumes the checkpoint. The terminal and JSON reports
-aggregate wins, durable deployments, milestone coverage, median durable time,
-usage, cost, cost per durable deployment, and failure sources by model rather
-than by arena-specific agent ID.
+same model, adapter, and reasoning-effort fleet; an arena can override the
+default with `rounds = N`. Arenas run sequentially, and `benchmark.json` is
+atomically initialized before the first arena and updated after each one.
+Re-running the command resumes only when the pinned manifest and verifier
+compatibility keys still match. Every resumed series round is checked against
+the same key. The terminal and JSON reports aggregate wins, durable
+deployments, milestone coverage, median durable time, usage, cost, cost per
+durable deployment, and failure sources by model configuration rather than by
+arena-specific agent ID. Aborted and partial arenas remain inspectable but are
+not counted as completed.
 
 The match writes an append-only `events.jsonl` and final `world.json`. Live and
 replay views use the same reducer:

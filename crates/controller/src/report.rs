@@ -656,9 +656,11 @@ fn render_benchmark_report(report: &BenchmarkReport) -> String {
             .map(|(input, output)| input.saturating_add(output));
         let _ = write!(
             standings,
-            "<tr class=\"{}\"><td><strong>{}</strong></td><td>{}</td><td>{}/{}</td><td>{}/{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+            "<tr class=\"{}\"><td><strong>{}</strong><br><small>{} · {}</small></td><td>{}</td><td>{}/{}</td><td>{}/{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
             if index == 0 { "winner-row" } else { "" },
             escape(&standing.model),
+            escape(&standing.adapter),
+            escape(&standing.reasoning_effort),
             standing.wins,
             standing.durable_deployments,
             standing.appearances,

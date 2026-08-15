@@ -9,10 +9,12 @@ use aoe_replay::WorldState;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::provenance::{arena_compatibility_key, read_provenance};
 use crate::runner::RunOptions;
 use crate::series::{SeriesError, SeriesOptions, SeriesSummary, run_series};
 
-const BENCHMARK_SCHEMA_VERSION: u32 = 1;
+const SUITE_SCHEMA_VERSION: u32 = 1;
+const BENCHMARK_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Clone)]
 pub struct BenchmarkOptions {
@@ -52,6 +54,8 @@ struct SuiteArena {
 pub struct BenchmarkPlanEntry {
     pub arena_id: String,
     pub manifest: PathBuf,
+    #[serde(default)]
+    pub compatibility_key: String,
     pub rounds: usize,
     pub output: PathBuf,
 }
@@ -71,6 +75,10 @@ pub struct BenchmarkArenaSummary {
 #[serde(deny_unknown_fields)]
 pub struct BenchmarkStanding {
     pub model: String,
+    #[serde(default)]
+    pub adapter: String,
+    #[serde(default)]
+    pub reasoning_effort: String,
     pub appearances: usize,
     pub wins: usize,
     pub durable_deployments: usize,
@@ -122,6 +130,12 @@ pub enum BenchmarkError {
     ResumeMismatch(String),
     #[error("could not encode benchmark summary: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("invalid match provenance in {path}: {source}")]
+    Provenance {
+        path: PathBuf,
+        #[source]
+        source: crate::provenance::ProvenanceError,
+    },
 }
 
 /// Run every arena in a benchmark suite and checkpoint after each arena.
@@ -135,6 +149,12 @@ pub async fn run_benchmark(options: BenchmarkOptions) -> Result<BenchmarkSummary
     fs::create_dir_all(&options.output)?;
     let summary_path = options.output.join("benchmark.json");
     let mut arenas = load_checkpoint(&summary_path, &suite_id, &plan)?;
+    if !summary_path.exists() {
+        write_summary(
+            &summary_path,
+            &build_summary(&suite_id, plan.clone(), arenas.clone()),
+        )?;
+    }
     if arenas
         .last()
         .is_some_and(|arena| arena.aborted || arena.rounds_completed < arena.rounds_requested)
@@ -182,10 +202,20 @@ pub fn render_benchmark(summary: &BenchmarkSummary) -> String {
     );
     let _ = writeln!(
         output,
-        "{:<34} {:>5} {:>7} {:>7} {:>11} {:>9} {:>12} {:>10}",
-        "model", "wins", "durable", "rounds", "milestones", "median", "tokens", "cost"
+        "{:<34} {:<18} {:<9} {:>5} {:>7} {:>7} {:>11} {:>9} {:>12} {:>10} {:>12}",
+        "model",
+        "adapter",
+        "reasoning",
+        "wins",
+        "durable",
+        "rounds",
+        "milestones",
+        "median",
+        "tokens",
+        "cost",
+        "cost/durable"
     );
-    let _ = writeln!(output, "{}", "-".repeat(103));
+    let _ = writeln!(output, "{}", "-".repeat(145));
     for standing in &summary.standings {
         let tokens = standing
             .input_tokens
@@ -193,8 +223,10 @@ pub fn render_benchmark(summary: &BenchmarkSummary) -> String {
             .map(|(input, output)| input.saturating_add(output));
         let _ = writeln!(
             output,
-            "{:<34} {:>5} {:>7} {:>7} {:>11} {:>9} {:>12} {:>10}",
+            "{:<34} {:<18} {:<9} {:>5} {:>7} {:>7} {:>11} {:>9} {:>12} {:>10} {:>12}",
             standing.model,
+            standing.adapter,
+            standing.reasoning_effort,
             standing.wins,
             standing.durable_deployments,
             standing.appearances,
@@ -205,6 +237,9 @@ pub fn render_benchmark(summary: &BenchmarkSummary) -> String {
             tokens.map_or_else(|| "n/a".to_owned(), |value| value.to_string()),
             standing
                 .cost_microusd
+                .map_or_else(|| "n/a".to_owned(), money),
+            standing
+                .cost_per_durable_microusd
                 .map_or_else(|| "n/a".to_owned(), money),
         );
     }
@@ -217,7 +252,7 @@ fn load_plan(
 ) -> Result<(String, Vec<BenchmarkPlanEntry>), BenchmarkError> {
     let source = fs::read_to_string(suite_path)?;
     let suite: SuiteManifest = toml::from_str(&source)?;
-    if suite.schema_version != BENCHMARK_SCHEMA_VERSION {
+    if suite.schema_version != SUITE_SCHEMA_VERSION {
         return Err(BenchmarkError::Invalid(format!(
             "unsupported schema version {}",
             suite.schema_version
@@ -241,7 +276,7 @@ fn load_plan(
     let parent = suite_path.parent().unwrap_or_else(|| Path::new("."));
     let mut ids = BTreeSet::new();
     let mut paths = BTreeSet::new();
-    let mut expected_models = None;
+    let mut expected_fleet = None;
     let mut plan = Vec::with_capacity(suite.arenas.len());
     for (index, config) in suite.arenas.into_iter().enumerate() {
         let manifest_path = if config.manifest.is_absolute() {
@@ -272,21 +307,16 @@ fn load_plan(
                 manifest.arena.id
             )));
         }
-        let mut models: Vec<_> = manifest
-            .agents
-            .iter()
-            .map(|agent| agent.model.clone())
-            .collect();
-        models.sort();
-        if let Some(expected) = &expected_models {
-            if expected != &models {
+        let fleet = fleet_identity(&manifest);
+        if let Some(expected) = &expected_fleet {
+            if expected != &fleet {
                 return Err(BenchmarkError::Invalid(format!(
-                    "arena {} does not use the suite's model fleet",
+                    "arena {} does not use the suite's model, adapter, and reasoning fleet",
                     manifest.arena.id
                 )));
             }
         } else {
-            expected_models = Some(models);
+            expected_fleet = Some(fleet);
         }
         let rounds = config.rounds.unwrap_or(suite.suite.rounds);
         if rounds == 0 {
@@ -297,6 +327,7 @@ fn load_plan(
         }
         plan.push(BenchmarkPlanEntry {
             arena_id: manifest.arena.id.clone(),
+            compatibility_key: arena_compatibility_key(&manifest_path, &manifest)?,
             manifest: manifest_path,
             rounds,
             output: output.join(format!("{:02}-{}", index + 1, manifest.arena.id)),
@@ -318,7 +349,7 @@ fn load_checkpoint(
         || summary.suite_id != suite_id
         || summary.plan != plan
         || summary.arenas_requested != plan.len()
-        || summary.arenas_completed != summary.arenas.len()
+        || summary.arenas_completed != completed_arenas(&summary.arenas)
         || summary.arenas.len() > plan.len()
     {
         return Err(BenchmarkError::ResumeMismatch(
@@ -351,12 +382,27 @@ fn summarize_arena(
     let model_by_agent: HashMap<_, _> = manifest
         .agents
         .iter()
-        .map(|agent| (agent.id.as_str(), agent.model.as_str()))
+        .map(|agent| (agent.id.as_str(), agent))
         .collect();
-    let mut by_model = BTreeMap::<String, BenchmarkStanding>::new();
+    let mut by_model = BTreeMap::<(String, String, String), BenchmarkStanding>::new();
     let mut aborted = false;
 
     for round in &series.rounds {
+        let provenance_path = entry
+            .output
+            .join(format!("round-{:03}", round.round))
+            .join("match.json");
+        let provenance =
+            read_provenance(&provenance_path).map_err(|source| BenchmarkError::Provenance {
+                path: provenance_path,
+                source,
+            })?;
+        if provenance.compatibility_key != entry.compatibility_key {
+            return Err(BenchmarkError::ResumeMismatch(format!(
+                "arena {} round {} has compatibility key {}, expected {}",
+                entry.arena_id, round.round, provenance.compatibility_key, entry.compatibility_key
+            )));
+        }
         let world_path = entry
             .output
             .join(format!("round-{:03}", round.round))
@@ -364,13 +410,13 @@ fn summarize_arena(
         let state: WorldState = serde_json::from_slice(&fs::read(world_path)?)?;
         aborted |= state.match_state == MatchState::Aborted;
         for agent in &manifest.agents {
-            let standing =
-                by_model
-                    .entry(agent.model.clone())
-                    .or_insert_with(|| BenchmarkStanding {
-                        model: agent.model.clone(),
-                        ..BenchmarkStanding::default()
-                    });
+            let key = competitor_key(agent);
+            let standing = by_model.entry(key).or_insert_with(|| BenchmarkStanding {
+                model: agent.model.clone(),
+                adapter: agent.adapter.clone(),
+                reasoning_effort: agent.reasoning_effort.clone(),
+                ..BenchmarkStanding::default()
+            });
             standing.appearances += 1;
             standing.milestones_available += milestone_count;
             standing.wins += usize::from(round.winner_agent.as_deref() == Some(agent.id.as_str()));
@@ -402,12 +448,23 @@ fn summarize_arena(
     }
 
     for series_standing in &series.standings {
-        let model = model_by_agent
+        let agent = model_by_agent
             .get(series_standing.agent.as_str())
             .copied()
-            .unwrap_or(series_standing.model.as_str());
-        let standing = by_model.entry(model.to_owned()).or_default();
-        model.clone_into(&mut standing.model);
+            .ok_or_else(|| {
+                BenchmarkError::Invalid(format!(
+                    "series contains unknown agent {}",
+                    series_standing.agent
+                ))
+            })?;
+        let standing = by_model
+            .entry(competitor_key(agent))
+            .or_insert_with(|| BenchmarkStanding {
+                model: agent.model.clone(),
+                adapter: agent.adapter.clone(),
+                reasoning_effort: agent.reasoning_effort.clone(),
+                ..BenchmarkStanding::default()
+            });
         standing.usage_recorded += series_standing.usage_recorded;
         add_value(&mut standing.input_tokens, series_standing.input_tokens);
         add_value(&mut standing.output_tokens, series_standing.output_tokens);
@@ -433,14 +490,16 @@ fn build_summary(
     plan: Vec<BenchmarkPlanEntry>,
     arenas: Vec<BenchmarkArenaSummary>,
 ) -> BenchmarkSummary {
-    let mut by_model = BTreeMap::<String, BenchmarkStanding>::new();
+    let mut by_model = BTreeMap::<(String, String, String), BenchmarkStanding>::new();
     for arena in &arenas {
         for source in &arena.standings {
             let target =
                 by_model
-                    .entry(source.model.clone())
+                    .entry(standing_key(source))
                     .or_insert_with(|| BenchmarkStanding {
                         model: source.model.clone(),
+                        adapter: source.adapter.clone(),
+                        reasoning_effort: source.reasoning_effort.clone(),
                         ..BenchmarkStanding::default()
                     });
             target.appearances += source.appearances;
@@ -468,11 +527,40 @@ fn build_summary(
         schema_version: BENCHMARK_SCHEMA_VERSION,
         suite_id: suite_id.to_owned(),
         arenas_requested: plan.len(),
-        arenas_completed: arenas.len(),
+        arenas_completed: completed_arenas(&arenas),
         plan,
         arenas,
         standings,
     }
+}
+
+fn fleet_identity(manifest: &ArenaManifest) -> Vec<(String, String, String)> {
+    let mut fleet: Vec<_> = manifest.agents.iter().map(competitor_key).collect();
+    fleet.sort();
+    fleet
+}
+
+fn competitor_key(agent: &aoe_domain::AgentConfig) -> (String, String, String) {
+    (
+        agent.model.clone(),
+        agent.adapter.clone(),
+        agent.reasoning_effort.clone(),
+    )
+}
+
+fn standing_key(standing: &BenchmarkStanding) -> (String, String, String) {
+    (
+        standing.model.clone(),
+        standing.adapter.clone(),
+        standing.reasoning_effort.clone(),
+    )
+}
+
+fn completed_arenas(arenas: &[BenchmarkArenaSummary]) -> usize {
+    arenas
+        .iter()
+        .filter(|arena| !arena.aborted && arena.rounds_completed == arena.rounds_requested)
+        .count()
 }
 
 fn finish_standing(standing: &mut BenchmarkStanding) {
@@ -576,11 +664,17 @@ fn write_summary(path: &Path, summary: &BenchmarkSummary) -> Result<(), Benchmar
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
+    use std::fs;
     use std::path::PathBuf;
 
+    use aoe_domain::ArenaManifest;
+
     use super::{
-        BenchmarkArenaSummary, BenchmarkStanding, build_summary, load_plan, render_benchmark,
+        BenchmarkArenaSummary, BenchmarkStanding, build_summary, fleet_identity, load_checkpoint,
+        load_plan, render_benchmark, write_summary,
     };
+
+    const MANIFEST: &str = include_str!("../../runtime/tests/fixture.toml");
 
     #[test]
     fn loads_the_built_in_infrastructure_suite() {
@@ -592,6 +686,7 @@ mod tests {
         .expect("suite");
         assert_eq!(plan.len(), 4);
         assert!(plan.iter().all(|entry| entry.rounds == 3));
+        assert!(plan.iter().all(|entry| !entry.compatibility_key.is_empty()));
         assert_eq!(plan[0].arena_id, "first-build-real");
         assert_eq!(plan[3].arena_id, "primary-failover");
     }
@@ -611,7 +706,56 @@ mod tests {
         assert_eq!(standing.median_durable_ms, Some(3_000));
         assert_eq!(standing.milestone_passes, 5);
         assert_eq!(standing.cost_microusd, Some(2_000));
-        assert!(render_benchmark(&summary).contains("5/8"));
+        let rendered = render_benchmark(&summary);
+        assert!(rendered.contains("5/8"));
+        assert!(rendered.contains("high"));
+        assert!(rendered.contains("cost/durable"));
+        assert!(rendered.contains("$0.0010"));
+    }
+
+    #[test]
+    fn fleet_identity_includes_adapter_and_reasoning_effort() {
+        let manifest = ArenaManifest::parse(MANIFEST).expect("manifest");
+        let expected = fleet_identity(&manifest);
+
+        let mut changed_reasoning = manifest.clone();
+        changed_reasoning.agents[0].reasoning_effort = "low".into();
+        assert_ne!(fleet_identity(&changed_reasoning), expected);
+
+        let mut changed_adapter = manifest;
+        changed_adapter.agents[0].adapter = "other-harness".into();
+        assert_ne!(fleet_identity(&changed_adapter), expected);
+    }
+
+    #[test]
+    fn changed_compatibility_key_rejects_a_checkpoint() {
+        let root = temporary_directory("compatibility");
+        let repository = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let (suite_id, plan) =
+            load_plan(&repository.join("suites/infra-core.toml"), &root).expect("suite");
+        let summary = build_summary(&suite_id, plan.clone(), Vec::new());
+        let checkpoint = root.join("benchmark.json");
+        write_summary(&checkpoint, &summary).expect("checkpoint");
+
+        let mut changed = plan;
+        changed[0].compatibility_key = "changed".into();
+        assert!(load_checkpoint(&checkpoint, &suite_id, &changed).is_err());
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn incomplete_and_aborted_arenas_are_not_counted_as_completed() {
+        let mut complete = arena("complete", 1, 1_000, 4, 4, Some(800));
+        complete.rounds_requested = 1;
+        complete.rounds_completed = 1;
+        let mut incomplete = arena("incomplete", 0, 2_000, 1, 4, Some(400));
+        incomplete.rounds_requested = 3;
+        incomplete.rounds_completed = 1;
+        let mut aborted = arena("aborted", 0, 3_000, 0, 4, Some(200));
+        aborted.aborted = true;
+
+        let summary = build_summary("infra", Vec::new(), vec![complete, incomplete, aborted]);
+        assert_eq!(summary.arenas_completed, 1);
     }
 
     fn arena(
@@ -630,6 +774,8 @@ mod tests {
             aborted: false,
             standings: vec![BenchmarkStanding {
                 model: "model-a".into(),
+                adapter: "test".into(),
+                reasoning_effort: "high".into(),
                 appearances: 1,
                 wins,
                 durable_deployments: 1,
@@ -645,5 +791,17 @@ mod tests {
                 failures: BTreeMap::new(),
             }],
         }
+    }
+
+    fn temporary_directory(label: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "agents-of-empires-benchmark-{label}-{}",
+            std::process::id()
+        ));
+        if path.exists() {
+            fs::remove_dir_all(&path).expect("stale test directory");
+        }
+        fs::create_dir_all(&path).expect("test directory");
+        path
     }
 }
