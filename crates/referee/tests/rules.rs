@@ -197,6 +197,77 @@ fn first_durable_build_finishes_the_race() {
 }
 
 #[test]
+fn tied_build_leaders_have_no_timer_winner() {
+    let manifest = ArenaManifest::parse(include_str!("../../../arenas/first-build/arena.toml"))
+        .expect("build manifest");
+    let mut referee = BuildReferee::from_manifest(&manifest);
+    referee.start().expect("start");
+    for territory in ["builder-one", "builder-two"] {
+        referee
+            .begin_milestone(territory, "service-up", 1)
+            .expect("begin milestone");
+        referee
+            .pass_milestone(
+                territory,
+                "service-up",
+                10,
+                serde_json::json!({"verified": true}),
+                1,
+            )
+            .expect("pass milestone");
+    }
+    referee
+        .finish("match timer expired", 900_000)
+        .expect("finish");
+    assert_eq!(referee.outcome().expect("outcome").winner, None);
+}
+
+#[test]
+fn unique_build_leader_wins_on_timer() {
+    let manifest = ArenaManifest::parse(include_str!("../../../arenas/first-build/arena.toml"))
+        .expect("build manifest");
+    let mut referee = BuildReferee::from_manifest(&manifest);
+    referee.start().expect("start");
+    referee
+        .begin_milestone("builder-two", "service-up", 1)
+        .expect("begin milestone");
+    referee
+        .pass_milestone(
+            "builder-two",
+            "service-up",
+            10,
+            serde_json::json!({"verified": true}),
+            1,
+        )
+        .expect("pass milestone");
+    referee
+        .finish("match timer expired", 900_000)
+        .expect("finish");
+    assert_eq!(
+        referee.outcome().expect("outcome").winner.as_deref(),
+        Some("builder-two")
+    );
+}
+
+#[test]
+fn tied_conquest_leaders_have_no_timer_winner() {
+    let mut referee = referee();
+    referee.tick(900_000).expect("deadline tick");
+    assert_eq!(referee.outcome().expect("outcome").winner, None);
+}
+
+#[test]
+fn unique_conquest_leader_wins_on_timer() {
+    let mut referee = referee();
+    referee.charge("gate", 1, 1).expect("charge gate");
+    referee.tick(900_000).expect("deadline tick");
+    assert_eq!(
+        referee.outcome().expect("outcome").winner.as_deref(),
+        Some("archive")
+    );
+}
+
+#[test]
 fn retryable_build_failure_does_not_end_the_match() {
     let manifest = ArenaManifest::parse(include_str!("../../../arenas/first-build/arena.toml"))
         .expect("build manifest");

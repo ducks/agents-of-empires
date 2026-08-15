@@ -439,10 +439,15 @@ impl Referee {
                 standing.territory.clone(),
             )
         });
-        let winner = standings
-            .first()
-            .filter(|standing| standing.state != TerritoryState::Eliminated)
-            .map(|standing| standing.territory.clone());
+        let winner = standings.first().and_then(|leader| {
+            let tied = standings.get(1).is_some_and(|runner_up| {
+                leader.state == runner_up.state
+                    && leader.uptime_ticks == runner_up.uptime_ticks
+                    && leader.resources == runner_up.resources
+                    && leader.degraded_ms == runner_up.degraded_ms
+            });
+            (leader.state != TerritoryState::Eliminated && !tied).then(|| leader.territory.clone())
+        });
         self.match_state = MatchState::Finished;
         self.outcome = Some(MatchOutcome {
             winner: winner.clone(),
