@@ -46,6 +46,48 @@ AOE_BIN="$(pwd)/target/release/agents-of-empires" path/to/arena/tests/smoke.sh
 
 The oracle should then complete the arena before paid models are used. A harness cannot redefine success: adapters invoke agents and normalize their output, while arena verifiers remain the sole authority on milestones and durable completion.
 
+## Optional service map
+
+Build arenas can describe their topology for match replays without changing the
+verifier or scoring contract. Nodes may point at a milestone, and the static
+report projects that node through pending, verifying, healthy, failed, and
+durable states from the immutable referee event stream.
+
+```toml
+[visualization]
+
+[[visualization.nodes]]
+id = "api"
+display_name = "Job API"
+kind = "service"
+milestone = "service-up"
+x = 30
+y = 40
+
+[[visualization.nodes]]
+id = "queue"
+display_name = "Durable Queue"
+kind = "queue"
+milestone = "recover-accepted"
+x = 70
+y = 40
+
+[[visualization.links]]
+from = "api"
+to = "queue"
+kind = "queue"
+label = "enqueue"
+```
+
+Coordinates are percentages from `0` to `100`. Node kinds are `client`,
+`proxy`, `service`, `worker`, `queue`, `database`, `storage`, and `host`. Link
+kinds are `traffic`, `queue`, `replication`, `storage`, and `lifecycle`.
+Milestone references and link endpoints are validated when the arena loads.
+
+Each match records the exact manifest as `arena.json`. Report generation uses
+that snapshot, so external packages receive the same visualization support and
+historical matches without a snapshot continue to render without a map.
+
 ## Schema versioning
 
 Every `arena.toml` begins with `schema_version = 1`. Unknown fields and unsupported schema versions fail validation. Future incompatible arena contracts will receive a new schema version instead of silently changing historical matches.

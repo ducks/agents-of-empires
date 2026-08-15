@@ -87,6 +87,10 @@ pub(crate) async fn run_match_with_manifest(
         return Err(RunError::OutputExists(event_path.display().to_string()));
     }
     std::fs::create_dir_all(&options.output)?;
+    std::fs::write(
+        options.output.join("arena.json"),
+        serde_json::to_vec_pretty(&manifest)?,
+    )?;
     write_provenance(
         &options.manifest,
         &manifest,

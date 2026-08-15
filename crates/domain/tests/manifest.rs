@@ -205,6 +205,98 @@ points = 50
 }
 
 #[test]
+fn parses_and_validates_arena_visualization() {
+    let build = r#"
+mode = "build_race"
+
+[build]
+stop_on_first_durable = true
+completion_milestone = "service-up"
+
+[[build.milestones]]
+id = "service-up"
+display_name = "Service Up"
+verifier = "verify/service-up.sh"
+timeout_seconds = 30
+points = 10
+
+[visualization]
+
+[[visualization.nodes]]
+id = "client"
+display_name = "Client"
+kind = "client"
+x = 10
+y = 50
+
+[[visualization.nodes]]
+id = "app"
+display_name = "Application"
+kind = "service"
+milestone = "service-up"
+x = 70
+y = 50
+
+[[visualization.links]]
+from = "client"
+to = "app"
+kind = "traffic"
+label = "HTTP"
+"#;
+    let source = VALID.replace(
+        "display_name = \"First Contact\"",
+        &format!("display_name = \"First Contact\"\n{build}"),
+    );
+    let manifest = ArenaManifest::parse(&source).expect("visualized build manifest");
+    let visualization = manifest.visualization.expect("visualization");
+    assert_eq!(visualization.nodes.len(), 2);
+    assert_eq!(visualization.links.len(), 1);
+}
+
+#[test]
+fn rejects_invalid_arena_visualization() {
+    let build = r#"
+mode = "build_race"
+
+[build]
+stop_on_first_durable = true
+completion_milestone = "service-up"
+
+[[build.milestones]]
+id = "service-up"
+display_name = "Service Up"
+verifier = "verify/service-up.sh"
+timeout_seconds = 30
+points = 10
+
+[visualization]
+
+[[visualization.nodes]]
+id = "app"
+display_name = "Application"
+kind = "service"
+milestone = "missing"
+x = 101
+y = 50
+
+[[visualization.links]]
+from = "app"
+to = "missing"
+"#;
+    let source = VALID.replace(
+        "display_name = \"First Contact\"",
+        &format!("display_name = \"First Contact\"\n{build}"),
+    );
+    let Err(ManifestError::Validation(errors)) = ArenaManifest::parse(&source) else {
+        panic!("expected validation errors");
+    };
+    let paths: Vec<_> = errors.iter().map(|error| error.path.as_str()).collect();
+    assert!(paths.contains(&"visualization.nodes[0].milestone"));
+    assert!(paths.contains(&"visualization.nodes[0].x"));
+    assert!(paths.contains(&"visualization.links[0].to"));
+}
+
+#[test]
 fn rejects_build_race_without_contract() {
     let source = VALID.replace(
         "display_name = \"First Contact\"",
