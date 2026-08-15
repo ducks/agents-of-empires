@@ -126,6 +126,7 @@ pub fn generate_reports_with_benchmarks(
     fs::create_dir_all(output.join("matches"))?;
     fs::create_dir_all(output.join("series"))?;
     fs::create_dir_all(output.join("benchmarks"))?;
+    fs::create_dir_all(output.join("archive"))?;
     let mut reports = Vec::with_capacity(match_dirs.len());
     for source in match_dirs {
         let name = source
@@ -185,6 +186,10 @@ pub fn generate_reports_with_benchmarks(
     fs::write(
         &index,
         render_index(&reports, &series_reports, &benchmark_reports),
+    )?;
+    fs::write(
+        output.join("archive").join("index.html"),
+        render_archive(&reports, &series_reports),
     )?;
     Ok(ReportSummary {
         matches: reports.len(),
@@ -522,7 +527,6 @@ fn render_index(
         )
     };
     let current_series = render_series_cards(series.iter().filter(|report| report.current));
-    let historical_series = render_series_cards(series.iter().filter(|report| !report.current));
     let current_series = if current_series.is_empty() {
         "<p class=\"empty\">No match series recorded yet.</p>".to_owned()
     } else {
@@ -533,20 +537,48 @@ fn render_index(
             .iter()
             .filter(|report| report.listed && report.current),
     );
-    let historical = render_cards(
-        reports
-            .iter()
-            .filter(|report| report.listed && !report.current),
-    );
+    let archived_matches = reports
+        .iter()
+        .filter(|report| report.listed && !report.current)
+        .count();
+    let archived_series = series.iter().filter(|report| !report.current).count();
+    let archive_total = archived_matches + archived_series;
     let current = if current.is_empty() {
         "<p class=\"empty\">No matches recorded under the current rules yet.</p>".to_owned()
     } else {
         current
     };
     page(
-        "Agents of Empires · Match Archive",
+        "Agents of Empires · Current Season",
         &format!(
-            "<header class=\"hero\"><span class=\"eyebrow\">Match archive</span><h1>Agents of Empires</h1><p>Build races decided by durable deployments, not confident answers.</p></header><main><section class=\"about\"><span class=\"eyebrow\">About the arena</span><h2>What am I looking at?</h2><p>Agents of Empires drops AI infrastructure agents into identical disposable NixOS machines and gives them the same service contract. A referee checks recovered state, fresh work, service restarts, and host reboots. The first agent to produce a durable deployment wins.</p><p><a href=\"https://github.com/ducks/agents-of-empires\">Read how the arena works and view the source →</a></p></section>{benchmark_section}<section><div class=\"section-heading\"><h2>Series</h2><p>Seat-rotated races that separate agent performance from territory advantage.</p></div><div class=\"match-list series-list\">{current_series}</div></section><section><div class=\"section-heading\"><h2>Current</h2><p>Matches sharing the newest manifest and verifier compatibility key for each arena.</p></div><div class=\"match-list\">{current}</div></section><section><div class=\"section-heading\"><h2>Historical</h2><p>Prototype or superseded runs retained for auditability, not direct comparison.</p></div><div class=\"match-list historical\">{historical}{historical_series}</div></section></main>"
+            "<header class=\"hero\"><span class=\"eyebrow\">Current season</span><h1>Agents of Empires</h1><p>Build races decided by durable deployments, not confident answers.</p></header><main><section class=\"about\"><span class=\"eyebrow\">About the arena</span><h2>What am I looking at?</h2><p>Agents of Empires drops AI infrastructure agents into identical disposable NixOS machines and gives them the same service contract. A referee checks recovered state, fresh work, service restarts, and host reboots. The first agent to produce a durable deployment wins.</p><p><a href=\"https://github.com/ducks/agents-of-empires\">Read how the arena works and view the source →</a></p></section>{benchmark_section}<section><div class=\"section-heading\"><h2>Series</h2><p>Seat-rotated races that separate agent performance from territory advantage.</p></div><div class=\"match-list series-list\">{current_series}</div></section><section><div class=\"section-heading\"><h2>Current matches</h2><p>Matches sharing the newest manifest and verifier compatibility key for each arena.</p></div><div class=\"match-list\">{current}</div></section><section class=\"archive-callout\"><div><span class=\"eyebrow\">Audit trail</span><h2>Archive</h2><p>Superseded and provenance-free runs remain available without being mixed into current results.</p></div><a class=\"archive-link\" href=\"archive/\">Browse {archive_total} archived run{archive_suffix} →</a></section></main>",
+            archive_suffix = if archive_total == 1 { "" } else { "s" },
+        ),
+    )
+}
+
+fn render_archive(reports: &[MatchReport], series: &[SeriesReport]) -> String {
+    let historical_series =
+        render_archived_series_cards(series.iter().filter(|report| !report.current));
+    let historical_matches = render_archived_cards(
+        reports
+            .iter()
+            .filter(|report| report.listed && !report.current),
+    );
+    let historical_series = if historical_series.is_empty() {
+        "<p class=\"empty\">No superseded series recorded.</p>".to_owned()
+    } else {
+        historical_series
+    };
+    let historical_matches = if historical_matches.is_empty() {
+        "<p class=\"empty\">No historical matches recorded.</p>".to_owned()
+    } else {
+        historical_matches
+    };
+    page(
+        "Archive · Agents of Empires",
+        &format!(
+            "<nav><a href=\"../\">← Current season</a><span>Agents of Empires</span></nav><header class=\"hero match-hero\"><span class=\"eyebrow\">Audit trail</span><h1>Archive</h1><p>Prototype, provenance-free, and superseded runs retained for inspection. These results are not directly comparable with the current season.</p></header><main><section><div class=\"section-heading\"><h2>Superseded series</h2><p>Seat-rotated results produced under older arena or verifier compatibility keys.</p></div><div class=\"match-list historical\">{historical_series}</div></section><section><div class=\"section-heading\"><h2>Historical matches</h2><p>Individual runs retained as immutable evidence, not current standings.</p></div><div class=\"match-list historical\">{historical_matches}</div></section></main>"
         ),
     )
 }
@@ -613,6 +645,41 @@ fn render_cards<'a>(reports: impl Iterator<Item = &'a MatchReport>) -> String {
     body
 }
 
+fn render_archived_cards<'a>(reports: impl Iterator<Item = &'a MatchReport>) -> String {
+    let mut body = String::new();
+    for report in reports {
+        let winner = report.state.winner.as_deref().unwrap_or("No winner");
+        let total_cost: u64 = report
+            .state
+            .agents
+            .values()
+            .map(|agent| agent.cost_microusd)
+            .sum();
+        let _ = write!(
+            body,
+            "<a class=\"match-card\" href=\"../matches/{}/\"><div><span class=\"eyebrow\">{}</span><h2>{}</h2><p>{}</p><small class=\"archive-reason\">{}</small></div><div class=\"metrics\"><strong>{}</strong><span>{}</span></div></a>",
+            escape(&report.slug),
+            escape(&format!("{:?}", report.state.match_state).to_lowercase()),
+            escape(&report.name),
+            escape(
+                report
+                    .state
+                    .finish_reason
+                    .as_deref()
+                    .unwrap_or("No finish reason recorded")
+            ),
+            escape(&archive_reason(report.provenance.as_ref())),
+            escape(winner),
+            escape(&format!(
+                "{} · {}",
+                duration(report.state.elapsed_ms),
+                money(total_cost)
+            ))
+        );
+    }
+    body
+}
+
 fn render_series_cards<'a>(reports: impl Iterator<Item = &'a SeriesReport>) -> String {
     let mut body = String::new();
     for report in reports {
@@ -644,6 +711,51 @@ fn render_series_cards<'a>(reports: impl Iterator<Item = &'a SeriesReport>) -> S
         );
     }
     body
+}
+
+fn render_archived_series_cards<'a>(reports: impl Iterator<Item = &'a SeriesReport>) -> String {
+    let mut body = String::new();
+    for report in reports {
+        let leader = report.summary.standings.first();
+        let leader_name = leader.map_or("No leader", |standing| standing.agent.as_str());
+        let record = leader.map_or_else(
+            || "No completed rounds".to_owned(),
+            |standing| {
+                format!(
+                    "{} win{}",
+                    standing.wins,
+                    if standing.wins == 1 { "" } else { "s" }
+                )
+            },
+        );
+        let _ = write!(
+            body,
+            "<a class=\"match-card series-card\" href=\"../series/{}/\"><div><span class=\"eyebrow\">{} rounds · seat rotated</span><h2>{}</h2><p>{}</p><small class=\"archive-reason\">{}</small></div><div class=\"metrics\"><strong>{}</strong><span>{}</span></div></a>",
+            escape(&report.slug),
+            report.summary.rounds_completed,
+            escape(&report.name),
+            escape(&report.summary.arena_id),
+            escape(&archive_reason(report.provenance.as_ref())),
+            escape(leader_name),
+            escape(&record),
+        );
+    }
+    body
+}
+
+fn archive_reason(provenance: Option<&MatchProvenance>) -> String {
+    provenance.map_or_else(
+        || "Archived because provenance is unavailable".to_owned(),
+        |value| {
+            format!(
+                "Superseded manifest or verifier · compatibility {}",
+                value
+                    .compatibility_key
+                    .get(..12)
+                    .unwrap_or(&value.compatibility_key)
+            )
+        },
+    )
 }
 
 fn render_benchmark_report(report: &BenchmarkReport) -> String {
@@ -898,7 +1010,7 @@ fn render_series(report: &SeriesReport) -> String {
         },
     );
     let content = format!(
-        "<nav><a href=\"../../\">← Archive</a><span>Agents of Empires · {}</span></nav>
+        "<nav><a href=\"../../\">← Current season</a><span>Agents of Empires · {}</span></nav>
         <header class=\"hero match-hero\"><span class=\"eyebrow\">Seat-rotated series · {}</span><h1>{}</h1><p>Every agent races the same verifier from every territory. Failed attempts remain in total spend.</p>
         <div class=\"hero-stats\"><div><small>Leader</small><strong>{}</strong></div><div><small>Rounds</small><strong>{}/{}</strong></div><div><small>Recorded cost</small><strong>{}</strong></div><div><small>Tokens</small><strong>{}</strong></div></div></header>
         <main><section><div class=\"section-heading\"><h2>Battle card</h2><p>Ranked by wins, then durable deployments, time, and total cost.</p></div><div class=\"table-wrap\"><table><thead><tr><th>Agent</th><th>Wins</th><th>Durable</th><th>Median</th><th>Tokens</th><th>Cost</th><th>Cost / durable</th><th>Usage</th></tr></thead><tbody>{standings}</tbody></table></div></section>
@@ -1278,7 +1390,7 @@ fn page(title: &str, content: &str) -> String {
 }
 
 const STYLE: &str = r#"
-:root{--bg:#10130f;--panel:#191e18;--line:#333d31;--text:#edf4e9;--muted:#9ca997;--gold:#e7bb55;--green:#85d68b;--red:#ef857c;--orange:#e5a65f}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 75% 0,#253120 0,transparent 32rem),var(--bg);color:var(--text);font:16px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}a{color:var(--gold)}nav,main,.hero{width:min(1120px,calc(100% - 2rem));margin:auto}nav{display:flex;justify-content:space-between;padding:1.25rem 0;color:var(--muted)}nav a{text-decoration:none}.hero{padding:6rem 0 3rem}.match-hero{padding-top:3.5rem}.eyebrow{color:var(--gold);font-size:.75rem;letter-spacing:.14em;text-transform:uppercase}h1{font-family:Georgia,serif;font-size:clamp(2.7rem,8vw,6.8rem);line-height:.9;margin:.35rem 0 1.2rem;max-width:900px}h2{font-family:Georgia,serif;font-size:2rem;margin:0}.hero>p,.section-heading p{color:var(--muted);max-width:680px}.about{border:1px solid var(--line);background:linear-gradient(135deg,#20271e,var(--panel));padding:2rem}.about h2{margin:.35rem 0 1rem}.about p{color:var(--muted);max-width:850px}.about p:last-child{margin-bottom:0}.about a{text-decoration:none}.hero-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;margin-top:3rem;background:var(--line);border:1px solid var(--line)}.hero-stats div{background:var(--panel);padding:1.25rem}.hero-stats small,td small{display:block;color:var(--muted);margin-bottom:.35rem}.hero-stats strong{font-size:1.25rem}section{margin:1rem 0 4rem}.section-heading{display:flex;align-items:end;justify-content:space-between;gap:2rem;margin-bottom:1rem}.section-heading p{margin:0}.table-wrap{overflow:auto;border:1px solid var(--line)}table{border-collapse:collapse;width:100%;background:var(--panel)}th,td{padding:1rem;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.08em}.winner-row,.seat-winner{background:#252b19}.seat-winner{box-shadow:inset 0 0 0 1px var(--gold)}.pill{display:inline-block;border:1px solid var(--line);border-radius:99px;padding:.15rem .55rem;font-size:.8rem}.pill.good{color:var(--green)}.pill.warn{color:var(--orange)}.pill.bad{color:var(--red)}.timeline{list-style:none;padding:0;border-top:1px solid var(--line)}.timeline li{display:grid;grid-template-columns:6rem 1fr;gap:1rem;padding:1rem 0;border-bottom:1px solid var(--line)}.timeline time{color:var(--gold)}.timeline span{color:var(--muted);margin-left:.75rem}.timeline details{margin-top:.4rem;color:var(--muted)}pre{white-space:pre-wrap;word-break:break-word;background:#090b09;padding:1rem;overflow:auto}.match-list{display:grid;gap:1rem}.match-card{display:flex;justify-content:space-between;gap:2rem;padding:1.5rem;border:1px solid var(--line);background:var(--panel);text-decoration:none;color:var(--text)}.match-card:hover{border-color:var(--gold)}.match-card h2{font-size:1.5rem}.match-card p{color:var(--muted);margin:.25rem 0 0}.metrics{text-align:right}.metrics strong,.metrics span{display:block}.metrics span{color:var(--muted)}footer{display:flex;gap:1rem;padding:2rem 0 5rem;border-top:1px solid var(--line)}@media(max-width:720px){.hero{padding-top:3rem}.hero-stats{grid-template-columns:1fr 1fr}.section-heading{display:block}.timeline li{grid-template-columns:4rem 1fr}.match-card{display:block}.metrics{text-align:left;margin-top:1rem}th,td{padding:.75rem}}
+:root{--bg:#10130f;--panel:#191e18;--line:#333d31;--text:#edf4e9;--muted:#9ca997;--gold:#e7bb55;--green:#85d68b;--red:#ef857c;--orange:#e5a65f}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 75% 0,#253120 0,transparent 32rem),var(--bg);color:var(--text);font:16px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}a{color:var(--gold)}nav,main,.hero{width:min(1120px,calc(100% - 2rem));margin:auto}nav{display:flex;justify-content:space-between;padding:1.25rem 0;color:var(--muted)}nav a{text-decoration:none}.hero{padding:6rem 0 3rem}.match-hero{padding-top:3.5rem}.eyebrow{color:var(--gold);font-size:.75rem;letter-spacing:.14em;text-transform:uppercase}h1{font-family:Georgia,serif;font-size:clamp(2.7rem,8vw,6.8rem);line-height:.9;margin:.35rem 0 1.2rem;max-width:900px}h2{font-family:Georgia,serif;font-size:2rem;margin:0}.hero>p,.section-heading p{color:var(--muted);max-width:680px}.about{border:1px solid var(--line);background:linear-gradient(135deg,#20271e,var(--panel));padding:2rem}.about h2{margin:.35rem 0 1rem}.about p{color:var(--muted);max-width:850px}.about p:last-child{margin-bottom:0}.about a{text-decoration:none}.hero-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;margin-top:3rem;background:var(--line);border:1px solid var(--line)}.hero-stats div{background:var(--panel);padding:1.25rem}.hero-stats small,td small{display:block;color:var(--muted);margin-bottom:.35rem}.hero-stats strong{font-size:1.25rem}section{margin:1rem 0 4rem}.section-heading{display:flex;align-items:end;justify-content:space-between;gap:2rem;margin-bottom:1rem}.section-heading p{margin:0}.table-wrap{overflow:auto;border:1px solid var(--line)}table{border-collapse:collapse;width:100%;background:var(--panel)}th,td{padding:1rem;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.08em}.winner-row,.seat-winner{background:#252b19}.seat-winner{box-shadow:inset 0 0 0 1px var(--gold)}.pill{display:inline-block;border:1px solid var(--line);border-radius:99px;padding:.15rem .55rem;font-size:.8rem}.pill.good{color:var(--green)}.pill.warn{color:var(--orange)}.pill.bad{color:var(--red)}.timeline{list-style:none;padding:0;border-top:1px solid var(--line)}.timeline li{display:grid;grid-template-columns:6rem 1fr;gap:1rem;padding:1rem 0;border-bottom:1px solid var(--line)}.timeline time{color:var(--gold)}.timeline span{color:var(--muted);margin-left:.75rem}.timeline details{margin-top:.4rem;color:var(--muted)}pre{white-space:pre-wrap;word-break:break-word;background:#090b09;padding:1rem;overflow:auto}.match-list{display:grid;gap:1rem}.match-card{display:flex;justify-content:space-between;gap:2rem;padding:1.5rem;border:1px solid var(--line);background:var(--panel);text-decoration:none;color:var(--text)}.match-card:hover{border-color:var(--gold)}.match-card h2{font-size:1.5rem}.match-card p{color:var(--muted);margin:.25rem 0 0}.metrics{text-align:right}.metrics strong,.metrics span{display:block}.metrics span{color:var(--muted)}.archive-callout{display:flex;align-items:center;justify-content:space-between;gap:2rem;border:1px solid var(--line);background:linear-gradient(135deg,#20271e,var(--panel));padding:2rem}.archive-callout p{color:var(--muted);margin:.35rem 0 0;max-width:680px}.archive-link{white-space:nowrap;text-decoration:none;border:1px solid var(--gold);padding:.75rem 1rem}.archive-reason{display:block;color:var(--orange);margin-top:.75rem}footer{display:flex;gap:1rem;padding:2rem 0 5rem;border-top:1px solid var(--line)}@media(max-width:720px){.hero{padding-top:3rem}.hero-stats{grid-template-columns:1fr 1fr}.section-heading{display:block}.timeline li{grid-template-columns:4rem 1fr}.match-card,.archive-callout{display:block}.archive-link{display:inline-block;margin-top:1rem}.metrics{text-align:left;margin-top:1rem}th,td{padding:.75rem}}
 "#;
 
 const REPLAY_STYLE: &str = r#"

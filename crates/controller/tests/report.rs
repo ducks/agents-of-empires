@@ -125,11 +125,15 @@ fn generates_archive_and_match_artifacts() {
     let summary = generate_reports(&root.join("matches"), &output).expect("report");
     assert_eq!(summary.matches, 1);
     let index = fs::read_to_string(output.join("index.html")).expect("index");
-    assert!(index.contains("build-race-001"));
-    assert!(index.contains("territory-a"));
+    assert!(!index.contains("build-race-001"));
+    assert!(index.contains("Browse 1 archived run"));
     assert!(index.contains("What am I looking at?"));
     assert!(index.contains("identical disposable NixOS machines"));
     assert!(index.contains("https://github.com/ducks/agents-of-empires"));
+    let archive = fs::read_to_string(output.join("archive/index.html")).expect("archive");
+    assert!(archive.contains("build-race-001"));
+    assert!(archive.contains("territory-a"));
+    assert!(archive.contains("Archived because provenance is unavailable"));
     let match_page =
         fs::read_to_string(output.join("matches/build-race-001/index.html")).expect("match");
     assert!(match_page.contains("model/a"));
@@ -303,12 +307,20 @@ fn separates_current_compatibility_key_from_history() {
     let output = root.join("site");
     generate_reports(&root.join("matches"), &output).expect("reports");
     let index = fs::read_to_string(output.join("index.html")).expect("index");
-    let current = index.find("<h2>Current</h2>").expect("current");
-    let historical = index.find("<h2>Historical</h2>").expect("historical");
-    assert!(index[current..historical].contains("race-002"));
-    assert!(index[current..historical].contains("race-003"));
-    assert!(!index[current..historical].contains("race-001"));
-    assert!(index[historical..].contains("race-001"));
+    assert!(index.contains("<h2>Current matches</h2>"));
+    assert!(index.contains("race-002"));
+    assert!(index.contains("race-003"));
+    assert!(!index.contains("race-001"));
+    assert!(index.contains("href=\"archive/\""));
+
+    let archive =
+        fs::read_to_string(output.join("archive").join("index.html")).expect("archive index");
+    assert!(archive.contains("<h2>Historical matches</h2>"));
+    assert!(archive.contains("race-001"));
+    assert!(!archive.contains("race-002"));
+    assert!(!archive.contains("race-003"));
+    assert!(archive.contains("Superseded manifest or verifier"));
+    assert!(archive.contains("href=\"../matches/race-001/\""));
     fs::remove_dir_all(root).expect("cleanup");
 }
 
