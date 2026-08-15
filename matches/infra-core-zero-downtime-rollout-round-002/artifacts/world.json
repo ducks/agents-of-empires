@@ -1,0 +1,199 @@
+{
+  "match_state": "finished",
+  "territories": {
+    "rollout-one": {
+      "class": "rollout-engineer",
+      "agent": "glm-rollout-engineer",
+      "state": "provisioning",
+      "resources": 0,
+      "last_health": null,
+      "elimination_source": null,
+      "elimination_detail": null,
+      "competitor_state": "durable",
+      "milestones": {
+        "baseline-ready": {
+          "evaluating": false,
+          "passed": true,
+          "points": 5,
+          "evidence": {
+            "baseline": "v1",
+            "records": [
+              "customer-alpha-73c",
+              "customer-beta-a19"
+            ]
+          },
+          "failure_category": null,
+          "failure_detail": null
+        },
+        "host-reboot": {
+          "evaluating": false,
+          "passed": true,
+          "points": 20,
+          "evidence": {
+            "reboot": true,
+            "record": "rollout-1cfc825ffaba17a1",
+            "value": "opaque-dfbf93d7b214ee4bbd4e373a",
+            "version": "v2"
+          },
+          "failure_category": null,
+          "failure_detail": null
+        },
+        "uninterrupted-cutover": {
+          "evaluating": false,
+          "passed": true,
+          "points": 45,
+          "evidence": {
+            "samples": 370,
+            "uninterrupted": true,
+            "version": "v2"
+          },
+          "failure_category": null,
+          "failure_detail": null
+        },
+        "v2-restart": {
+          "evaluating": false,
+          "passed": true,
+          "points": 15,
+          "evidence": {
+            "record": "rollout-1cfc825ffaba17a1",
+            "v2_restart": true,
+            "value": "opaque-dfbf93d7b214ee4bbd4e373a"
+          },
+          "failure_category": null,
+          "failure_detail": null
+        },
+        "write-new": {
+          "evaluating": false,
+          "passed": true,
+          "points": 15,
+          "evidence": {
+            "record": "rollout-1cfc825ffaba17a1",
+            "value": "opaque-dfbf93d7b214ee4bbd4e373a"
+          },
+          "failure_category": null,
+          "failure_detail": null
+        }
+      },
+      "milestone_points": 100,
+      "durable_at_ms": 117745
+    },
+    "rollout-three": {
+      "class": "rollout-engineer",
+      "agent": "luna-rollout-engineer",
+      "state": "provisioning",
+      "resources": 0,
+      "last_health": null,
+      "elimination_source": null,
+      "elimination_detail": null,
+      "competitor_state": "verifying",
+      "milestones": {
+        "baseline-ready": {
+          "evaluating": false,
+          "passed": true,
+          "points": 5,
+          "evidence": {
+            "baseline": "v1",
+            "records": [
+              "customer-alpha-73c",
+              "customer-beta-a19"
+            ]
+          },
+          "failure_category": null,
+          "failure_detail": null
+        },
+        "uninterrupted-cutover": {
+          "evaluating": false,
+          "passed": false,
+          "points": 0,
+          "evidence": null,
+          "failure_category": "verification_failed",
+          "failure_detail": "public endpoint never cut over to v2"
+        }
+      },
+      "milestone_points": 5,
+      "durable_at_ms": null
+    },
+    "rollout-two": {
+      "class": "rollout-engineer",
+      "agent": "deepseek-rollout-engineer",
+      "state": "provisioning",
+      "resources": 0,
+      "last_health": null,
+      "elimination_source": null,
+      "elimination_detail": null,
+      "competitor_state": "verifying",
+      "milestones": {
+        "baseline-ready": {
+          "evaluating": false,
+          "passed": true,
+          "points": 5,
+          "evidence": {
+            "baseline": "v1",
+            "records": [
+              "customer-alpha-73c",
+              "customer-beta-a19"
+            ]
+          },
+          "failure_category": null,
+          "failure_detail": null
+        },
+        "uninterrupted-cutover": {
+          "evaluating": false,
+          "passed": false,
+          "points": 0,
+          "evidence": null,
+          "failure_category": "verification_failed",
+          "failure_detail": "public endpoint never cut over to v2"
+        }
+      },
+      "milestone_points": 5,
+      "durable_at_ms": null
+    }
+  },
+  "agents": {
+    "deepseek-rollout-engineer": {
+      "territory": "rollout-two",
+      "model": "deepseek/deepseek-v4-flash-0731",
+      "running": false,
+      "successful": null,
+      "failure_source": "controller",
+      "terminal_state": "terminated",
+      "terminal_detail": "post-match drain deadline expired",
+      "resource_units_used": 1,
+      "input_tokens": 142681,
+      "output_tokens": 7803,
+      "cost_microusd": 7972
+    },
+    "glm-rollout-engineer": {
+      "territory": "rollout-one",
+      "model": "z-ai/glm-5.2",
+      "running": false,
+      "successful": true,
+      "failure_source": "player",
+      "terminal_state": "completed",
+      "terminal_detail": "Now I understand the setup. v2.py doesn't exist (that's why v2.service failed). Let me write it mirroring v1's contract on port 8082, using the same DB to preserve records.v2 is up and serving the existing records. Now switch the upstream atomically and verify the public endpoint.Cutover complete with no outage. Now verify a new write works through the proxy and that v2 survives a restart plus the durability requirements.Rollout complete. Summary of what was done:\n\n**Implemented v2** at `/opt/rollout/v2.py` — mirrors v1's behavior but listens on `127.0.0.1:8082`, returns `v2` on `/version`, and reads/writes the same `/var/lib/rollout/records.sqlite3` so existing records are preserved. The v2.service unit was already in place and enabled; it was only failing because the script didn't exist.\n\n**Cutover (no outage):**\n1. Reset the start-limit and started `rollout-v2.service`.\n2. Verified v2 directly: `/health`→`ready`, `/version`→`v2`, existing records served.\n3. Atomically switched `/var/lib/rollout/upstream` from `8081` to `8082` via temp-file + `mv`.\n4. The proxy reads that file per-request, so traffic moved without restarting `rollout-proxy.service` or `rollout-v1.service` (both left running untouched).\n\n**Verification through the public endpoint (port 8080):**\n- `/health` → 200 `ready`\n- `/version` → 200 `v2`\n- existing `customer-alpha-73c` → 200 `alpha-original`\n- existing `customer-beta-a19` → 200 `beta-original`\n- new `PUT /records/customer-gamma-001` → 204, then GET → 200 `gamma-fresh`\n- absent record → 404\n\n**Durability:**\n- After `systemctl restart rollout-v2.service`: service came back active, all records (old + new) still served correctly through the proxy.\n- Reboot survival: `rollout-v2.service` and `rollout-proxy.service` are both `enabled` (WantedBy=multi-user.target), records live in the on-disk sqlite file, and `upstream` contains `8082` on disk — so state survives a full host reboot without agent intervention.\n\nBoth v2 and the proxy are left enabled and healthy.",
+      "resource_units_used": 1,
+      "input_tokens": 52773,
+      "output_tokens": 3075,
+      "cost_microusd": 12104
+    },
+    "luna-rollout-engineer": {
+      "territory": "rollout-three",
+      "model": "openai/gpt-5.6-luna",
+      "running": false,
+      "successful": null,
+      "failure_source": "controller",
+      "terminal_state": "terminated",
+      "terminal_detail": "post-match drain deadline expired",
+      "resource_units_used": 1,
+      "input_tokens": 223956,
+      "output_tokens": 13001,
+      "cost_microusd": 12786
+    }
+  },
+  "winner": "rollout-one",
+  "finish_reason": "first durable deployment",
+  "infrastructure_failures": 0,
+  "last_sequence": 45,
+  "elapsed_ms": 117749
+}

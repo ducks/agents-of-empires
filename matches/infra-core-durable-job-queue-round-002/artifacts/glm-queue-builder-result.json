@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "agent": "glm-queue-builder",
+  "territory": "queue-one",
+  "status": "completed",
+  "summary": "I'll inspect the existing state, then build the service. Let me write the files.Now start the services and verify.Both services active. Now verify functionality end-to-end.Now verify durability across worker restart and re-acceptance during downtime.Now confirm the services are enabled for boot survival.Done. The durable job queue is deployed and running on this host.\n\n## What was built\n\nTwo scripts in `/opt/job-queue/` (the directory didn't exist before), wired into the pre-existing systemd slots:\n\n- **`api.py`** — `ThreadingHTTPServer` on `:8080`\n  - `GET /health` → `200` with body `ready`\n  - `POST /jobs/<id>` → reads the UTF-8 body as payload, inserts as `queued` (status `202`). Uses `INSERT OR IGNORE` so re-accepting an id never discards or replaces prior accepted work.\n  - `GET /jobs/<id>` → JSON with `id`, `payload`, `status`, `result`, integer `attempts`\n- **`worker.py`** — polls for `queued` jobs and completes each with `result = \"processed:\" + payload`\n\n## Exactly-once recovery\n\nThe completion is a single atomic transaction:\n\n```sql\nUPDATE jobs SET status='done', result=?, attempts=attempts+1\nWHERE id=? AND status='queued'\n```\n\nThe `status='queued'` guard means the attempt counter is incremented **only** by the commit that actually flips the status to `done`. If the worker crashes before committing, the row stays `queued` and is reprocessed on restart — the attempt is recorded exactly once, on the commit that succeeds. A `recover()` step on startup requeues any job stranded in a transient state by a prior crash.\n\n## Verification (all passing)\n\n- `health` → `ready` / `200`\n- 3 pre-existing seed jobs (`accepted-alpha-7d3`, `accepted-beta-91e`, `accepted-gamma-c42`) completed with `result=\"processed:<payload>\"`, `attempts=1`\n- New `POST /jobs/test-001` → `202`, then completed\n- **Worker stopped mid-flight**: posted `down-001` while worker down → stayed `queued`; after worker restart → `done`, `attempts=1`\n- **Worker restart on already-done job**: no double-counting (`attempts` stays 1)\n- SQLite in WAL mode (`busy_timeout=30s`) for safe concurrent API/worker access\n- `queue-api`, `queue-worker`, `queue-seed` all `enabled` + `active` → both services come back on their own after reboot",
+  "usage": {
+    "rounds": null,
+    "tool_calls": null,
+    "input_tokens": 94519,
+    "output_tokens": 5345,
+    "cost_microusd": 21424,
+    "resource_units": 1
+  },
+  "transcript": "benchmarks/infra-core-20260815-050349/02-durable-job-queue/round-002/agents/glm-queue-builder/transcript.json"
+}

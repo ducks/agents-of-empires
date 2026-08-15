@@ -33,26 +33,16 @@
       "elimination_detail": null,
       "competitor_state": "verifying",
       "milestones": {
-        "recover-accepted": {
+        "service-up": {
           "evaluating": false,
           "passed": false,
           "points": 0,
           "evidence": null,
           "failure_category": "verification_failed",
-          "failure_detail": "curl: (56) Recv failure: Connection reset by peer\ncurl: (56) Recv failure: Connection reset by peer\ncurl: (56) Recv failure: Connection reset by peer\npre-existing accepted jobs were not recovered exactly once"
-        },
-        "service-up": {
-          "evaluating": false,
-          "passed": true,
-          "points": 10,
-          "evidence": {
-            "health": "ready"
-          },
-          "failure_category": null,
-          "failure_detail": null
+          "failure_detail": "curl: (56) Recv failure: Connection reset by peer"
         }
       },
-      "milestone_points": 10,
+      "milestone_points": 0,
       "durable_at_ms": null
     },
     "queue-two": {
@@ -70,8 +60,8 @@
           "passed": true,
           "points": 25,
           "evidence": {
-            "job": "fresh-044431306b93f76e",
-            "payload": "opaque-4cbda8ea568efe7518e3ea8d",
+            "job": "fresh-050372f0716de55d",
+            "payload": "opaque-5eb1acce6a945f050444d19f",
             "reboot": true
           },
           "failure_category": null,
@@ -83,8 +73,8 @@
           "points": 20,
           "evidence": {
             "completed": true,
-            "job": "fresh-044431306b93f76e",
-            "payload": "opaque-4cbda8ea568efe7518e3ea8d"
+            "job": "fresh-050372f0716de55d",
+            "payload": "opaque-5eb1acce6a945f050444d19f"
           },
           "failure_category": null,
           "failure_detail": null
@@ -119,8 +109,8 @@
           "passed": true,
           "points": 20,
           "evidence": {
-            "job": "fresh-044431306b93f76e",
-            "payload": "opaque-4cbda8ea568efe7518e3ea8d",
+            "job": "fresh-050372f0716de55d",
+            "payload": "opaque-5eb1acce6a945f050444d19f",
             "worker_restart": true
           },
           "failure_category": null,
@@ -128,7 +118,7 @@
         }
       },
       "milestone_points": 100,
-      "durable_at_ms": 112880
+      "durable_at_ms": 61463
     }
   },
   "agents": {
@@ -141,22 +131,22 @@
       "terminal_state": "terminated",
       "terminal_detail": "post-match drain deadline expired",
       "resource_units_used": 1,
-      "input_tokens": 63365,
-      "output_tokens": 4484,
-      "cost_microusd": 2501
+      "input_tokens": 76285,
+      "output_tokens": 5703,
+      "cost_microusd": 5571
     },
     "glm-queue-builder": {
       "territory": "queue-three",
       "model": "z-ai/glm-5.2",
       "running": false,
-      "successful": true,
-      "failure_source": "player",
-      "terminal_state": "completed",
-      "terminal_detail": "I'll start by exploring the existing state of the host to understand what's already in place.The units are Nix-managed symlinks expecting `/opt/job-queue/{api,worker}.py` which don't exist yet. Let me inspect the unit definitions, the seed service, and the existing database schema.Let me look at the seed script and the existing database schema and contents.I now have the full picture:\n- DB at `/var/lib/job-queue/jobs.sqlite3` with table `jobs(id TEXT PK, payload TEXT NOT NULL, status TEXT NOT NULL, result TEXT, attempts INTEGER NOT NULL DEFAULT 0)`.\n- 3 pre-existing queued jobs (alpha/beta/gamma), attempts 0.\n- Units invoke `/opt/job-queue/{api,worker}.py` with the Nix Python 3.14; both are `Restart=always`, enabled, and `After=queue-seed.service` (which is `INSERT OR IGNORE`, so it won't clobber existing jobs).\n\nDesign for exactly-once completion under crashes: complete each job with a **single atomic `UPDATE`** guarded by `WHERE status='queued'`, so a job transitions queued→done in one transaction (attempts 0→1). A crash before commit leaves it queued (reprocessed later, still ends at 1); a crash after commit leaves it done. No \"processing\" limbo state. SQLite in WAL + `synchronous=FULL` for reboot/power-loss durability, with `busy_timeout` for API/worker concurrency.\n\nLet me write the API and worker.Now make them executable and start the services, resetting the failed start-limit.Both running. Let me verify: pre-existing jobs completed with exactly one attempt, then test health, new job acceptance, restart durability, and double-processing safety.All correct. Now the critical durability tests: worker restart mid-flight, exactly-once under double-processing, and reboot survival. Let me test restart of the worker while jobs are pending, and confirm no double-attempts.Exactly-once holds through worker restart and re-POST. Now verify boot-time auto-start (enabled units) and simulate a reboot by stopping all services and starting from cold (as systemd would on boot).All preserved exactly once. Final checks: hard-kill the worker (SIGKILL, simulating a crash) mid-flight, and a concurrent POST burst to confirm no double-attempts under contention.All 62 jobs done, every one with exactly one attempt, zero limbo states, correct results, and both services active after a hard kill. Let me do a final confirmation that everything is enabled and running cleanly.Done. The durable job queue is implemented, verified, and left running.\n\n## What was deployed\n\nTwo scripts in the existing Nix-managed systemd slots (`/opt/job-queue/api.py`, `/opt/job-queue/worker.py`), both using the existing SQLite DB at `/var/lib/job-queue/jobs.sqlite3`.\n\n**API** (`api.py:1`) — `ThreadingHTTPServer` on `0.0.0.0:8080`:\n- `GET /health` → `200` with body `ready`\n- `POST /jobs/<id>` → stores the UTF-8 body as a `queued` job (attempts 0), returns `202`; uses `INSERT OR IGNORE` so a re-POST of a known id never re-queues completed work\n- `GET /jobs/<id>` → JSON `{id, payload, status, result, attempts}` (integer attempts)\n\n**Worker** (`worker.py:1`) — polls for queued jobs and completes each with a **single atomic guarded UPDATE**:\n```sql\nUPDATE jobs SET status='done', result=?, attempts=attempts+1 WHERE id=? AND status='queued'\n```\nThis is the exactly-once guarantee: the queued→done transition (attempts 0→1) happens in one transaction. A crash before commit leaves it queued (reprocessed later, still ends at 1); a crash after commit leaves it done. No `processing` limbo state exists.\n\n**Durability**: SQLite in `WAL` + `synchronous=FULL` + `busy_timeout=30000` on every connection, so committed jobs survive host reboot and power loss, and the API can read while the worker writes.\n\n## Verification performed\n- 3 pre-existing seeded jobs (alpha/beta/gamma) completed: `result=processed:<payload>`, `attempts=1` — not discarded or replaced.\n- New jobs, UTF-8 payloads, and empty bodies accepted (`202`) and processed correctly.\n- Re-POST of a done job id does not re-process (attempts stays 1).\n- Worker `restart` mid-flight and `SIGKILL` mid-flight: all jobs still end at exactly one attempt.\n- Simulated reboot (stop all → cold start): all 62 jobs preserved, zero limbo, zero double-attempts, zero wrong results; new jobs accepted and processed after.\n- Both `queue-api.service` and `queue-worker.service` are `enabled` (auto-start on boot) and `active (running)`, with `queue-seed.service` running first as a dependency.",
+      "successful": null,
+      "failure_source": "controller",
+      "terminal_state": "terminated",
+      "terminal_detail": "post-match drain deadline expired",
       "resource_units_used": 1,
-      "input_tokens": 194015,
-      "output_tokens": 10158,
-      "cost_microusd": 91563
+      "input_tokens": 54850,
+      "output_tokens": 4418,
+      "cost_microusd": 29814
     },
     "luna-queue-builder": {
       "territory": "queue-two",
@@ -167,14 +157,14 @@
       "terminal_state": "interrupted",
       "terminal_detail": "agent session was interrupted by the referee's host reboot",
       "resource_units_used": 1,
-      "input_tokens": 106279,
-      "output_tokens": 6518,
-      "cost_microusd": 6388
+      "input_tokens": 73170,
+      "output_tokens": 4778,
+      "cost_microusd": 4871
     }
   },
   "winner": "queue-two",
   "finish_reason": "first durable deployment",
   "infrastructure_failures": 0,
-  "last_sequence": 249,
-  "elapsed_ms": 112884
+  "last_sequence": 184,
+  "elapsed_ms": 61468
 }

@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "agent": "deepseek-failover-engineer",
+  "territory": "failover-two",
+  "status": "completed",
+  "summary": "Now I understand the architecture. Let me execute the failover in the correct order: fence first, then promote, then switch proxyThree customer records exist. Let me now execute the failover — fencing first, then promotion, then proxy switch.\n\nOld primary is durably fenced. Now promote the replica and switch the proxy — the order here is important: promote first so the replica is ready before traffic arrives.\n\nAll contract endpoints verified successfully. The service is running and durable. Here's the summary:\n\n## Failover complete — public service restored on port 8080\n\n### Fencing\n- **`/var/lib/failover/primary.fenced`** — created (durable marker)\n- **`/var/lib/failover/primary.failed`** — preserved (already existed)\n- **Port 8081 blocked** via iptables `DROP` rule — nothing can listen there, eliminating split-brain risk\n\n### Promotion\n- **`/var/lib/failover/replica.role`** → `primary` — replica on `127.0.0.1:8082` now accepts writes\n\n### Proxy switch\n- **`/var/lib/failover/upstream`** → `8082` — proxy on port 8080 now forwards all requests to the promoted primary\n\n### Verified contract\n\n| Endpoint | Result |\n|---|---|\n| `GET /health` | `200 ready` |\n| `GET /role` | `200 primary` |\n| `GET /records/customer-red-4a7` | `200 red-original` |\n| `GET /records/customer-blue-8d2` | `200 blue-original` |\n| `GET /records/customer-green-f31` | `200 green-original` |\n| `GET /records/nonexistent` | `404` |\n| `PUT /records/customer-yellow-9e1` | `204` (new record written) |\n| `GET /records/customer-yellow-9e1` | `200 customer-yellow-9e1-yellow-new` |\n| `GET /health` (old primary :8081) | Blocked/failed |\n\n### Durability\nAll state is file-based — the proxy and replica read their config from disk on every request. The SQLite database at `/var/lib/failover/records.sqlite3` now contains **4 customer records** (3 original + 1 new). The topology, records, and fencing all survive service restart and full host reboot.",
+  "usage": {
+    "rounds": null,
+    "tool_calls": null,
+    "input_tokens": 121408,
+    "output_tokens": 4976,
+    "cost_microusd": 5707,
+    "resource_units": 1
+  },
+  "transcript": "benchmarks/infra-core-20260815-050349/04-primary-failover/round-002/agents/deepseek-failover-engineer/transcript.json"
+}

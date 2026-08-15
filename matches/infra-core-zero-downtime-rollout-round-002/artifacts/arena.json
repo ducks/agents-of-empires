@@ -1,0 +1,264 @@
+{
+  "schema_version": 1,
+  "arena": {
+    "id": "zero-downtime-rollout",
+    "display_name": "Zero-Downtime Rollout",
+    "mode": "build_race"
+  },
+  "network": {
+    "cidr": "10.80.0.0/24",
+    "allow_public_internet": false
+  },
+  "rules": {
+    "duration_seconds": 900,
+    "tick_ms": 250,
+    "healthy_resources_per_tick": 0,
+    "minimum_territories": 3
+  },
+  "build": {
+    "stop_on_first_durable": true,
+    "completion_milestone": "host-reboot",
+    "milestones": [
+      {
+        "id": "baseline-ready",
+        "display_name": "Live v1 Baseline",
+        "depends_on": [],
+        "verifier": "verify/baseline-ready.sh",
+        "operation": "observe",
+        "timeout_seconds": 5,
+        "points": 5,
+        "required": true
+      },
+      {
+        "id": "uninterrupted-cutover",
+        "display_name": "Uninterrupted v2 Cutover",
+        "depends_on": [
+          "baseline-ready"
+        ],
+        "verifier": "verify/uninterrupted-cutover.sh",
+        "operation": "observe",
+        "timeout_seconds": 120,
+        "points": 45,
+        "required": true
+      },
+      {
+        "id": "write-new",
+        "display_name": "Write Through v2",
+        "depends_on": [
+          "uninterrupted-cutover"
+        ],
+        "verifier": "verify/write-new.sh",
+        "operation": "observe",
+        "timeout_seconds": 10,
+        "points": 15,
+        "required": true
+      },
+      {
+        "id": "v2-restart",
+        "display_name": "v2 Service Restart",
+        "depends_on": [
+          "write-new"
+        ],
+        "verifier": "verify/v2-restart.sh",
+        "operation": "observe",
+        "timeout_seconds": 20,
+        "points": 15,
+        "required": true
+      },
+      {
+        "id": "host-reboot",
+        "display_name": "Host Reboot",
+        "depends_on": [
+          "v2-restart"
+        ],
+        "verifier": "verify/host-reboot.sh",
+        "operation": "host_reboot",
+        "timeout_seconds": 40,
+        "points": 20,
+        "required": true
+      }
+    ]
+  },
+  "visualization": {
+    "nodes": [
+      {
+        "id": "client",
+        "display_name": "Client",
+        "kind": "client",
+        "milestone": null,
+        "x": 7,
+        "y": 24
+      },
+      {
+        "id": "proxy",
+        "display_name": "Live Proxy",
+        "kind": "proxy",
+        "milestone": "baseline-ready",
+        "x": 31,
+        "y": 24
+      },
+      {
+        "id": "v2",
+        "display_name": "Version 2",
+        "kind": "service",
+        "milestone": "uninterrupted-cutover",
+        "x": 58,
+        "y": 24
+      },
+      {
+        "id": "state",
+        "display_name": "State Store",
+        "kind": "database",
+        "milestone": "write-new",
+        "x": 84,
+        "y": 24
+      },
+      {
+        "id": "unit",
+        "display_name": "v2 Unit",
+        "kind": "service",
+        "milestone": "v2-restart",
+        "x": 42,
+        "y": 75
+      },
+      {
+        "id": "host",
+        "display_name": "NixOS Host",
+        "kind": "host",
+        "milestone": "host-reboot",
+        "x": 75,
+        "y": 75
+      }
+    ],
+    "links": [
+      {
+        "from": "client",
+        "to": "proxy",
+        "kind": "traffic",
+        "label": "HTTP"
+      },
+      {
+        "from": "proxy",
+        "to": "v2",
+        "kind": "traffic",
+        "label": "cutover"
+      },
+      {
+        "from": "v2",
+        "to": "state",
+        "kind": "storage",
+        "label": null
+      },
+      {
+        "from": "unit",
+        "to": "v2",
+        "kind": "lifecycle",
+        "label": null
+      },
+      {
+        "from": "host",
+        "to": "unit",
+        "kind": "lifecycle",
+        "label": null
+      }
+    ]
+  },
+  "classes": [
+    {
+      "id": "rollout-engineer",
+      "display_name": "Rollout Engineer",
+      "strengths": [],
+      "weaknesses": [],
+      "resources": {
+        "vcpus": 1,
+        "memory_mib": 768,
+        "disk_mib": 2048
+      }
+    }
+  ],
+  "territories": [
+    {
+      "id": "rollout-one",
+      "class": "rollout-engineer",
+      "nixos_config": "./arenas/zero-downtime-rollout#nixosConfigurations.rollout-one.config.system.build.vm",
+      "service": {
+        "port": 8080,
+        "path": "/health",
+        "expected_status": 200,
+        "expected_body": "ready",
+        "health": {
+          "poll_interval_ms": 250,
+          "consecutive_failures": 2,
+          "recovery_window_seconds": 30
+        }
+      }
+    },
+    {
+      "id": "rollout-two",
+      "class": "rollout-engineer",
+      "nixos_config": "./arenas/zero-downtime-rollout#nixosConfigurations.rollout-two.config.system.build.vm",
+      "service": {
+        "port": 8080,
+        "path": "/health",
+        "expected_status": 200,
+        "expected_body": "ready",
+        "health": {
+          "poll_interval_ms": 250,
+          "consecutive_failures": 2,
+          "recovery_window_seconds": 30
+        }
+      }
+    },
+    {
+      "id": "rollout-three",
+      "class": "rollout-engineer",
+      "nixos_config": "./arenas/zero-downtime-rollout#nixosConfigurations.rollout-three.config.system.build.vm",
+      "service": {
+        "port": 8080,
+        "path": "/health",
+        "expected_status": 200,
+        "expected_body": "ready",
+        "health": {
+          "poll_interval_ms": 250,
+          "consecutive_failures": 2,
+          "recovery_window_seconds": 30
+        }
+      }
+    }
+  ],
+  "agents": [
+    {
+      "id": "deepseek-rollout-engineer",
+      "territory": "rollout-two",
+      "adapter": "claux",
+      "model": "deepseek/deepseek-v4-flash-0731",
+      "reasoning_effort": "high",
+      "budget": {
+        "resource_units": 900,
+        "max_cost_microusd": null
+      }
+    },
+    {
+      "id": "luna-rollout-engineer",
+      "territory": "rollout-three",
+      "adapter": "claux",
+      "model": "openai/gpt-5.6-luna",
+      "reasoning_effort": "high",
+      "budget": {
+        "resource_units": 900,
+        "max_cost_microusd": null
+      }
+    },
+    {
+      "id": "glm-rollout-engineer",
+      "territory": "rollout-one",
+      "adapter": "claux",
+      "model": "z-ai/glm-5.2",
+      "reasoning_effort": "high",
+      "budget": {
+        "resource_units": 900,
+        "max_cost_microusd": null
+      }
+    }
+  ]
+}

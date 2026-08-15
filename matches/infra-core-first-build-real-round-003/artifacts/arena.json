@@ -1,0 +1,238 @@
+{
+  "schema_version": 1,
+  "arena": {
+    "id": "first-build-real",
+    "display_name": "First Build: Real Agents",
+    "mode": "build_race"
+  },
+  "network": {
+    "cidr": "10.78.0.0/24",
+    "allow_public_internet": false
+  },
+  "rules": {
+    "duration_seconds": 900,
+    "tick_ms": 2000,
+    "healthy_resources_per_tick": 0,
+    "minimum_territories": 3
+  },
+  "build": {
+    "stop_on_first_durable": true,
+    "completion_milestone": "host-reboot",
+    "milestones": [
+      {
+        "id": "service-up",
+        "display_name": "Service Up",
+        "depends_on": [],
+        "verifier": "verify/service-up.sh",
+        "operation": "observe",
+        "timeout_seconds": 5,
+        "points": 10,
+        "required": true
+      },
+      {
+        "id": "write-read",
+        "display_name": "Write and Read",
+        "depends_on": [
+          "service-up"
+        ],
+        "verifier": "verify/write-read.sh",
+        "operation": "observe",
+        "timeout_seconds": 10,
+        "points": 20,
+        "required": true
+      },
+      {
+        "id": "service-restart",
+        "display_name": "Service Restart",
+        "depends_on": [
+          "write-read"
+        ],
+        "verifier": "verify/service-restart.sh",
+        "operation": "observe",
+        "timeout_seconds": 15,
+        "points": 30,
+        "required": true
+      },
+      {
+        "id": "host-reboot",
+        "display_name": "Host Reboot",
+        "depends_on": [
+          "service-restart"
+        ],
+        "verifier": "verify/host-reboot.sh",
+        "operation": "host_reboot",
+        "timeout_seconds": 30,
+        "points": 40,
+        "required": true
+      }
+    ]
+  },
+  "visualization": {
+    "nodes": [
+      {
+        "id": "client",
+        "display_name": "Client",
+        "kind": "client",
+        "milestone": null,
+        "x": 8,
+        "y": 28
+      },
+      {
+        "id": "app",
+        "display_name": "Application",
+        "kind": "service",
+        "milestone": "service-up",
+        "x": 36,
+        "y": 28
+      },
+      {
+        "id": "state",
+        "display_name": "State Store",
+        "kind": "database",
+        "milestone": "write-read",
+        "x": 72,
+        "y": 28
+      },
+      {
+        "id": "systemd",
+        "display_name": "Service Unit",
+        "kind": "service",
+        "milestone": "service-restart",
+        "x": 36,
+        "y": 74
+      },
+      {
+        "id": "host",
+        "display_name": "NixOS Host",
+        "kind": "host",
+        "milestone": "host-reboot",
+        "x": 72,
+        "y": 74
+      }
+    ],
+    "links": [
+      {
+        "from": "client",
+        "to": "app",
+        "kind": "traffic",
+        "label": "HTTP"
+      },
+      {
+        "from": "app",
+        "to": "state",
+        "kind": "storage",
+        "label": null
+      },
+      {
+        "from": "systemd",
+        "to": "app",
+        "kind": "lifecycle",
+        "label": null
+      },
+      {
+        "from": "host",
+        "to": "systemd",
+        "kind": "lifecycle",
+        "label": null
+      }
+    ]
+  },
+  "classes": [
+    {
+      "id": "builder",
+      "display_name": "Builder",
+      "strengths": [],
+      "weaknesses": [],
+      "resources": {
+        "vcpus": 1,
+        "memory_mib": 768,
+        "disk_mib": 2048
+      }
+    }
+  ],
+  "territories": [
+    {
+      "id": "builder-one",
+      "class": "builder",
+      "nixos_config": "./arenas/first-build#nixosConfigurations.builder-one.config.system.build.vm",
+      "service": {
+        "port": 8080,
+        "path": "/health",
+        "expected_status": 200,
+        "expected_body": "ready",
+        "health": {
+          "poll_interval_ms": 1000,
+          "consecutive_failures": 3,
+          "recovery_window_seconds": 60
+        }
+      }
+    },
+    {
+      "id": "builder-two",
+      "class": "builder",
+      "nixos_config": "./arenas/first-build#nixosConfigurations.builder-two.config.system.build.vm",
+      "service": {
+        "port": 8080,
+        "path": "/health",
+        "expected_status": 200,
+        "expected_body": "ready",
+        "health": {
+          "poll_interval_ms": 1000,
+          "consecutive_failures": 3,
+          "recovery_window_seconds": 60
+        }
+      }
+    },
+    {
+      "id": "builder-three",
+      "class": "builder",
+      "nixos_config": "./arenas/first-build#nixosConfigurations.builder-three.config.system.build.vm",
+      "service": {
+        "port": 8080,
+        "path": "/health",
+        "expected_status": 200,
+        "expected_body": "ready",
+        "health": {
+          "poll_interval_ms": 1000,
+          "consecutive_failures": 3,
+          "recovery_window_seconds": 60
+        }
+      }
+    }
+  ],
+  "agents": [
+    {
+      "id": "deepseek-builder",
+      "territory": "builder-three",
+      "adapter": "claux",
+      "model": "deepseek/deepseek-v4-flash-0731",
+      "reasoning_effort": "high",
+      "budget": {
+        "resource_units": 900,
+        "max_cost_microusd": null
+      }
+    },
+    {
+      "id": "luna-builder",
+      "territory": "builder-one",
+      "adapter": "claux",
+      "model": "openai/gpt-5.6-luna",
+      "reasoning_effort": "high",
+      "budget": {
+        "resource_units": 900,
+        "max_cost_microusd": null
+      }
+    },
+    {
+      "id": "glm-builder",
+      "territory": "builder-two",
+      "adapter": "claux",
+      "model": "z-ai/glm-5.2",
+      "reasoning_effort": "high",
+      "budget": {
+        "resource_units": 900,
+        "max_cost_microusd": null
+      }
+    }
+  ]
+}

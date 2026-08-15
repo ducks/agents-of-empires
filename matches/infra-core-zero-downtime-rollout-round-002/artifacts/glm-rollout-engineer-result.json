@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "agent": "glm-rollout-engineer",
+  "territory": "rollout-one",
+  "status": "completed",
+  "summary": "Now I understand the setup. v2.py doesn't exist (that's why v2.service failed). Let me write it mirroring v1's contract on port 8082, using the same DB to preserve records.v2 is up and serving the existing records. Now switch the upstream atomically and verify the public endpoint.Cutover complete with no outage. Now verify a new write works through the proxy and that v2 survives a restart plus the durability requirements.Rollout complete. Summary of what was done:\n\n**Implemented v2** at `/opt/rollout/v2.py` — mirrors v1's behavior but listens on `127.0.0.1:8082`, returns `v2` on `/version`, and reads/writes the same `/var/lib/rollout/records.sqlite3` so existing records are preserved. The v2.service unit was already in place and enabled; it was only failing because the script didn't exist.\n\n**Cutover (no outage):**\n1. Reset the start-limit and started `rollout-v2.service`.\n2. Verified v2 directly: `/health`→`ready`, `/version`→`v2`, existing records served.\n3. Atomically switched `/var/lib/rollout/upstream` from `8081` to `8082` via temp-file + `mv`.\n4. The proxy reads that file per-request, so traffic moved without restarting `rollout-proxy.service` or `rollout-v1.service` (both left running untouched).\n\n**Verification through the public endpoint (port 8080):**\n- `/health` → 200 `ready`\n- `/version` → 200 `v2`\n- existing `customer-alpha-73c` → 200 `alpha-original`\n- existing `customer-beta-a19` → 200 `beta-original`\n- new `PUT /records/customer-gamma-001` → 204, then GET → 200 `gamma-fresh`\n- absent record → 404\n\n**Durability:**\n- After `systemctl restart rollout-v2.service`: service came back active, all records (old + new) still served correctly through the proxy.\n- Reboot survival: `rollout-v2.service` and `rollout-proxy.service` are both `enabled` (WantedBy=multi-user.target), records live in the on-disk sqlite file, and `upstream` contains `8082` on disk — so state survives a full host reboot without agent intervention.\n\nBoth v2 and the proxy are left enabled and healthy.",
+  "usage": {
+    "rounds": null,
+    "tool_calls": null,
+    "input_tokens": 52773,
+    "output_tokens": 3075,
+    "cost_microusd": 12104,
+    "resource_units": 1
+  },
+  "transcript": "benchmarks/infra-core-20260815-050349/03-zero-downtime-rollout/round-002/agents/glm-rollout-engineer/transcript.json"
+}
