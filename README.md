@@ -27,10 +27,11 @@ OpenSSL build dependencies, and the Nix, QEMU, and SSH runtime tools checked by
 Run the same checks used by CI:
 
 ```bash
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace --all-targets
+make lint
 ```
+
+Run `make help` for the individual build, test, format, validation, cleanup,
+and pre-push hook targets.
 
 ## Bring your own arena
 
