@@ -12,19 +12,22 @@ fn durable_job_queue_manifest_and_assets_are_complete() {
     let manifest = ArenaManifest::load(root.join("arena.toml")).expect("valid queue arena");
     assert_eq!(manifest.arena.mode, MatchMode::BuildRace);
     assert_eq!(manifest.territories.len(), 3);
+    let fog = manifest.fog_of_war.as_ref().expect("fog-of-war boundary");
+    assert!(root.join(&fog.player_brief).is_file());
+    assert!(fog.hide_topology_until_observed);
+    assert!(fog.guest_leak_audit.is_some());
     let build = manifest.build.expect("build contract");
     assert_eq!(build.milestones.len(), 5);
     assert_eq!(build.completion_milestone, "host-reboot");
     for milestone in build.milestones {
         assert!(root.join(milestone.verifier).is_file());
     }
-    for territory in manifest.territories {
-        assert!(
-            root.join("instructions")
-                .join(format!("{}.md", territory.id))
-                .is_file()
-        );
-    }
+    assert!(!root.join("CONTRACT.md").exists());
+    assert!(
+        std::fs::read_dir(root.join("instructions"))
+            .map(|mut entries| entries.next().is_none())
+            .unwrap_or(true)
+    );
 }
 
 #[test]
@@ -51,6 +54,8 @@ fn real_fleet_changes_only_arena_label_and_agents() {
     assert_eq!(oracle.network, real.network);
     assert_eq!(oracle.rules, real.rules);
     assert_eq!(oracle.build, real.build);
+    assert_eq!(oracle.visualization, real.visualization);
+    assert_eq!(oracle.fog_of_war, real.fog_of_war);
     assert_eq!(oracle.classes, real.classes);
     assert_eq!(oracle.territories, real.territories);
     assert_eq!(

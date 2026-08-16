@@ -18,9 +18,30 @@ pub struct ArenaManifest {
     pub build: Option<BuildContract>,
     #[serde(default)]
     pub visualization: Option<ArenaVisualization>,
+    #[serde(default)]
+    pub fog_of_war: Option<FogOfWarConfig>,
     pub classes: Vec<TerritoryClass>,
     pub territories: Vec<TerritoryConfig>,
     pub agents: Vec<AgentConfig>,
+}
+
+/// Controller-owned information boundary for discovery-first arenas.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FogOfWarConfig {
+    /// Package-relative brief supplied to every player instead of referee internals.
+    pub player_brief: String,
+    #[serde(default = "default_true")]
+    pub hide_topology_until_observed: bool,
+    #[serde(default)]
+    pub guest_leak_audit: Option<GuestLeakAudit>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GuestLeakAudit {
+    pub scan_paths: Vec<String>,
+    pub forbidden_strings: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -317,6 +338,7 @@ impl ArenaManifest {
             self.visualization.as_ref(),
             self.build.as_ref(),
         );
+        validate_fog_of_war(&mut errors, self.fog_of_war.as_ref());
 
         let class_ids = validate_classes(&mut errors, &self.classes);
         let territory_ids = validate_territories(
@@ -327,6 +349,49 @@ impl ArenaManifest {
         );
         validate_agents(&mut errors, &self.agents, &territory_ids);
         errors
+    }
+}
+
+fn validate_fog_of_war(errors: &mut Vec<ValidationError>, fog: Option<&FogOfWarConfig>) {
+    let Some(fog) = fog else {
+        return;
+    };
+    if fog.player_brief.trim().is_empty() {
+        push_error(errors, "fog_of_war.player_brief", "must not be empty");
+    }
+    if let Some(audit) = &fog.guest_leak_audit {
+        if audit.scan_paths.is_empty() {
+            push_error(
+                errors,
+                "fog_of_war.guest_leak_audit.scan_paths",
+                "must not be empty",
+            );
+        }
+        for (index, path) in audit.scan_paths.iter().enumerate() {
+            if !path.starts_with('/') || path.trim() == "/" {
+                push_error(
+                    errors,
+                    format!("fog_of_war.guest_leak_audit.scan_paths[{index}]"),
+                    "must be an absolute path narrower than /",
+                );
+            }
+        }
+        if audit.forbidden_strings.is_empty() {
+            push_error(
+                errors,
+                "fog_of_war.guest_leak_audit.forbidden_strings",
+                "must not be empty",
+            );
+        }
+        for (index, value) in audit.forbidden_strings.iter().enumerate() {
+            if value.trim().is_empty() {
+                push_error(
+                    errors,
+                    format!("fog_of_war.guest_leak_audit.forbidden_strings[{index}]"),
+                    "must not be empty",
+                );
+            }
+        }
     }
 }
 

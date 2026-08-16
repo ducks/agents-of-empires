@@ -253,10 +253,13 @@ Ctrl-C stops the guests but retains an aborted, inspectable match log.
 
 ## Durable job queue race
 
-The second build contract starts with three opaque accepted jobs and requires
-separate API and worker services to recover them exactly once, process new work,
-and survive worker restart plus host reboot. Run its oracle before spending
-model tokens:
+The durable queue is a fog-of-war build race. Agents receive an external HTTP
+and lifecycle contract, a hard deadline, and root credentials, but no topology,
+implementation, verifier names, or oracle hints. They must discover three opaque
+accepted jobs, choose their own architecture, recover the work exactly once,
+and survive worker restart plus host reboot. The controller audits each guest
+for leaked private clues before launch. Run its oracle before spending model
+tokens:
 
 ```bash
 credentials="$(scripts/prepare-job-queue-credentials.sh)"

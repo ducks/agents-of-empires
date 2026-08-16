@@ -5,12 +5,20 @@ askpass="$(mktemp)"; trap 'rm -f "$askpass"' EXIT
 printf '#!/bin/sh\nprintf "%%s\\n" %q\n' "$AOE_SSH_PASSWORD" >"$askpass"; chmod 700 "$askpass"
 opts=(-p "$AOE_SSH_PORT" -o BatchMode=no -o PreferredAuthentications=password -o PubkeyAuthentication=no -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
 remote=(env SSH_ASKPASS="$askpass" SSH_ASKPASS_REQUIRE=force DISPLAY=:0 ssh "${opts[@]}" "root@${AOE_TERRITORY_HOST}")
-"${remote[@]}" 'install -d -m 0755 /opt/job-queue
+"${remote[@]}" 'install -d -m 0755 /opt/job-queue /var/lib/job-queue
 cat > /opt/job-queue/common.py <<'PY'
-import sqlite3
+import json, sqlite3
+from pathlib import Path
 DB="/var/lib/job-queue/jobs.sqlite3"
 def db():
  c=sqlite3.connect(DB,timeout=10); c.row_factory=sqlite3.Row; return c
+def initialize():
+ c=db(); c.execute("CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, payload TEXT NOT NULL, status TEXT NOT NULL, result TEXT, attempts INTEGER NOT NULL DEFAULT 0)")
+ for path in Path("/var/lib/accepted-jobs").glob("*.json"):
+  job=json.loads(path.read_text())
+  c.execute("INSERT OR IGNORE INTO jobs(id,payload,status,result,attempts) VALUES(?,?,\"queued\",NULL,0)",(job["id"],job["payload"]))
+ c.commit(); c.close()
+initialize()
 PY
 cat > /opt/job-queue/api.py <<'PY'
 import json
@@ -43,7 +51,10 @@ while True:
  else: c.commit(); time.sleep(.1)
  c.close()
 PY
+install -d -m 0755 /etc/replaybook
+printf "%s\n" "exec /run/current-system/sw/bin/python3 /opt/job-queue/api.py" > /etc/replaybook/job-api-start
+printf "%s\n" "exec /run/current-system/sw/bin/python3 /opt/job-queue/worker.py" > /etc/replaybook/job-worker-start
 chmod 0755 /opt/job-queue/*.py
-systemctl reset-failed queue-api.service queue-worker.service
-systemctl restart queue-api.service queue-worker.service'
-jq -n --arg agent "$AOE_AGENT_ID" --arg territory "$AOE_TERRITORY_ID" '{schema_version:1,agent:$agent,territory:$territory,status:"completed",summary:"oracle deployed durable exactly-once queue",usage:{resource_units:1},transcript:null}' >"$AOE_RESULT_FILE"
+systemctl reset-failed job-api.service job-worker.service
+systemctl restart job-api.service job-worker.service'
+jq -n --arg agent "$AOE_AGENT_ID" --arg territory "$AOE_TERRITORY_ID" '{schema_version:1,agent:$agent,territory:$territory,status:"completed",summary:"oracle discovered accepted work and deployed durable queue",usage:{resource_units:1},transcript:null}' >"$AOE_RESULT_FILE"

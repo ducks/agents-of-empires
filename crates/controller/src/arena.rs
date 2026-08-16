@@ -183,15 +183,25 @@ pub fn validate_arena_package(path: &Path) -> Result<ArenaPackageReport, ArenaPa
     report.schema_version = Some(manifest.schema_version);
 
     require_file(&root, "flake.nix", &mut report.errors);
-    if manifest.arena.mode == MatchMode::BuildRace {
+    if let Some(fog) = &manifest.fog_of_war {
+        validate_package_path(
+            &root,
+            &fog.player_brief,
+            "fog-of-war player brief",
+            false,
+            &mut report.errors,
+        );
+    } else if manifest.arena.mode == MatchMode::BuildRace {
         require_file(&root, "CONTRACT.md", &mut report.errors);
     }
     for territory in &manifest.territories {
-        require_file(
-            &root,
-            &format!("instructions/{}.md", territory.id),
-            &mut report.errors,
-        );
+        if manifest.fog_of_war.is_none() {
+            require_file(
+                &root,
+                &format!("instructions/{}.md", territory.id),
+                &mut report.errors,
+            );
+        }
         validate_flake_reference(
             &root,
             &territory.nixos_config,

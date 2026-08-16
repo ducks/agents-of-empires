@@ -19,6 +19,8 @@ pub struct MatchProvenance {
     pub arena_id: String,
     pub arena_mode: String,
     pub manifest_sha256: String,
+    #[serde(default)]
+    pub player_brief_sha256: Option<String>,
     pub verifier_sha256: String,
     pub adapter_sha256: BTreeMap<String, String>,
     pub compatibility_key: String,
@@ -41,8 +43,13 @@ pub fn write_provenance(
     let manifest_source = fs::read(manifest_path)?;
     let verifier_sha256 = verifier_digest(manifest_path, manifest)?;
     let manifest_sha256 = digest(&manifest_source);
-    let compatibility_key =
-        compatibility_key(&manifest.arena.id, &manifest_sha256, &verifier_sha256);
+    let player_brief_sha256 = player_brief_digest(manifest_path, manifest)?;
+    let compatibility_key = compatibility_key(
+        &manifest.arena.id,
+        &manifest_sha256,
+        player_brief_sha256.as_deref(),
+        &verifier_sha256,
+    );
     let provenance = MatchProvenance {
         schema_version: MATCH_ARTIFACT_VERSION,
         controller_version: env!("CARGO_PKG_VERSION").to_owned(),
@@ -50,6 +57,7 @@ pub fn write_provenance(
         arena_id: manifest.arena.id.clone(),
         arena_mode: format!("{:?}", manifest.arena.mode).to_lowercase(),
         manifest_sha256,
+        player_brief_sha256,
         verifier_sha256,
         adapter_sha256: adapter_digests(adapters)?,
         compatibility_key,
@@ -73,18 +81,39 @@ pub fn arena_compatibility_key(
 ) -> Result<String, std::io::Error> {
     let manifest_sha256 = digest(&fs::read(manifest_path)?);
     let verifier_sha256 = verifier_digest(manifest_path, manifest)?;
+    let player_brief_sha256 = player_brief_digest(manifest_path, manifest)?;
     Ok(compatibility_key(
         &manifest.arena.id,
         &manifest_sha256,
+        player_brief_sha256.as_deref(),
         &verifier_sha256,
     ))
 }
 
-fn compatibility_key(arena_id: &str, manifest_sha256: &str, verifier_sha256: &str) -> String {
+fn compatibility_key(
+    arena_id: &str,
+    manifest_sha256: &str,
+    player_brief_sha256: Option<&str>,
+    verifier_sha256: &str,
+) -> String {
     digest(
-        format!("{MATCH_ARTIFACT_VERSION}\n{arena_id}\n{manifest_sha256}\n{verifier_sha256}")
-            .as_bytes(),
+        format!(
+            "{MATCH_ARTIFACT_VERSION}\n{arena_id}\n{manifest_sha256}\n{}\n{verifier_sha256}",
+            player_brief_sha256.unwrap_or("")
+        )
+        .as_bytes(),
     )
+}
+
+fn player_brief_digest(
+    manifest_path: &Path,
+    manifest: &ArenaManifest,
+) -> Result<Option<String>, std::io::Error> {
+    let Some(fog) = &manifest.fog_of_war else {
+        return Ok(None);
+    };
+    let root = manifest_path.parent().unwrap_or_else(|| Path::new("."));
+    Ok(Some(digest(&fs::read(root.join(&fog.player_brief))?)))
 }
 
 fn adapter_digests(

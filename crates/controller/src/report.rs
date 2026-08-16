@@ -56,6 +56,7 @@ struct MatchReport {
     report_dir: PathBuf,
     provenance: Option<MatchProvenance>,
     visualization: Option<ArenaVisualization>,
+    fog_of_war: bool,
     current: bool,
 }
 
@@ -309,7 +310,7 @@ fn load_match_report(
     let state = read_world(&source.join("world.json"))?;
     let events = read_report_events(&source.join("events.jsonl"))?;
     let provenance = read_provenance(&source.join("match.json")).ok();
-    let visualization = read_arena_visualization(&source.join("arena.json"))?;
+    let (visualization, fog_of_war) = read_arena_presentation(&source.join("arena.json"))?;
     let report = MatchReport {
         name,
         slug,
@@ -320,6 +321,7 @@ fn load_match_report(
         report_dir,
         provenance,
         visualization,
+        fog_of_war,
         current: false,
     };
     copy_public_artifacts(&report)?;
@@ -461,9 +463,9 @@ fn read_world(path: &Path) -> Result<WorldState, ReportError> {
     })
 }
 
-fn read_arena_visualization(path: &Path) -> Result<Option<ArenaVisualization>, ReportError> {
+fn read_arena_presentation(path: &Path) -> Result<(Option<ArenaVisualization>, bool), ReportError> {
     if !path.is_file() {
-        return Ok(None);
+        return Ok((None, false));
     }
     let source = fs::read(path)?;
     let manifest: ArenaManifest =
@@ -471,7 +473,10 @@ fn read_arena_visualization(path: &Path) -> Result<Option<ArenaVisualization>, R
             path: path.to_owned(),
             detail: error.to_string(),
         })?;
-    Ok(manifest.visualization)
+    let fog = manifest
+        .fog_of_war
+        .is_some_and(|fog| fog.hide_topology_until_observed);
+    Ok((manifest.visualization, fog))
 }
 
 fn read_series(path: &Path) -> Result<SeriesSummary, ReportError> {
@@ -1200,6 +1205,7 @@ fn render_replay(report: &MatchReport) -> String {
         "duration": report.state.elapsed_ms,
         "lanes": lanes,
         "topology": report.visualization,
+        "fog_of_war": report.fog_of_war,
         "events": report.events.iter().map(|event| &event.value).collect::<Vec<_>>(),
         "stalls": replay_stalls(&report.events, report.state.elapsed_ms),
     });
@@ -1211,7 +1217,7 @@ fn render_replay(report: &MatchReport) -> String {
     format!(
         r#"<section class="replay" data-match-replay><div class="section-heading"><div><span class="eyebrow">Match replay</span><h2>Watch the race unfold</h2></div><p>Play the referee's event stream or scrub directly to any moment.</p></div>
         <div class="replay-shell"><div class="replay-controls"><button type="button" data-play>Play</button><strong data-clock>0:00</strong><input data-scrubber aria-label="Match clock" type="range" min="0" max="{duration}" value="0" step="100"><select data-speed aria-label="Playback speed"><option value="1">1×</option><option value="5">5×</option><option value="20" selected>20×</option><option value="60">60×</option></select></div><div class="topology" data-topology hidden></div><div class="replay-ruler"><span>Start</span><span>{finish}</span></div><div class="replay-lanes" data-lanes></div><aside class="replay-inspector" data-inspector><span class="eyebrow">Selected event</span><strong>Press play or select a marker</strong><p>Milestones, state changes, usage, and terminal outcomes appear on the shared clock.</p></aside></div>
-        <script type="application/json" data-replay-data>{payload}</script><script>{REPLAY_SCRIPT}</script></section>"#,
+        <script type="application/json" data-replay-data>{payload}</script><script>{REPLAY_SCRIPT}</script><script>{FOG_REPLAY_SCRIPT}</script></section>"#,
         duration = report.state.elapsed_ms,
         finish = duration(report.state.elapsed_ms),
     )
@@ -1381,10 +1387,11 @@ fn escape(value: &str) -> String {
 
 fn page(title: &str, content: &str) -> String {
     format!(
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"color-scheme\" content=\"dark\"><title>{}</title><style>{}{}</style></head><body>{}</body></html>",
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"color-scheme\" content=\"dark\"><title>{}</title><style>{}{}{}</style></head><body>{}</body></html>",
         escape(title),
         STYLE,
         REPLAY_STYLE,
+        FOG_STYLE,
         content
     )
 }
@@ -1396,6 +1403,10 @@ const STYLE: &str = r#"
 const REPLAY_STYLE: &str = r#"
 button,select,input{font:inherit}.replay-shell{border:1px solid var(--line);background:linear-gradient(145deg,#1d241b,var(--panel));padding:1.25rem}.replay-controls{display:grid;grid-template-columns:auto 4rem 1fr auto;gap:1rem;align-items:center}.replay-controls button,.replay-controls select{color:var(--text);background:#0c0f0b;border:1px solid var(--line);padding:.55rem .8rem}.replay-controls button{color:var(--gold);cursor:pointer}.replay-controls input{accent-color:var(--gold);width:100%}.replay-hud,.replay-ruler{display:flex;justify-content:space-between;color:var(--muted);font-size:.75rem}.replay-hud{margin:.75rem 0;border-top:1px solid var(--line);padding-top:.75rem}.replay-ruler{margin:1rem 0 .35rem;padding-left:15.5rem}.replay-lane{display:grid;grid-template-columns:14rem 1fr;gap:1.5rem;align-items:center;padding:1rem 0;border-top:1px solid var(--line)}.lane-label strong,.lane-label small,.lane-label span{display:block}.lane-label small{color:var(--muted);overflow:hidden;text-overflow:ellipsis}.lane-label span{color:var(--gold);font-size:.75rem;margin-top:.3rem}.lane-track{height:2.6rem;position:relative;background:#0d100c;border:1px solid #293126}.lane-progress{position:absolute;inset:0 auto 0 0;width:0;background:linear-gradient(90deg,#39452eaa,#68603388);transition:width .08s linear}.lane-stall{position:absolute;top:.28rem;height:2rem;padding:0 .4rem;border:1px solid #cb6e62;border-radius:.25rem;background:repeating-linear-gradient(135deg,#8f403c88 0,#8f403c88 6px,#6d312d88 6px,#6d312d88 12px);color:#ffe2dc;font-size:.68rem;line-height:1.8rem;text-align:center;overflow:hidden;cursor:pointer;opacity:.18;white-space:nowrap}.lane-stall.visible{opacity:.85}.lane-stall.resolved{border-color:var(--orange);background:repeating-linear-gradient(135deg,#895b3188 0,#895b3188 6px,#60422488 6px,#60422488 12px)}.lane-stall.selected{outline:2px solid var(--gold);z-index:2}.lane-marker{position:absolute;top:50%;translate:-50% -50%;width:.85rem;height:.85rem;padding:0;border:2px solid var(--panel);border-radius:50%;background:var(--muted);cursor:pointer;opacity:.2;transition:opacity .15s,scale .15s}.lane-marker.visible{opacity:1}.lane-marker:hover,.lane-marker.selected{scale:1.5;z-index:3}.lane-marker.milestone_passed,.lane-marker.durable_deployment_completed{background:var(--green)}.lane-marker.competitor_state_changed{background:var(--gold)}.lane-marker.agent_interrupted,.lane-marker.agent_terminated,.lane-marker.agent_failed{background:var(--red)}.lane-marker.usage_charged{background:var(--orange)}.replay-inspector{min-height:7rem;border-top:1px solid var(--line);margin-top:.5rem;padding:1rem 0 0}.replay-inspector strong{display:block;margin:.3rem 0}.replay-inspector p{color:var(--muted);margin:.25rem 0}.replay-inspector pre{max-height:18rem}.topology{margin:1.25rem 0 1.75rem}.topology-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:.7rem;color:var(--muted);font-size:.75rem}.topology-legend{display:flex;gap:.75rem;flex-wrap:wrap}.topology-legend span::before{content:"";display:inline-block;width:.55rem;height:.55rem;border-radius:50%;margin-right:.3rem;background:var(--muted)}.topology-legend .verifying::before{background:var(--gold)}.topology-legend .healthy::before{background:var(--green)}.topology-legend .failed::before{background:var(--red)}.topology-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(285px,1fr));gap:.8rem}.topology-card{border:1px solid var(--line);background:#0d100c}.topology-card>header{display:flex;justify-content:space-between;gap:.5rem;padding:.65rem .8rem;border-bottom:1px solid var(--line)}.topology-card>header small{color:var(--muted);overflow:hidden;text-overflow:ellipsis}.topology-board{position:relative;aspect-ratio:16/10;min-height:190px;background:radial-gradient(circle at 50% 50%,#273022 0,transparent 65%)}.topology-links{position:absolute;inset:0;width:100%;height:100%;overflow:visible}.topology-link{stroke:#64705f;stroke-width:1.2;stroke-dasharray:3 2}.topology-link.replication{stroke:var(--gold)}.topology-link.lifecycle{stroke:var(--orange);stroke-dasharray:1 3}.topology-node{position:absolute;translate:-50% -50%;min-width:4.5rem;max-width:6.5rem;padding:.4rem .45rem;border:1px solid #64705f;border-radius:.3rem;background:#20261e;color:var(--text);text-align:center;transition:border-color .15s,background .15s,box-shadow .15s}.topology-node b,.topology-node small{display:block;overflow:hidden;text-overflow:ellipsis}.topology-node b{font-size:.72rem;white-space:nowrap}.topology-node small{color:var(--muted);font-size:.58rem;text-transform:uppercase}.topology-node.verifying{border-color:var(--gold);box-shadow:0 0 0 2px #e7bb5533}.topology-node.healthy{border-color:var(--green);background:#1b3520}.topology-node.failed{border-color:var(--red);background:#3b1d1a}.topology-node.durable{border-color:var(--gold);background:#343019;box-shadow:0 0 0 2px #e7bb5544}@media(max-width:720px){.replay-controls{grid-template-columns:auto 3.5rem 1fr}.replay-controls select{grid-column:1/-1}.replay-ruler{padding-left:0}.replay-lane{grid-template-columns:1fr;gap:.5rem}.topology-grid{grid-template-columns:1fr}.topology-header{display:block}.topology-legend{margin-top:.4rem}}
 "#;
+
+const FOG_STYLE: &str = r"
+.topology-link.fogged{opacity:0}.topology-node.unknown{border-style:dashed;opacity:.62}
+";
 
 const REPLAY_SCRIPT: &str = r#"
 (()=>{
@@ -1417,3 +1428,13 @@ function render(now){slider.value=now;clock.textContent=fmt(now);for(const [terr
 let running=false,last=0,current=0;function tick(ts){if(!running)return;if(!last)last=ts;current=Math.min(data.duration,current+(ts-last)*Number(speed.value));last=ts;render(current);if(current>=data.duration){running=false;play.textContent='Replay';return}requestAnimationFrame(tick)}play.addEventListener('click',()=>{if(running){running=false;play.textContent='Play';return}if(current>=data.duration)current=0;running=true;last=0;play.textContent='Pause';requestAnimationFrame(tick)});slider.addEventListener('input',()=>{current=Number(slider.value);render(current)});render(0)
 })();
 "#;
+
+const FOG_REPLAY_SCRIPT: &str = r"
+(()=>{
+const root=document.currentScript.closest('[data-match-replay]');if(!root)return;
+const data=JSON.parse(root.querySelector('[data-replay-data]').textContent);if(!data.fog_of_war||!data.topology)return;
+const slider=root.querySelector('[data-scrubber]'),agentMap=new Map(data.lanes.map(x=>[x.agent,x.territory]));
+function render(){const now=Number(slider.value);for(const card of root.querySelectorAll('.topology-card')){const territory=card.querySelector('header strong').textContent.replace(' ★','');const revealed=new Set(data.topology.nodes.filter(node=>!node.milestone).map(node=>node.id));for(const event of data.events){if((event.elapsed_ms||0)>now)break;if((event.territory||agentMap.get(event.agent))!==territory)continue;if(event.milestone&&['milestone_evaluation_started','milestone_passed','milestone_failed','milestone_revoked'].includes(event.kind)){for(const node of data.topology.nodes)if(node.milestone===event.milestone)revealed.add(node.id)}}for(const node of card.querySelectorAll('.topology-node')){const spec=data.topology.nodes.find(item=>item.id===node.dataset.node),visible=revealed.has(node.dataset.node);node.classList.toggle('unknown',!visible);node.querySelector('b').textContent=visible?spec.display_name:'Unknown';node.querySelector('small').textContent=visible?spec.kind:'unmapped'}card.querySelectorAll('.topology-link').forEach((line,index)=>{const link=data.topology.links[index];line.classList.toggle('fogged',!revealed.has(link.from)||!revealed.has(link.to))})}}
+let last='';function watch(){if(slider.value!==last){last=slider.value;render()}requestAnimationFrame(watch)}render();requestAnimationFrame(watch)
+})();
+";

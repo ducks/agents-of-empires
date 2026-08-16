@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -62,6 +63,12 @@ pub enum RunError {
     OutputExists(String),
     #[error("could not record match provenance: {0}")]
     Provenance(String),
+    #[error("fog-of-war guest leak in {territory}: {forbidden:?} found at {path}")]
+    GuestLeak {
+        territory: String,
+        forbidden: String,
+        path: String,
+    },
 }
 
 /// Run a complete match, using the same event reducer as replay mode.
@@ -161,6 +168,10 @@ async fn run_booted_match(
     options: &RunOptions,
     supervisor: &mut ArenaSupervisor<NixVmDriver>,
 ) -> Result<WorldState, RunError> {
+    if manifest.fog_of_war.is_some() {
+        wait_for_ssh(plan, &options.credentials, Duration::from_secs(120)).await?;
+        audit_fog_of_war(manifest, plan, &options.credentials).await?;
+    }
     let probe = HttpProbe::new(Duration::from_secs(3))?;
     let targets = probe_targets(manifest, plan);
     wait_for_preflight(&probe, &targets, Duration::from_secs(120)).await?;
@@ -268,6 +279,7 @@ async fn run_booted_build_match(
     _supervisor: &mut ArenaSupervisor<NixVmDriver>,
 ) -> Result<WorldState, RunError> {
     wait_for_ssh(plan, &options.credentials, Duration::from_secs(120)).await?;
+    audit_fog_of_war(manifest, plan, &options.credentials).await?;
 
     let mut log = EventLog::open(options.output.join("events.jsonl"))?;
     let mut world = WorldState::default();
@@ -896,6 +908,14 @@ async fn password_ssh(
     password: &str,
     command: &str,
 ) -> Result<std::process::ExitStatus, std::io::Error> {
+    Ok(password_ssh_output(port, password, command).await?.status)
+}
+
+async fn password_ssh_output(
+    port: u16,
+    password: &str,
+    command: &str,
+) -> Result<std::process::Output, std::io::Error> {
     let root = std::env::temp_dir().join(format!("aoe-ssh-{}-{port}", std::process::id()));
     tokio::fs::create_dir_all(&root).await?;
     let askpass = root.join("askpass.sh");
@@ -938,9 +958,63 @@ async fn password_ssh(
         .env("SSH_ASKPASS_REQUIRE", "force")
         .env("DISPLAY", ":0")
         .kill_on_drop(true);
-    tokio::time::timeout(Duration::from_secs(5), child.status())
+    tokio::time::timeout(Duration::from_secs(15), child.output())
         .await
         .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "SSH probe timed out"))?
+}
+
+async fn audit_fog_of_war(
+    manifest: &ArenaManifest,
+    plan: &NetworkPlan,
+    credentials: &HashMap<String, PathBuf>,
+) -> Result<(), RunError> {
+    let Some(audit) = manifest
+        .fog_of_war
+        .as_ref()
+        .and_then(|fog| fog.guest_leak_audit.as_ref())
+    else {
+        return Ok(());
+    };
+    let paths = audit
+        .scan_paths
+        .iter()
+        .map(|path| shell_quote(path))
+        .collect::<Vec<_>>()
+        .join(" ");
+    for assignment in &plan.assignments {
+        let credential = credentials.get(&assignment.territory).ok_or_else(|| {
+            RunError::Preflight(format!("{}: missing credential", assignment.territory))
+        })?;
+        let password = credential_value(credential, "AOE_SSH_PASSWORD")?;
+        for forbidden in &audit.forbidden_strings {
+            let command = format!(
+                "match=$(find {paths} -xdev -type f -size -4M -print0 2>/dev/null | \
+                 xargs -0 -r grep -IlF -- {} 2>/dev/null | head -n 1); \
+                 if [ -n \"$match\" ]; then printf '%s\\n' \"$match\"; exit 42; fi",
+                shell_quote(forbidden)
+            );
+            let output = password_ssh_output(assignment.ssh_port, &password, &command).await?;
+            if output.status.code() == Some(42) {
+                return Err(RunError::GuestLeak {
+                    territory: assignment.territory.clone(),
+                    forbidden: forbidden.clone(),
+                    path: String::from_utf8_lossy(&output.stdout).trim().to_owned(),
+                });
+            }
+            if !output.status.success() {
+                return Err(RunError::Preflight(format!(
+                    "{}: fog-of-war leak audit failed: {}",
+                    assignment.territory,
+                    String::from_utf8_lossy(&output.stderr).trim()
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
 }
 
 fn credential_value(path: &Path, key: &str) -> Result<String, RunError> {
@@ -1015,7 +1089,18 @@ fn invocations(
     options: &RunOptions,
 ) -> Result<Vec<AgentInvocation>, RunError> {
     let arena_root = options.manifest.parent().unwrap_or_else(|| Path::new("."));
-    let build_contract = if manifest.arena.mode == MatchMode::BuildRace {
+    let player_brief = manifest
+        .fog_of_war
+        .as_ref()
+        .map(|fog| {
+            let path = arena_root.join(&fog.player_brief);
+            std::fs::read_to_string(&path).map_err(|_| RunError::MissingInstruction {
+                territory: "fog-of-war player brief".into(),
+                path: path.display().to_string(),
+            })
+        })
+        .transpose()?;
+    let build_contract = if manifest.arena.mode == MatchMode::BuildRace && player_brief.is_none() {
         let path = arena_root.join("CONTRACT.md");
         Some(
             std::fs::read_to_string(&path).map_err(|_| RunError::MissingInstruction {
@@ -1035,15 +1120,26 @@ fn invocations(
                 .iter()
                 .find(|assignment| assignment.territory == agent.territory)
                 .expect("validated manifest and network plan must agree");
-            let instruction_path = arena_root
-                .join("instructions")
-                .join(format!("{}.md", agent.territory));
-            let mut instruction = std::fs::read_to_string(&instruction_path).map_err(|_| {
-                RunError::MissingInstruction {
-                    territory: agent.territory.clone(),
-                    path: instruction_path.display().to_string(),
-                }
-            })?;
+            let mut instruction = if let Some(brief) = &player_brief {
+                brief.clone()
+            } else {
+                let instruction_path = arena_root
+                    .join("instructions")
+                    .join(format!("{}.md", agent.territory));
+                std::fs::read_to_string(&instruction_path).map_err(|_| {
+                    RunError::MissingInstruction {
+                        territory: agent.territory.clone(),
+                        path: instruction_path.display().to_string(),
+                    }
+                })?
+            };
+            if player_brief.is_some() {
+                let _ = write!(
+                    instruction,
+                    "\n\nThe controller-owned referee is the only authority on completion. Implement and verify the requested outcome on this host, then leave it running. Referee evidence, hidden topology, other competitors, and future events are not available to you. Your hard deadline is {} seconds.\n",
+                    manifest.rules.duration_seconds
+                );
+            }
             if let Some(contract) = &build_contract {
                 instruction.push_str(
                     "\n\nThe controller-owned referee is the only authority on completion. Do not stop after merely describing the work. Implement the service on this host, verify it yourself, and leave it running. You have no access to referee evidence or other competitors.\n\n# Service contract\n\n",
@@ -1183,7 +1279,7 @@ mod tests {
 
     use super::{
         RunOptions, append, drain_build_agents, invocations, record_agent_results,
-        record_build_usage_checkpoints, resolve_nixos_configs, usage_delta,
+        record_build_usage_checkpoints, resolve_nixos_configs, shell_quote, usage_delta,
     };
 
     const MANIFEST: &str = include_str!("../../runtime/tests/fixture.toml");
@@ -1429,6 +1525,41 @@ mod tests {
             );
             assert!(!invocation.instruction.contains("builder-one-race"));
         }
+    }
+
+    #[test]
+    fn fog_invocations_expose_only_the_player_brief() {
+        let manifest_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../arenas/durable-job-queue/agents-real.toml");
+        let manifest = ArenaManifest::load(&manifest_path).expect("fog manifest");
+        let plan =
+            aoe_runtime::NetworkPlan::from_manifest(&manifest, 26000, 23977).expect("network plan");
+        let options = RunOptions {
+            manifest: manifest_path,
+            output: std::path::PathBuf::from("matches/test"),
+            adapters: std::collections::HashMap::new(),
+            credentials: std::collections::HashMap::new(),
+            base_port: 26000,
+            multicast_port: 23977,
+            color: false,
+        };
+        let invocations = invocations(&manifest, &plan, &options).expect("invocations");
+        for invocation in invocations {
+            assert!(invocation.instruction.contains("Opaque work accepted"));
+            assert!(
+                invocation
+                    .instruction
+                    .contains("hard deadline is 900 seconds")
+            );
+            assert!(!invocation.instruction.contains("accepted-alpha-7d3"));
+            assert!(!invocation.instruction.contains("recover-accepted.sh"));
+            assert!(!invocation.instruction.contains("queue-api.service"));
+        }
+    }
+
+    #[test]
+    fn shell_quote_handles_apostrophes() {
+        assert_eq!(shell_quote("agent's clue"), "'agent'\\''s clue'");
     }
 
     #[tokio::test]

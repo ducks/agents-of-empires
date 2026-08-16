@@ -27,6 +27,24 @@ README.md                  arena-specific usage and design notes
 
 Relative paths are resolved from the arena directory. This makes a package runnable from another repository or an absolute checkout path. Verifiers and Nix flake references may not escape the package. Public internet access inside territories remains forbidden by the manifest schema.
 
+## Fog of war
+
+Discovery-first arenas can replace the contract and seat-specific instructions with one deliberately narrow player brief:
+
+```toml
+[fog_of_war]
+player_brief = "brief.md"
+hide_topology_until_observed = true
+
+[fog_of_war.guest_leak_audit]
+scan_paths = ["/etc", "/opt", "/root", "/var/lib"]
+forbidden_strings = ["private verifier name", "oracle-only clue"]
+```
+
+The brief contains the objective, observable symptoms or public service contract, deadline, and operational constraints. It does not expose the implementation, root cause, verifier scripts, evidence, future events, or other territories. The controller keeps those parts of the arena package outside the guest and scans the configured guest paths before launching agents. A match aborts if a forbidden referee or oracle clue crossed that boundary.
+
+Fog mode also records the player brief digest in `match.json`, so changing what players were told creates a new compatibility key. In static replays, topology nodes and links remain unknown until their associated milestones are first observed. This visual concealment is presentation; guest isolation and the pre-launch audit are the security boundary.
+
 ## Validation contract
 
 ```bash
