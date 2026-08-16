@@ -58,6 +58,7 @@ struct MatchReport {
     source: PathBuf,
     report_dir: PathBuf,
     provenance: Option<MatchProvenance>,
+    arena: Option<ArenaManifest>,
     visualization: Option<ArenaVisualization>,
     fog_of_war: bool,
     analyses: BTreeMap<String, TranscriptAnalysis>,
@@ -343,7 +344,16 @@ fn load_match_report(
     let state = read_world(&source.join("world.json"))?;
     let events = read_report_events(&source.join("events.jsonl"))?;
     let provenance = read_provenance(&source.join("match.json")).ok();
-    let (visualization, fog_of_war) = read_arena_presentation(&source.join("arena.json"))?;
+    let arena = read_arena(&source.join("arena.json"))?;
+    let visualization = arena
+        .as_ref()
+        .and_then(|manifest| manifest.visualization.clone());
+    let fog_of_war = arena.as_ref().is_some_and(|manifest| {
+        manifest
+            .fog_of_war
+            .as_ref()
+            .is_some_and(|fog| fog.hide_topology_until_observed)
+    });
     let analyses = analyze_agents(&source, &state)?;
     let report = MatchReport {
         name,
@@ -354,6 +364,7 @@ fn load_match_report(
         source,
         report_dir,
         provenance,
+        arena,
         visualization,
         fog_of_war,
         analyses,
@@ -498,9 +509,9 @@ fn read_world(path: &Path) -> Result<WorldState, ReportError> {
     })
 }
 
-fn read_arena_presentation(path: &Path) -> Result<(Option<ArenaVisualization>, bool), ReportError> {
+fn read_arena(path: &Path) -> Result<Option<ArenaManifest>, ReportError> {
     if !path.is_file() {
-        return Ok((None, false));
+        return Ok(None);
     }
     let source = fs::read(path)?;
     let manifest: ArenaManifest =
@@ -508,10 +519,7 @@ fn read_arena_presentation(path: &Path) -> Result<(Option<ArenaVisualization>, b
             path: path.to_owned(),
             detail: error.to_string(),
         })?;
-    let fog = manifest
-        .fog_of_war
-        .is_some_and(|fog| fog.hide_topology_until_observed);
-    Ok((manifest.visualization, fog))
+    Ok(Some(manifest))
 }
 
 fn analyze_agents(
@@ -1162,6 +1170,12 @@ fn render_match(report: &MatchReport) -> String {
 
     let mut agents = String::new();
     for (id, agent) in &state.agents {
+        let config = report.arena.as_ref().and_then(|arena| {
+            arena
+                .agents
+                .iter()
+                .find(|candidate| candidate.id == id.as_str())
+        });
         let terminal = agent.terminal_state.map_or_else(
             || "running".to_owned(),
             |value| format!("{value:?}").to_lowercase(),
@@ -1176,10 +1190,12 @@ fn render_match(report: &MatchReport) -> String {
         });
         let _ = write!(
             agents,
-            "<tr><td><strong>{}</strong><small>{}</small></td><td>{}</td><td><span class=\"pill {}\">{}</span></td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+            "<tr><td><strong>{}</strong><small>{}</small></td><td>{}</td><td>{}</td><td>{}</td><td><span class=\"pill {}\">{}</span></td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
             escape(id),
             escape(&agent.territory),
             escape(&agent.model),
+            escape(config.map_or("unavailable", |config| config.adapter.as_str())),
+            escape(config.map_or("unavailable", |config| { config.reasoning_effort.as_str() })),
             terminal_class(agent.terminal_state),
             escape(&terminal),
             if usage_known {
@@ -1209,9 +1225,15 @@ fn render_match(report: &MatchReport) -> String {
         .sum();
     let replay = render_replay(report);
     let analysis = render_agent_analysis(report);
+    let match_provenance = render_match_provenance(report);
     let timeline = render_timeline(&report.events);
     let arena_artifact = if report.source.join("arena.json").is_file() {
         "<a href=\"artifacts/arena.json\">arena.json</a>"
+    } else {
+        ""
+    };
+    let match_artifact = if report.source.join("match.json").is_file() {
+        "<a href=\"artifacts/match.json\">match.json</a>"
     } else {
         ""
     };
@@ -1238,9 +1260,10 @@ fn render_match(report: &MatchReport) -> String {
         <header class=\"hero match-hero\"><span class=\"eyebrow\">{:?} · {}</span><h1>{}</h1><p>{}</p>
         <div class=\"hero-stats\"><div><small>Winner</small><strong>{}</strong></div><div><small>Durable in</small><strong>{}</strong></div><div><small>Recorded cost</small><strong>{}</strong></div><div><small>Tokens</small><strong>{}</strong></div></div></header>
         <main>{replay}{analysis}<section><div class=\"section-heading\"><h2>Territories</h2><p>The referee-owned result frozen when the first deployment became durable.</p></div><div class=\"table-wrap\"><table><thead><tr><th>Territory</th><th>State</th><th>Milestones</th><th>Points</th><th>Durable at</th></tr></thead><tbody>{territories}</tbody></table></div></section>
-        <section><div class=\"section-heading\"><h2>Agents</h2><p>Usage includes cumulative checkpoints captured while agents were still running.</p></div><div class=\"table-wrap\"><table><thead><tr><th>Agent</th><th>Model</th><th>Outcome</th><th>Input</th><th>Output</th><th>Cost</th><th>Artifact</th></tr></thead><tbody>{agents}</tbody></table></div></section>
+        <section><div class=\"section-heading\"><h2>Agents</h2><p>Exact model, harness, reasoning configuration, and cumulative usage recorded for this match.</p></div><div class=\"table-wrap\"><table><thead><tr><th>Agent</th><th>Model</th><th>Harness</th><th>Reasoning</th><th>Outcome</th><th>Input</th><th>Output</th><th>Cost</th><th>Artifact</th></tr></thead><tbody>{agents}</tbody></table></div></section>
+        {match_provenance}
         <section><div class=\"section-heading\"><h2>Event timeline</h2><p>{} immutable events. The match clock remains frozen during post-match collection.</p></div><ol class=\"timeline\">{timeline}</ol></section>
-        <footer><a href=\"artifacts/events.jsonl\">events.jsonl</a><a href=\"artifacts/world.json\">world.json</a>{arena_artifact}</footer></main>",
+        <footer><a href=\"artifacts/events.jsonl\">events.jsonl</a><a href=\"artifacts/world.json\">world.json</a>{match_artifact}{arena_artifact}</footer></main>",
         state.match_state,
         escape(state.finish_reason.as_deref().unwrap_or("unfinished")),
         escape(&report.name),
@@ -1258,6 +1281,61 @@ fn render_match(report: &MatchReport) -> String {
             &format!("Agents of Empires · {}</span>", escape(&provenance)),
         ),
     )
+}
+
+fn render_match_provenance(report: &MatchReport) -> String {
+    let Some(provenance) = &report.provenance else {
+        return "<section class=\"provenance\"><div class=\"section-heading\"><h2>Match provenance</h2><p>Exact provenance is unavailable for this historical match.</p></div></section>".to_owned();
+    };
+    let arena_schema = report.arena.as_ref().map_or_else(
+        || "unavailable".to_owned(),
+        |arena| format!("v{}", arena.schema_version),
+    );
+    let source_revision = provenance
+        .source_revision
+        .as_deref()
+        .map_or_else(|| "unavailable".to_owned(), short_digest);
+    let adapters = if provenance.adapter_sha256.is_empty() {
+        "unavailable".to_owned()
+    } else {
+        provenance
+            .adapter_sha256
+            .iter()
+            .map(|(name, digest)| {
+                format!(
+                    "<span><strong>{}</strong><code title=\"{}\">{}</code></span>",
+                    escape(name),
+                    escape(digest),
+                    escape(&short_digest(digest))
+                )
+            })
+            .collect::<String>()
+    };
+    format!(
+        "<section class=\"provenance\"><div class=\"section-heading\"><h2>Match provenance</h2><p>Immutable identifiers for reproducing and comparing this result.</p></div><div class=\"provenance-grid\"><div><small>Engine</small><strong>Agents of Empires v{}</strong></div><div><small>Source revision</small><code title=\"{}\">{}</code></div><div><small>Arena</small><strong>{}</strong><small>{} · schema {}</small></div><div><small>Compatibility key</small><code title=\"{}\">{}</code></div><div><small>Manifest</small><code title=\"{}\">{}</code></div><div><small>Verifier</small><code title=\"{}\">{}</code></div><div class=\"provenance-adapters\"><small>Harness adapters</small>{}</div></div></section>",
+        escape(&provenance.controller_version),
+        escape(
+            provenance
+                .source_revision
+                .as_deref()
+                .unwrap_or("unavailable")
+        ),
+        escape(&source_revision),
+        escape(&provenance.arena_id),
+        escape(&provenance.arena_mode),
+        escape(&arena_schema),
+        escape(&provenance.compatibility_key),
+        escape(&short_digest(&provenance.compatibility_key)),
+        escape(&provenance.manifest_sha256),
+        escape(&short_digest(&provenance.manifest_sha256)),
+        escape(&provenance.verifier_sha256),
+        escape(&short_digest(&provenance.verifier_sha256)),
+        adapters
+    )
+}
+
+fn short_digest(value: &str) -> String {
+    value.chars().take(12).collect()
 }
 
 fn transcript_link(report: &MatchReport, agent: &str) -> String {
@@ -1592,19 +1670,20 @@ fn escape(value: &str) -> String {
 
 fn page(title: &str, content: &str) -> String {
     format!(
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"color-scheme\" content=\"dark\"><title>{}</title><style>{}{}{}{}{}</style></head><body>{}</body></html>",
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"color-scheme\" content=\"dark\"><title>{}</title><style>{}{}{}{}{}{}</style></head><body>{}</body></html>",
         escape(title),
         STYLE,
         REPLAY_STYLE,
         FOG_STYLE,
         ANALYSIS_STYLE,
         ACTIVITY_STYLE,
+        PROVENANCE_STYLE,
         content
     )
 }
 
 const STYLE: &str = r#"
-:root{--bg:#10130f;--panel:#191e18;--line:#333d31;--text:#edf4e9;--muted:#9ca997;--gold:#e7bb55;--green:#85d68b;--red:#ef857c;--orange:#e5a65f}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 75% 0,#253120 0,transparent 32rem),var(--bg);color:var(--text);font:16px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}a{color:var(--gold)}nav,main,.hero{width:min(1120px,calc(100% - 2rem));margin:auto}nav{display:flex;justify-content:space-between;padding:1.25rem 0;color:var(--muted)}nav a{text-decoration:none}.hero{padding:6rem 0 3rem}.match-hero{padding-top:3.5rem}.eyebrow{color:var(--gold);font-size:.75rem;letter-spacing:.14em;text-transform:uppercase}h1{font-family:Georgia,serif;font-size:clamp(2.7rem,8vw,6.8rem);line-height:.9;margin:.35rem 0 1.2rem;max-width:900px}h2{font-family:Georgia,serif;font-size:2rem;margin:0}.hero>p,.section-heading p{color:var(--muted);max-width:680px}.about{border:1px solid var(--line);background:linear-gradient(135deg,#20271e,var(--panel));padding:2rem}.about h2{margin:.35rem 0 1rem}.about p{color:var(--muted);max-width:850px}.about p:last-child{margin-bottom:0}.about a{text-decoration:none}.hero-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;margin-top:3rem;background:var(--line);border:1px solid var(--line)}.hero-stats div{background:var(--panel);padding:1.25rem}.hero-stats small,td small{display:block;color:var(--muted);margin-bottom:.35rem}.hero-stats strong{font-size:1.25rem}section{margin:1rem 0 4rem}.section-heading{display:flex;align-items:end;justify-content:space-between;gap:2rem;margin-bottom:1rem}.section-heading p{margin:0}.table-wrap{overflow:auto;border:1px solid var(--line)}table{border-collapse:collapse;width:100%;background:var(--panel)}th,td{padding:1rem;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.08em}.winner-row,.seat-winner{background:#252b19}.seat-winner{box-shadow:inset 0 0 0 1px var(--gold)}.pill{display:inline-block;border:1px solid var(--line);border-radius:99px;padding:.15rem .55rem;font-size:.8rem}.pill.good{color:var(--green)}.pill.warn{color:var(--orange)}.pill.bad{color:var(--red)}.timeline{list-style:none;padding:0;border-top:1px solid var(--line)}.timeline li{display:grid;grid-template-columns:6rem 1fr;gap:1rem;padding:1rem 0;border-bottom:1px solid var(--line)}.timeline time{color:var(--gold)}.timeline span{color:var(--muted);margin-left:.75rem}.timeline details{margin-top:.4rem;color:var(--muted)}pre{white-space:pre-wrap;word-break:break-word;background:#090b09;padding:1rem;overflow:auto}.match-list{display:grid;gap:1rem}.match-card{display:flex;justify-content:space-between;gap:2rem;padding:1.5rem;border:1px solid var(--line);background:var(--panel);text-decoration:none;color:var(--text)}.match-card:hover{border-color:var(--gold)}.match-card h2{font-size:1.5rem}.match-card p{color:var(--muted);margin:.25rem 0 0}.metrics{text-align:right}.metrics strong,.metrics span{display:block}.metrics span{color:var(--muted)}.archive-callout{display:flex;align-items:center;justify-content:space-between;gap:2rem;border:1px solid var(--line);background:linear-gradient(135deg,#20271e,var(--panel));padding:2rem}.archive-callout p{color:var(--muted);margin:.35rem 0 0;max-width:680px}.archive-link{white-space:nowrap;text-decoration:none;border:1px solid var(--gold);padding:.75rem 1rem}.archive-reason{display:block;color:var(--orange);margin-top:.75rem}footer{display:flex;gap:1rem;padding:2rem 0 5rem;border-top:1px solid var(--line)}@media(max-width:720px){.hero{padding-top:3rem}.hero-stats{grid-template-columns:1fr 1fr}.section-heading{display:block}.timeline li{grid-template-columns:4rem 1fr}.match-card,.archive-callout{display:block}.archive-link{display:inline-block;margin-top:1rem}.metrics{text-align:left;margin-top:1rem}th,td{padding:.75rem}}
+:root{--bg:#10130f;--panel:#191e18;--line:#333d31;--text:#edf4e9;--muted:#9ca997;--gold:#e7bb55;--green:#85d68b;--red:#ef857c;--orange:#e5a65f}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 75% 0,#253120 0,transparent 32rem),var(--bg);color:var(--text);font:16px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}a{color:var(--gold)}nav,main,.hero{width:min(1120px,calc(100% - 2rem));margin:auto}nav{display:flex;justify-content:space-between;padding:1.25rem 0;color:var(--muted)}nav a{text-decoration:none}.hero{padding:6rem 0 3rem}.match-hero{padding-top:3.5rem}.eyebrow{color:var(--gold);font-size:.75rem;letter-spacing:.14em;text-transform:uppercase}h1{font-family:Georgia,serif;font-size:clamp(2.7rem,8vw,6.8rem);line-height:.9;margin:.35rem 0 1.2rem;max-width:900px}h2{font-family:Georgia,serif;font-size:2rem;margin:0}.hero>p,.section-heading p{color:var(--muted);max-width:680px}.about{border:1px solid var(--line);background:linear-gradient(135deg,#20271e,var(--panel));padding:2rem}.about h2{margin:.35rem 0 1rem}.about p{color:var(--muted);max-width:850px}.about p:last-child{margin-bottom:0}.about a{text-decoration:none}.hero-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;margin-top:3rem;background:var(--line);border:1px solid var(--line)}.hero-stats div{background:var(--panel);padding:1.25rem}.hero-stats small,td small{display:block;color:var(--muted);margin-bottom:.35rem}.hero-stats strong{font-size:1.25rem}section{margin:1rem 0 4rem}.section-heading{display:flex;align-items:end;justify-content:space-between;gap:2rem;margin-bottom:1rem}.section-heading p{margin:0}.table-wrap{overflow:auto;border:1px solid var(--line)}table{border-collapse:collapse;width:100%;background:var(--panel)}th,td{padding:1rem;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.08em}.winner-row,.seat-winner{background:#252b19}.seat-winner{box-shadow:inset 0 0 0 1px var(--gold)}.pill{display:inline-block;border:1px solid var(--line);border-radius:99px;padding:.15rem .55rem;font-size:.8rem}.pill.good{color:var(--green)}.pill.warn{color:var(--orange)}.pill.bad{color:var(--red)}.provenance-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;border:1px solid var(--line);background:var(--line)}.provenance-grid>div{min-width:0;background:var(--panel);padding:1rem}.provenance-grid small,.provenance-grid strong,.provenance-grid code{display:block}.provenance-grid small{color:var(--muted);margin-bottom:.35rem}.provenance-grid code{color:var(--green);overflow-wrap:anywhere}.provenance-adapters span{display:flex;gap:.75rem;justify-content:space-between}.provenance-adapters span+span{margin-top:.35rem}.timeline{list-style:none;padding:0;border-top:1px solid var(--line)}.timeline li{display:grid;grid-template-columns:6rem 1fr;gap:1rem;padding:1rem 0;border-bottom:1px solid var(--line)}.timeline time{color:var(--gold)}.timeline span{color:var(--muted);margin-left:.75rem}.timeline details{margin-top:.4rem;color:var(--muted)}pre{white-space:pre-wrap;word-break:break-word;background:#090b09;padding:1rem;overflow:auto}.match-list{display:grid;gap:1rem}.match-card{display:flex;justify-content:space-between;gap:2rem;padding:1.5rem;border:1px solid var(--line);background:var(--panel);text-decoration:none;color:var(--text)}.match-card:hover{border-color:var(--gold)}.match-card h2{font-size:1.5rem}.match-card p{color:var(--muted);margin:.25rem 0 0}.metrics{text-align:right}.metrics strong,.metrics span{display:block}.metrics span{color:var(--muted)}.archive-callout{display:flex;align-items:center;justify-content:space-between;gap:2rem;border:1px solid var(--line);background:linear-gradient(135deg,#20271e,var(--panel));padding:2rem}.archive-callout p{color:var(--muted);margin:.35rem 0 0;max-width:680px}.archive-link{white-space:nowrap;text-decoration:none;border:1px solid var(--gold);padding:.75rem 1rem}.archive-reason{display:block;color:var(--orange);margin-top:.75rem}footer{display:flex;gap:1rem;padding:2rem 0 5rem;border-top:1px solid var(--line)}@media(max-width:720px){.hero{padding-top:3rem}.hero-stats{grid-template-columns:1fr 1fr}.section-heading{display:block}.provenance-grid{grid-template-columns:1fr}.timeline li{grid-template-columns:4rem 1fr}.match-card,.archive-callout{display:block}.archive-link{display:inline-block;margin-top:1rem}.metrics{text-align:left;margin-top:1rem}th,td{padding:.75rem}}
 "#;
 
 const REPLAY_STYLE: &str = r#"
@@ -1621,6 +1700,10 @@ const ANALYSIS_STYLE: &str = r"
 
 const ACTIVITY_STYLE: &str = r"
 .agent-terminal{height:9.5rem;border-top:1px solid #293126;background:linear-gradient(#070a07ee,#090d09ee),repeating-linear-gradient(0deg,transparent 0,transparent 2px,#5aff7d08 3px);color:#93e89f;font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;overflow:hidden}.terminal-title{height:1.7rem;display:flex;align-items:center;gap:.3rem;padding:0 .55rem;border-bottom:1px solid #1f2b20;background:#111611;color:#829081}.terminal-title>span{width:.48rem;height:.48rem;border-radius:50%;background:#536052}.terminal-title>span:first-child{background:#a9564e}.terminal-title>span:nth-child(2){background:#ae8a42}.terminal-title strong{margin-left:.25rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}.terminal-lines{height:7.8rem;padding:.45rem .55rem;overflow:hidden}.terminal-line{display:grid;grid-template-columns:2.8rem 1fr;gap:.45rem;min-height:1.4rem}.terminal-line time{color:#58715c}.terminal-line span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.terminal-line b{color:#d5a957;font-weight:500;text-transform:lowercase}.terminal-line.error span{color:#ef857c}.terminal-line.idle span{color:#78927d}.terminal-line.active span{color:#b6e8bc}.terminal-cursor{display:inline-block;width:.45rem;height:.9rem;margin-left:.25rem;vertical-align:-.15rem;background:#80d68b;animation:terminal-blink 1s steps(1) infinite}@keyframes terminal-blink{50%{opacity:0}}@media(prefers-reduced-motion:reduce){.terminal-cursor{animation:none}}
+";
+
+const PROVENANCE_STYLE: &str = r"
+.provenance-adapters{grid-column:1/-1}
 ";
 
 const REPLAY_SCRIPT: &str = r#"
