@@ -121,6 +121,23 @@ fn parses_report_directories() {
 }
 
 #[test]
+fn parses_trajectory_export() {
+    let cli = Cli::parse(
+        ["trajectory", "matches", "--output", "trajectories"]
+            .into_iter()
+            .map(str::to_owned),
+    )
+    .expect("parse");
+    assert_eq!(
+        cli.command,
+        Command::Trajectory {
+            input: PathBuf::from("matches"),
+            output: PathBuf::from("trajectories"),
+        }
+    );
+}
+
+#[test]
 fn parses_series_report_inputs() {
     let cli = Cli::parse(
         [

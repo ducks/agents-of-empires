@@ -5,8 +5,9 @@ use std::path::PathBuf;
 
 use aoe_controller::{
     ArenaCommand, BenchmarkOptions, Cli, Command, RunOptions, SeriesOptions, doctor,
-    generate_reports_with_benchmarks, init_arena, inspect, render_benchmark, render_series,
-    replay_log, run_benchmark, run_match, run_series, validate, validate_arena_package,
+    export_trajectories, generate_reports_with_benchmarks, init_arena, inspect, render_benchmark,
+    render_series, replay_log, run_benchmark, run_match, run_series, validate,
+    validate_arena_package,
 };
 use aoe_tui::RenderOptions;
 
@@ -26,6 +27,7 @@ Usage:
   agents-of-empires inspect EVENT_LOG SEQUENCE [--json]
   agents-of-empires report MATCH_OR_MATCHES_DIR [--series SERIES_OR_SERIES_DIR]
       [--benchmark BENCHMARK_OR_BENCHMARKS_DIR] [--output DIR]
+  agents-of-empires trajectory MATCH_OR_MATCHES_DIR [--output DIR]
   agents-of-empires doctor [--json]
 ";
 
@@ -197,6 +199,15 @@ async fn execute() -> Result<(), Box<dyn std::error::Error>> {
                 report.benchmarks,
                 if report.benchmarks == 1 { "" } else { "s" },
                 report.index.display()
+            );
+        }
+        Command::Trajectory { input, output } => {
+            let summary = export_trajectories(&input, &output)?;
+            println!(
+                "exported {} ATIF trajectories to {} ({} agents skipped)",
+                summary.trajectories,
+                summary.output.display(),
+                summary.skipped
             );
         }
         Command::Doctor { json } => {

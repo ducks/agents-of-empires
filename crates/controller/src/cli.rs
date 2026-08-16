@@ -61,6 +61,10 @@ pub enum Command {
         series: Vec<String>,
         benchmarks: Vec<String>,
     },
+    Trajectory {
+        input: PathBuf,
+        output: PathBuf,
+    },
     Doctor {
         json: bool,
     },
@@ -107,11 +111,23 @@ impl Cli {
             "replay" => parse_replay(args)?,
             "inspect" => parse_inspect(args)?,
             "report" => parse_report(args)?,
+            "trajectory" => parse_trajectory(args)?,
             "doctor" => parse_doctor(args)?,
             _ => return Err(ParseError::Unexpected(command)),
         };
         Ok(Self { command })
     }
+}
+
+fn parse_trajectory(mut args: Vec<String>) -> Result<Command, ParseError> {
+    let input = PathBuf::from(take_positional(&mut args, "MATCH_OR_MATCHES_DIR")?);
+    let output = if args.iter().any(|arg| arg == "--output") {
+        PathBuf::from(take_flag_value(&mut args, "--output")?)
+    } else {
+        PathBuf::from("trajectories")
+    };
+    reject_remaining(args)?;
+    Ok(Command::Trajectory { input, output })
 }
 
 fn parse_arena(mut args: Vec<String>) -> Result<Command, ParseError> {
