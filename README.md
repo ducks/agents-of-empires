@@ -33,6 +33,12 @@ make lint
 Run `make help` for the individual build, test, format, validation, cleanup,
 and pre-push hook targets.
 
+Maintainers can run `make release` from a clean `main` branch to create a
+date-versioned release branch, bump the workspace version, merge it with a
+merge commit, tag and push the release, and trigger downloadable Linux and
+macOS binaries with checksums on GitHub Releases. This does not publish the
+workspace crates to crates.io.
+
 ## Bring your own arena
 
 Arena packages are a public plugin boundary. They own disposable guest images,
