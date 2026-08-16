@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -8,6 +8,7 @@ use aoe_replay::WorldState;
 use serde::Serialize;
 use thiserror::Error;
 
+use crate::analysis::{TranscriptAnalysis, analyze_transcript};
 use crate::benchmark::{BenchmarkStanding, BenchmarkSummary};
 use crate::provenance::{MatchProvenance, read_provenance};
 use crate::series::SeriesSummary;
@@ -38,6 +39,8 @@ pub enum ReportError {
     Series { path: PathBuf, detail: String },
     #[error("invalid benchmark summary in {path}: {detail}")]
     Benchmark { path: PathBuf, detail: String },
+    #[error("could not analyze transcript {path}: {detail}")]
+    Analysis { path: PathBuf, detail: String },
     #[error("no completed match artifacts found below {0}")]
     NoMatches(PathBuf),
     #[error("no completed series artifacts found below {0}")]
@@ -57,6 +60,7 @@ struct MatchReport {
     provenance: Option<MatchProvenance>,
     visualization: Option<ArenaVisualization>,
     fog_of_war: bool,
+    analyses: BTreeMap<String, TranscriptAnalysis>,
     current: bool,
 }
 
@@ -311,6 +315,7 @@ fn load_match_report(
     let events = read_report_events(&source.join("events.jsonl"))?;
     let provenance = read_provenance(&source.join("match.json")).ok();
     let (visualization, fog_of_war) = read_arena_presentation(&source.join("arena.json"))?;
+    let analyses = analyze_agents(&source, &state)?;
     let report = MatchReport {
         name,
         slug,
@@ -322,6 +327,7 @@ fn load_match_report(
         provenance,
         visualization,
         fog_of_war,
+        analyses,
         current: false,
     };
     copy_public_artifacts(&report)?;
@@ -479,6 +485,31 @@ fn read_arena_presentation(path: &Path) -> Result<(Option<ArenaVisualization>, b
     Ok((manifest.visualization, fog))
 }
 
+fn analyze_agents(
+    source: &Path,
+    state: &WorldState,
+) -> Result<BTreeMap<String, TranscriptAnalysis>, ReportError> {
+    let mut analyses = BTreeMap::new();
+    for (agent_id, agent) in &state.agents {
+        let agent_dir = source.join("agents").join(agent_id);
+        let transcript = ["transcript.json", "transcript.live.json"]
+            .into_iter()
+            .map(|name| agent_dir.join(name))
+            .find(|path| path.is_file());
+        let Some(path) = transcript else { continue };
+        let parsed = analyze_transcript(&path, agent_id, &agent.territory, &agent.model).map_err(
+            |error| ReportError::Analysis {
+                path: path.clone(),
+                detail: error.to_string(),
+            },
+        )?;
+        if let Some(analysis) = parsed {
+            analyses.insert(agent_id.clone(), analysis);
+        }
+    }
+    Ok(analyses)
+}
+
 fn read_series(path: &Path) -> Result<SeriesSummary, ReportError> {
     let source = fs::read(path)?;
     serde_json::from_slice(&source).map_err(|error| ReportError::Series {
@@ -508,11 +539,25 @@ fn copy_public_artifacts(report: &MatchReport) -> Result<(), ReportError> {
     }
     for agent in report.state.agents.keys() {
         let source = report.source.join("agents").join(agent);
-        for file in ["transcript.json", "transcript.jsonl", "result.json"] {
+        for file in [
+            "transcript.json",
+            "transcript.live.json",
+            "transcript.jsonl",
+            "result.json",
+        ] {
             let artifact = source.join(file);
             if artifact.is_file() {
                 fs::copy(&artifact, raw.join(format!("{}-{file}", safe_name(agent))))?;
             }
+        }
+        if let Some(analysis) = report.analyses.get(agent) {
+            fs::write(
+                raw.join(format!("{}-analysis.json", safe_name(agent))),
+                serde_json::to_vec_pretty(analysis).map_err(|error| ReportError::Analysis {
+                    path: source.join("transcript.json"),
+                    detail: error.to_string(),
+                })?,
+            )?;
         }
     }
     Ok(())
@@ -1111,6 +1156,7 @@ fn render_match(report: &MatchReport) -> String {
         .map(|agent| agent.input_tokens.saturating_add(agent.output_tokens))
         .sum();
     let replay = render_replay(report);
+    let analysis = render_agent_analysis(report);
     let timeline = render_timeline(&report.events);
     let arena_artifact = if report.source.join("arena.json").is_file() {
         "<a href=\"artifacts/arena.json\">arena.json</a>"
@@ -1139,7 +1185,7 @@ fn render_match(report: &MatchReport) -> String {
         "<nav><a href=\"../../\">← All matches</a><span>Agents of Empires</span></nav>
         <header class=\"hero match-hero\"><span class=\"eyebrow\">{:?} · {}</span><h1>{}</h1><p>{}</p>
         <div class=\"hero-stats\"><div><small>Winner</small><strong>{}</strong></div><div><small>Durable in</small><strong>{}</strong></div><div><small>Recorded cost</small><strong>{}</strong></div><div><small>Tokens</small><strong>{}</strong></div></div></header>
-        <main>{replay}<section><div class=\"section-heading\"><h2>Territories</h2><p>The referee-owned result frozen when the first deployment became durable.</p></div><div class=\"table-wrap\"><table><thead><tr><th>Territory</th><th>State</th><th>Milestones</th><th>Points</th><th>Durable at</th></tr></thead><tbody>{territories}</tbody></table></div></section>
+        <main>{replay}{analysis}<section><div class=\"section-heading\"><h2>Territories</h2><p>The referee-owned result frozen when the first deployment became durable.</p></div><div class=\"table-wrap\"><table><thead><tr><th>Territory</th><th>State</th><th>Milestones</th><th>Points</th><th>Durable at</th></tr></thead><tbody>{territories}</tbody></table></div></section>
         <section><div class=\"section-heading\"><h2>Agents</h2><p>Usage includes cumulative checkpoints captured while agents were still running.</p></div><div class=\"table-wrap\"><table><thead><tr><th>Agent</th><th>Model</th><th>Outcome</th><th>Input</th><th>Output</th><th>Cost</th><th>Artifact</th></tr></thead><tbody>{agents}</tbody></table></div></section>
         <section><div class=\"section-heading\"><h2>Event timeline</h2><p>{} immutable events. The match clock remains frozen during post-match collection.</p></div><ol class=\"timeline\">{timeline}</ol></section>
         <footer><a href=\"artifacts/events.jsonl\">events.jsonl</a><a href=\"artifacts/world.json\">world.json</a>{arena_artifact}</footer></main>",
@@ -1163,7 +1209,13 @@ fn render_match(report: &MatchReport) -> String {
 }
 
 fn transcript_link(report: &MatchReport, agent: &str) -> String {
-    for file in ["transcript.json", "transcript.jsonl", "result.json"] {
+    let mut links = Vec::new();
+    for file in [
+        "transcript.json",
+        "transcript.live.json",
+        "transcript.jsonl",
+        "result.json",
+    ] {
         if report
             .source
             .join("agents")
@@ -1171,14 +1223,96 @@ fn transcript_link(report: &MatchReport, agent: &str) -> String {
             .join(file)
             .is_file()
         {
-            return format!(
-                "<a href=\"artifacts/{}-{}\">view</a>",
+            links.push(format!(
+                "<a href=\"artifacts/{}-{}\">transcript</a>",
                 escape(&safe_name(agent)),
                 file
-            );
+            ));
+            break;
         }
     }
-    "—".to_owned()
+    if report.analyses.contains_key(agent) {
+        links.push(format!(
+            "<a href=\"artifacts/{}-analysis.json\">analysis</a>",
+            escape(&safe_name(agent))
+        ));
+    }
+    if links.is_empty() {
+        "—".to_owned()
+    } else {
+        links.join(" · ")
+    }
+}
+
+fn render_agent_analysis(report: &MatchReport) -> String {
+    if report.analyses.is_empty() {
+        return String::new();
+    }
+    let mut rows = String::new();
+    let mut cards = String::new();
+    for (agent_id, analysis) in &report.analyses {
+        let architecture = analysis
+            .architecture
+            .technologies
+            .iter()
+            .chain(&analysis.architecture.service_units)
+            .take(8)
+            .map(|value| format!("<span>{}</span>", escape(value)))
+            .collect::<String>();
+        let first_change = analysis
+            .metrics
+            .first_mutation_after_ms
+            .map_or_else(|| "n/a".to_owned(), duration);
+        let _ = write!(
+            rows,
+            "<tr><td><strong>{}</strong><small>{}</small></td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td><div class=\"architecture-tags\">{}</div></td></tr>",
+            escape(agent_id),
+            escape(&analysis.model),
+            first_change,
+            analysis.metrics.discoveries,
+            analysis.metrics.mutations,
+            analysis.metrics.lifecycle_actions,
+            analysis.metrics.validations,
+            analysis.metrics.tool_errors,
+            architecture
+        );
+
+        let mut actions = String::new();
+        for action in analysis.actions.iter().take(16) {
+            let status = if action.success { "ok" } else { "error" };
+            let description = action
+                .description
+                .as_deref()
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or(&action.command);
+            let _ = write!(
+                actions,
+                "<li class=\"{}\"><time>{}</time><span>{:?}</span><strong>{}</strong><code>{}</code></li>",
+                status,
+                duration(action.started_after_ms),
+                action.kind,
+                escape(description),
+                escape(&action.command)
+            );
+        }
+        let omitted = analysis.actions.len().saturating_sub(16);
+        let omitted = if omitted == 0 {
+            String::new()
+        } else {
+            format!("<p class=\"analysis-omitted\">{omitted} more actions in analysis.json</p>")
+        };
+        let _ = write!(
+            cards,
+            "<details class=\"analysis-card\"><summary><strong>{}</strong><span>{} observed tool calls</span></summary><ol>{}</ol>{}</details>",
+            escape(agent_id),
+            analysis.metrics.tool_calls,
+            actions,
+            omitted
+        );
+    }
+    format!(
+        "<section><div class=\"section-heading\"><h2>How they fought</h2><p>Deterministic analysis of observable tool calls. Private model reasoning is never parsed.</p></div><div class=\"table-wrap\"><table><thead><tr><th>Agent</th><th>First change</th><th>Discovery</th><th>Changes</th><th>Lifecycle</th><th>Checks</th><th>Errors</th><th>Architecture seen</th></tr></thead><tbody>{rows}</tbody></table></div><div class=\"analysis-cards\">{cards}</div></section>"
+    )
 }
 
 fn render_replay(report: &MatchReport) -> String {
@@ -1387,11 +1521,12 @@ fn escape(value: &str) -> String {
 
 fn page(title: &str, content: &str) -> String {
     format!(
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"color-scheme\" content=\"dark\"><title>{}</title><style>{}{}{}</style></head><body>{}</body></html>",
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"color-scheme\" content=\"dark\"><title>{}</title><style>{}{}{}{}</style></head><body>{}</body></html>",
         escape(title),
         STYLE,
         REPLAY_STYLE,
         FOG_STYLE,
+        ANALYSIS_STYLE,
         content
     )
 }
@@ -1406,6 +1541,10 @@ button,select,input{font:inherit}.replay-shell{border:1px solid var(--line);back
 
 const FOG_STYLE: &str = r"
 .topology-link.fogged{opacity:0}.topology-node.unknown{border-style:dashed;opacity:.62}
+";
+
+const ANALYSIS_STYLE: &str = r"
+.architecture-tags{display:flex;flex-wrap:wrap;gap:.3rem;min-width:10rem}.architecture-tags span{border:1px solid var(--line);border-radius:99px;padding:.08rem .4rem;color:var(--muted);font-size:.68rem}.analysis-cards{display:grid;gap:.75rem;margin-top:1rem}.analysis-card{border:1px solid var(--line);background:var(--panel)}.analysis-card summary{display:flex;justify-content:space-between;cursor:pointer;padding:1rem}.analysis-card summary span{color:var(--muted)}.analysis-card ol{list-style:none;padding:0;margin:0;border-top:1px solid var(--line)}.analysis-card li{display:grid;grid-template-columns:4.5rem 6rem minmax(12rem,1fr) minmax(18rem,2fr);gap:.75rem;padding:.7rem 1rem;border-bottom:1px solid var(--line);align-items:start}.analysis-card li.error{border-left:3px solid var(--red)}.analysis-card time{color:var(--gold)}.analysis-card li>span{color:var(--muted);font-size:.75rem;text-transform:lowercase}.analysis-card code{color:var(--muted);white-space:pre-wrap;word-break:break-word;font-size:.75rem}.analysis-omitted{color:var(--muted);padding:0 1rem 1rem}@media(max-width:820px){.analysis-card li{grid-template-columns:4rem 1fr}.analysis-card li strong,.analysis-card li code{grid-column:1/-1}}
 ";
 
 const REPLAY_SCRIPT: &str = r#"

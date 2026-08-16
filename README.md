@@ -228,6 +228,14 @@ replay plots each agent on a shared clock with milestone, state, usage, and
 terminal markers. It supports playback speeds, scrubbing, and raw event
 inspection without changing or reinterpreting the referee's result.
 
+When a harness emits a structured `tool_trace`, the report also generates a
+versioned `analysis.json` for each agent and a **How they fought** comparison.
+It measures observable discovery, mutation, lifecycle, validation, error, and
+first-change behavior, then extracts architecture evidence from commands and
+tool output. The analyzer never reads private reasoning text. Historical and
+third-party harness transcripts without a compatible tool trace remain valid
+and are simply shown without this analysis.
+
 The generated home page shows only runs using the newest compatibility key for
 each arena. Superseded and provenance-free runs move to `archive/index.html`,
 where they remain inspectable without being mixed into current results. Archive

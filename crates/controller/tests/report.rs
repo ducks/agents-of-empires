@@ -108,7 +108,30 @@ fn generates_archive_and_match_artifacts() {
             .join("agents")
             .join("agent-a")
             .join("transcript.json"),
-        "[]",
+        serde_json::to_vec_pretty(&json!({
+            "schema_version": 1,
+            "messages": [{"role": "assistant", "content": "private reasoning"}],
+            "outcome": {"status": "completed"},
+            "tool_trace": [
+                {
+                    "id": "tool-1",
+                    "name": "bash",
+                    "input": {"command": "systemctl status app.service", "description": "Inspect app"},
+                    "output": "ExecStart=/usr/bin/python /srv/app/server.py",
+                    "started_after_ms": 1_000,
+                    "duration_ms": 100
+                },
+                {
+                    "id": "tool-2",
+                    "name": "bash",
+                    "input": {"command": "sed -i 's/old/new/' /etc/app.conf", "description": "Repair config"},
+                    "output": "",
+                    "started_after_ms": 2_000,
+                    "duration_ms": 50
+                }
+            ]
+        }))
+        .expect("transcript JSON"),
     )
     .expect("transcript");
     let manifest_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -146,6 +169,10 @@ fn generates_archive_and_match_artifacts() {
     assert!(match_page.contains("Service map"));
     assert!(match_page.contains("State Store"));
     assert!(match_page.contains("data-topology"));
+    assert!(match_page.contains("How they fought"));
+    assert!(match_page.contains("First change"));
+    assert!(match_page.contains("Python"));
+    assert!(!match_page.contains("private reasoning"));
     assert!(
         output
             .join("matches/build-race-001/artifacts/agent-a-transcript.json")
@@ -156,6 +183,11 @@ fn generates_archive_and_match_artifacts() {
             .join("matches/build-race-001/artifacts/arena.json")
             .is_file()
     );
+    let analysis =
+        fs::read_to_string(output.join("matches/build-race-001/artifacts/agent-a-analysis.json"))
+            .expect("analysis artifact");
+    assert!(analysis.contains("first_mutation_after_ms"));
+    assert!(!analysis.contains("private reasoning"));
 
     fs::remove_dir_all(root).expect("cleanup");
 }

@@ -1,3 +1,4 @@
+pub mod analysis;
 pub mod arena;
 pub mod benchmark;
 pub mod cli;
@@ -7,6 +8,10 @@ pub mod report;
 pub mod runner;
 pub mod series;
 
+pub use analysis::{
+    ANALYSIS_SCHEMA_VERSION, ActionKind, AnalysisError, AnalysisMetrics, ArchitectureEvidence,
+    ObservedAction, TranscriptAnalysis, analyze_transcript,
+};
 pub use arena::{ArenaPackageReport, init_arena, validate_arena_package};
 pub use benchmark::{
     BenchmarkArenaSummary, BenchmarkError, BenchmarkOptions, BenchmarkPlanEntry, BenchmarkStanding,
