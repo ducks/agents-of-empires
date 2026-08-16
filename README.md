@@ -249,7 +249,9 @@ artifacts.
 Pass one or more `--benchmark` inputs to add cross-arena model leaderboards.
 The report automatically imports each benchmark's arena series and rounds, so
 the benchmark page drills down into seat rotations, individual match replays,
-and their audit artifacts. A benchmark directory can also be used as the
+and their audit artifacts. Each arena card also links directly to every round
+and labels matches that include the **How they fought** strategy analysis. A
+benchmark directory can also be used as the
 positional input when no separate match archive is needed.
 
 Harness adapters may atomically publish cumulative usage to `AOE_USAGE_FILE`

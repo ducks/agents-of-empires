@@ -80,6 +80,13 @@ struct BenchmarkReport {
     summary: BenchmarkSummary,
     report_dir: PathBuf,
     series_slugs: Vec<String>,
+    round_links: Vec<Vec<BenchmarkRoundLink>>,
+}
+
+struct BenchmarkRoundLink {
+    round: usize,
+    slug: String,
+    has_analysis: bool,
 }
 
 /// Generate a self-contained static report site from one match directory or a
@@ -217,6 +224,7 @@ fn append_benchmark_reports(
             let name = summary.suite_id.clone();
             let slug = safe_name(&name);
             let mut series_slugs = Vec::with_capacity(summary.arenas.len());
+            let mut round_links = Vec::with_capacity(summary.arenas.len());
             for arena in &summary.arenas {
                 let arena_source = source.join(
                     arena
@@ -233,7 +241,27 @@ fn append_benchmark_reports(
                     reports,
                     series_reports,
                 )?;
+                let links = series_reports
+                    .last()
+                    .map(|series| {
+                        series
+                            .summary
+                            .rounds
+                            .iter()
+                            .zip(&series.round_slugs)
+                            .map(|(round, slug)| BenchmarkRoundLink {
+                                round: round.round,
+                                slug: slug.clone(),
+                                has_analysis: reports
+                                    .iter()
+                                    .find(|report| report.slug == *slug)
+                                    .is_some_and(|report| !report.analyses.is_empty()),
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
                 series_slugs.push(arena_slug);
+                round_links.push(links);
             }
             let report_dir = output.join("benchmarks").join(&slug);
             fs::create_dir_all(report_dir.join("artifacts"))?;
@@ -247,6 +275,7 @@ fn append_benchmark_reports(
                 summary,
                 report_dir,
                 series_slugs,
+                round_links,
             });
         }
     }
@@ -492,19 +521,17 @@ fn analyze_agents(
     let mut analyses = BTreeMap::new();
     for (agent_id, agent) in &state.agents {
         let agent_dir = source.join("agents").join(agent_id);
-        let transcript = ["transcript.json", "transcript.live.json"]
+        for path in ["transcript.json", "transcript.live.json"]
             .into_iter()
             .map(|name| agent_dir.join(name))
-            .find(|path| path.is_file());
-        let Some(path) = transcript else { continue };
-        let parsed = analyze_transcript(&path, agent_id, &agent.territory, &agent.model).map_err(
-            |error| ReportError::Analysis {
-                path: path.clone(),
-                detail: error.to_string(),
-            },
-        )?;
-        if let Some(analysis) = parsed {
-            analyses.insert(agent_id.clone(), analysis);
+            .filter(|path| path.is_file())
+        {
+            if let Ok(Some(analysis)) =
+                analyze_transcript(&path, agent_id, &agent.territory, &agent.model)
+            {
+                analyses.insert(agent_id.clone(), analysis);
+                break;
+            }
         }
     }
     Ok(analyses)
@@ -884,16 +911,41 @@ fn render_benchmark_report(report: &BenchmarkReport) -> String {
         } else {
             "in progress"
         };
+        let analyzed_rounds = report
+            .round_links
+            .get(index)
+            .into_iter()
+            .flatten()
+            .filter(|round| round.has_analysis)
+            .count();
+        let round_links = report.round_links.get(index).map_or_else(String::new, |rounds| {
+            rounds
+                .iter()
+                .map(|round| {
+                    format!(
+                        "<a class=\"round-analysis-link{}\" href=\"../../matches/{}/\">Round {}{}</a>",
+                        if round.has_analysis { " analyzed" } else { "" },
+                        escape(&round.slug),
+                        round.round,
+                        if round.has_analysis { " · How they fought" } else { " · Replay" }
+                    )
+                })
+                .collect::<String>()
+        });
         let _ = write!(
             arenas,
-            "<a class=\"match-card series-card\" href=\"../../series/{}/\"><div><span class=\"eyebrow\">{} · {}/{} rounds</span><h2>{}</h2><p>Open the seat rotation and individual match replays.</p></div><div class=\"metrics\"><strong>{}</strong><span>{}</span></div></a>",
-            escape(slug),
+            "<article class=\"match-card benchmark-arena-card\"><div class=\"arena-card-head\"><div><span class=\"eyebrow\">{} · {}/{} rounds</span><h2><a href=\"../../series/{}/\">{}</a></h2><p><a href=\"../../series/{}/\">View aggregate seat rotation →</a></p></div><div class=\"metrics\"><strong>{}</strong><span>{}</span></div></div><div class=\"round-analysis-links\"><strong>Match evidence</strong><span>{} of {} rounds include strategy analysis</span><div>{}</div></div></article>",
             status,
             arena.rounds_completed,
             arena.rounds_requested,
+            escape(slug),
             escape(&arena.arena_id),
+            escape(slug),
             escape(leader_name),
             escape(&record),
+            analyzed_rounds,
+            arena.rounds_completed,
+            round_links,
         );
     }
 
@@ -901,8 +953,8 @@ fn render_benchmark_report(report: &BenchmarkReport) -> String {
         "<nav><a href=\"../../\">← Archive</a><span>Agents of Empires · benchmark</span></nav>
         <header class=\"hero match-hero\"><span class=\"eyebrow\">Cross-arena benchmark</span><h1>{}</h1><p>One consistent model fleet measured across independent infrastructure contracts.</p>
         <div class=\"hero-stats\"><div><small>Leader</small><strong>{}</strong></div><div><small>Arenas</small><strong>{}/{}</strong></div><div><small>Rounds</small><strong>{}</strong></div><div><small>Recorded cost</small><strong>{}</strong></div></div></header>
-        <main><section><div class=\"section-heading\"><h2>Model leaderboard</h2><p>Ranked by wins, durable deployments, milestone coverage, time, and cost.</p></div><div class=\"table-wrap\"><table><thead><tr><th>Model</th><th>Wins</th><th>Durable</th><th>Milestones</th><th>Median</th><th>Tokens</th><th>Cost</th><th>Cost / durable</th><th>Failures</th></tr></thead><tbody>{standings}</tbody></table></div></section>
-        <section><div class=\"section-heading\"><h2>Arenas</h2><p>Open an arena for its seat rotation, then any round for the full replay.</p></div><div class=\"match-list\">{arenas}</div></section>
+        <main><section><div class=\"section-heading\"><h2>Model leaderboard</h2><p>Aggregate results from the verified matches below. The leaderboard is the summary; individual rounds are the evidence.</p></div><div class=\"table-wrap\"><table><thead><tr><th>Model</th><th>Wins</th><th>Durable</th><th>Milestones</th><th>Median</th><th>Tokens</th><th>Cost</th><th>Cost / durable</th><th>Failures</th></tr></thead><tbody>{standings}</tbody></table></div></section>
+        <section><div class=\"section-heading\"><h2>Arenas and match evidence</h2><p>Open a round directly for its replay, audit trail, and How they fought strategy analysis.</p></div><div class=\"match-list benchmark-arenas\">{arenas}</div></section>
         <footer><a href=\"artifacts/benchmark.json\">benchmark.json</a></footer></main>",
         escape(&report.name),
         escape(leader_name),
@@ -1544,7 +1596,7 @@ const FOG_STYLE: &str = r"
 ";
 
 const ANALYSIS_STYLE: &str = r"
-.architecture-tags{display:flex;flex-wrap:wrap;gap:.3rem;min-width:10rem}.architecture-tags span{border:1px solid var(--line);border-radius:99px;padding:.08rem .4rem;color:var(--muted);font-size:.68rem}.analysis-cards{display:grid;gap:.75rem;margin-top:1rem}.analysis-card{border:1px solid var(--line);background:var(--panel)}.analysis-card summary{display:flex;justify-content:space-between;cursor:pointer;padding:1rem}.analysis-card summary span{color:var(--muted)}.analysis-card ol{list-style:none;padding:0;margin:0;border-top:1px solid var(--line)}.analysis-card li{display:grid;grid-template-columns:4.5rem 6rem minmax(12rem,1fr) minmax(18rem,2fr);gap:.75rem;padding:.7rem 1rem;border-bottom:1px solid var(--line);align-items:start}.analysis-card li.error{border-left:3px solid var(--red)}.analysis-card time{color:var(--gold)}.analysis-card li>span{color:var(--muted);font-size:.75rem;text-transform:lowercase}.analysis-card code{color:var(--muted);white-space:pre-wrap;word-break:break-word;font-size:.75rem}.analysis-omitted{color:var(--muted);padding:0 1rem 1rem}@media(max-width:820px){.analysis-card li{grid-template-columns:4rem 1fr}.analysis-card li strong,.analysis-card li code{grid-column:1/-1}}
+.architecture-tags{display:flex;flex-wrap:wrap;gap:.3rem;min-width:10rem}.architecture-tags span{border:1px solid var(--line);border-radius:99px;padding:.08rem .4rem;color:var(--muted);font-size:.68rem}.analysis-cards{display:grid;gap:.75rem;margin-top:1rem}.analysis-card{border:1px solid var(--line);background:var(--panel)}.analysis-card summary{display:flex;justify-content:space-between;cursor:pointer;padding:1rem}.analysis-card summary span{color:var(--muted)}.analysis-card ol{list-style:none;padding:0;margin:0;border-top:1px solid var(--line)}.analysis-card li{display:grid;grid-template-columns:4.5rem 6rem minmax(12rem,1fr) minmax(18rem,2fr);gap:.75rem;padding:.7rem 1rem;border-bottom:1px solid var(--line);align-items:start}.analysis-card li.error{border-left:3px solid var(--red)}.analysis-card time{color:var(--gold)}.analysis-card li>span{color:var(--muted);font-size:.75rem;text-transform:lowercase}.analysis-card code{color:var(--muted);white-space:pre-wrap;word-break:break-word;font-size:.75rem}.analysis-omitted{color:var(--muted);padding:0 1rem 1rem}.benchmark-arena-card{display:block;padding:0}.arena-card-head{display:flex;justify-content:space-between;gap:2rem;padding:1.5rem}.arena-card-head h2 a{color:var(--text);text-decoration:none}.arena-card-head p a{text-decoration:none}.round-analysis-links{padding:1rem 1.5rem 1.5rem;border-top:1px solid var(--line)}.round-analysis-links>strong,.round-analysis-links>span{display:block}.round-analysis-links>span{color:var(--muted);font-size:.78rem;margin:.2rem 0 .8rem}.round-analysis-links>div{display:flex;flex-wrap:wrap;gap:.5rem}.round-analysis-link{border:1px solid var(--line);padding:.45rem .65rem;text-decoration:none;color:var(--muted);font-size:.78rem}.round-analysis-link.analyzed{border-color:#53634e;color:var(--green)}.round-analysis-link:hover{border-color:var(--gold);color:var(--gold)}@media(max-width:820px){.analysis-card li{grid-template-columns:4rem 1fr}.analysis-card li strong,.analysis-card li code{grid-column:1/-1}.arena-card-head{display:block}.arena-card-head .metrics{text-align:left;margin-top:1rem}}
 ";
 
 const REPLAY_SCRIPT: &str = r#"

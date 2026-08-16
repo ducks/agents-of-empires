@@ -68,6 +68,14 @@ fn generates_archive_and_match_artifacts() {
             ..AgentView::default()
         },
     );
+    state.agents.insert(
+        "agent-b".into(),
+        AgentView {
+            territory: "territory-b".into(),
+            model: "model/b".into(),
+            ..AgentView::default()
+        },
+    );
     fs::write(
         source.join("world.json"),
         serde_json::to_vec_pretty(&state).expect("state JSON"),
@@ -134,6 +142,12 @@ fn generates_archive_and_match_artifacts() {
         .expect("transcript JSON"),
     )
     .expect("transcript");
+    fs::create_dir_all(source.join("agents/agent-b")).expect("second agent dir");
+    fs::write(
+        source.join("agents/agent-b/transcript.live.json"),
+        "{ interrupted JSON",
+    )
+    .expect("interrupted transcript");
     let manifest_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .join("arenas/first-build/arena.toml");
@@ -177,6 +191,16 @@ fn generates_archive_and_match_artifacts() {
         output
             .join("matches/build-race-001/artifacts/agent-a-transcript.json")
             .is_file()
+    );
+    assert!(
+        output
+            .join("matches/build-race-001/artifacts/agent-b-transcript.live.json")
+            .is_file()
+    );
+    assert!(
+        !output
+            .join("matches/build-race-001/artifacts/agent-b-analysis.json")
+            .exists()
     );
     assert!(
         output
@@ -502,13 +526,35 @@ fn generates_benchmark_leaderboard_and_drill_down() {
     let benchmark = root.join("benchmarks/infra-core");
     let arena = benchmark.join("01-first-build-real");
     let round = arena.join("round-001");
-    fs::create_dir_all(&round).expect("round dir");
+    fs::create_dir_all(round.join("agents/deepseek-builder")).expect("round dir");
+    let mut round_state = WorldState::default();
+    round_state.agents.insert(
+        "deepseek-builder".into(),
+        AgentView {
+            territory: "builder-one".into(),
+            model: "deepseek/v4".into(),
+            ..AgentView::default()
+        },
+    );
     fs::write(
         round.join("world.json"),
-        serde_json::to_vec(&WorldState::default()).expect("world"),
+        serde_json::to_vec(&round_state).expect("world"),
     )
     .expect("world file");
     fs::write(round.join("events.jsonl"), "").expect("events");
+    fs::write(
+        round.join("agents/deepseek-builder/transcript.json"),
+        serde_json::to_vec(&json!({
+            "tool_trace": [{
+                "name": "Bash",
+                "input": {"command": "systemctl status app.service"},
+                "output": "active",
+                "started_after_ms": 100
+            }]
+        }))
+        .expect("transcript"),
+    )
+    .expect("transcript file");
 
     let series = SeriesSummary {
         schema_version: 1,
@@ -611,6 +657,10 @@ fn generates_benchmark_leaderboard_and_drill_down() {
     assert!(page.contains("claux · high"));
     assert!(page.contains("4/4"));
     assert!(page.contains("../../series/infra-core-first-build-real/"));
+    assert!(page.contains("Arenas and match evidence"));
+    assert!(page.contains("1 of 1 rounds include strategy analysis"));
+    assert!(page.contains("Round 1 · How they fought"));
+    assert!(page.contains("../../matches/infra-core-first-build-real-round-001/"));
     assert!(
         output
             .join("matches/infra-core-first-build-real-round-001/index.html")
