@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "analyzer": "aoe-controller/0.1.0",
+  "source_sha256": "6aa4df182ad6a56dbb0950058812bbe45611acbbb23c0c1bda1e2727a30a0e54",
+  "agent": "glm-failover-engineer",
+  "territory": "failover-one",
+  "model": "z-ai/glm-5.2",
+  "outcome": "running",
+  "metrics": {
+    "tool_calls": 6,
+    "tool_errors": 0,
+    "discoveries": 3,
+    "mutations": 0,
+    "lifecycle_actions": 1,
+    "validations": 2,
+    "first_mutation_after_ms": 35702,
+    "last_observed_after_ms": 35870
+  },
+  "architecture": {
+    "technologies": [
+      "Python",
+      "SQLite",
+      "systemd"
+    ],
+    "service_units": [
+      "etc/systemd/system/failover-proxy.service",
+      "etc/systemd/system/failover-replica.service",
+      "etc/systemd/system/failover-seed.service"
+    ],
+    "persistent_paths": [
+      "/etc/systemd/system",
+      "/etc/systemd/system/failover-proxy.service",
+      "/etc/systemd/system/failover-replica.service",
+      "/etc/systemd/system/failover-seed.service",
+      "/var/lib/failover",
+      "/var/lib/failover/primary.failed",
+      "/var/lib/failover/primary.fenced",
+      "/var/lib/failover/records.sqlite3",
+      "/var/lib/failover/replica.role",
+      "/var/lib/failover/upstream"
+    ]
+  },
+  "actions": [
+    {
+      "index": 0,
+      "tool_id": "call-0b472b2f-f0b1-44ee-b7e6-03e2d6140071",
+      "kind": "validation",
+      "started_after_ms": 1825,
+      "duration_ms": 72,
+      "description": "Inspect failover state and listening ports",
+      "command": "ls -la /var/lib/failover/ 2>&1; echo \"---\"; cat /var/lib/failover/replica.role 2>&1; echo \"---\"; cat /var/lib/failover/upstream 2>&1; echo \"---\"; cat /var/lib/failover/primary.failed 2>&1; echo \"---\"; ss -tlnp 2>&1 | grep -E ':808[0-9]'",
+      "success": true,
+      "output_excerpt": "total 28\ndrwxr-xr-x 2 root root  4096 Aug 15 05:39 .\ndrwxr-xr-x 9 root root  4096 Aug 15 05:39 ..\n-rw-r--r-- 1 root root     0 Aug 15 05:39 primary.failed\n-rw-r--r-- 1 root root 12288 Aug 15 05:39 records.sqlite3\n-rw-r--r-- 1 root root     8 Aug 15 05:39 replica.role\n-rw-r--r-- 1…"
+    },
+    {
+      "index": 1,
+      "tool_id": "call-2bb0cfb9-d1c1-4e3a-86ac-1e1ea6ba8ecc",
+      "kind": "discovery",
+      "started_after_ms": 3503,
+      "duration_ms": 267,
+      "description": "Look at processes and service definitions",
+      "command": "ps auxf 2>&1 | head -50; echo \"===\"; ls -la /etc/systemd/system/ 2>&1 | grep -i fail; echo \"===\"; ls -la /root /opt 2>&1 | head -40",
+      "success": true,
+      "output_excerpt": "USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND\nroot           2  0.0  0.0      0     0 ?        S    05:38   0:00 [kthreadd]\nroot           3  0.0  0.0      0     0 ?        S    05:38   0:00  \\_ [pool_workqueue_release]\nroot           4  0.0  0.0     …"
+    },
+    {
+      "index": 2,
+      "tool_id": "call-3e0910d2-7c49-4f37-ae17-9cd0aba86379",
+      "kind": "discovery",
+      "started_after_ms": 5419,
+      "duration_ms": 134,
+      "description": "Read service unit definitions",
+      "command": "cat /etc/systemd/system/failover-proxy.service; echo \"===\"; cat /etc/systemd/system/failover-replica.service; echo \"===\"; cat /etc/systemd/system/failover-seed.service; echo \"===\"; systemctl list-units --all 2>&1 | grep -i failover",
+      "success": true,
+      "output_excerpt": "[Unit]\nAfter=failover-seed.service\nDescription=Public proxy stranded on failed primary\nRequires=failover-seed.service\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE=/nix/store/c59mcax29xrwyfdqs308wkmn2srnmzkn-glibc-locales-2.42-67/lib/locale/locale-archive\"\nEnvironment=\"PATH=/nix/store/9…"
+    },
+    {
+      "index": 3,
+      "tool_id": "call-5c25d114-c933-4f47-9fb8-836bd6b53960",
+      "kind": "discovery",
+      "started_after_ms": 7429,
+      "duration_ms": 27,
+      "description": "Read service source code",
+      "command": "cat /nix/store/3lf8if1z3ahcv9mdxqmwncn87hnwdymi-failover-replica.py; echo \"=====PROXY=====\"; cat /nix/store/gy7xaavwyh9mbwz4ll8h6z3ban0s6g93-failover-proxy.py; echo \"=====SEED=====\"; cat /nix/store/vnsdj3nml00cykxy4dmpcsgbwp76jspz-unit-script-failover-seed-start/bin/failover-seed-start",
+      "success": true,
+      "output_excerpt": "import sqlite3\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\nDB = \"/var/lib/failover/records.sqlite3\"\nROLE = \"/var/lib/failover/replica.role\"\ndef role():\n    with open(ROLE) as source: return source.read().strip()\ndef database():\n    connection = sqlite3.con…"
+    },
+    {
+      "index": 4,
+      "tool_id": "call-18a2535a-be89-4f6f-93db-0466d1c8fc45",
+      "kind": "validation",
+      "started_after_ms": 25446,
+      "duration_ms": 259,
+      "description": "Verify records and current public API state",
+      "command": "cd /var/lib/failover\n/nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python - <<'PY'\nimport sqlite3\ndb=sqlite3.connect('/var/lib/failover/records.sqlite3')\nfor r in db.execute('SELECT id,value FROM records ORDER BY id'):\n    print(r)\nPY\necho \"--- 8081 listen check ---\"\nss -tlnp 2>&1 | grep ':8081' || echo \"8081 NOT listening (fenced at network layer)\"\necho \"--- current public API ---\"\ncurl -s -o /dev/null -w \"GET /health via 8080 -> %{http_code}\\n\" http://127.0.0.1:8080/health\ncurl -s -o /dev/null -w \"GET /role via 8080 -> %{http_code}\\n\" http://127.0.0.1:8080/role\ncurl -s -X PUT -d test --max-time 3 -o /dev/null -w \"PUT /records/probe via 8080 -> %{http_code}\\n\" http://127.0.…",
+      "success": true,
+      "output_excerpt": "('customer-blue-8d2', 'blue-original')\n('customer-green-f31', 'green-original')\n('customer-red-4a7', 'red-original')\n--- 8081 listen check ---\n8081 NOT listening (fenced at network layer)\n--- current public API ---\nGET /health via 8080 -> 502\nGET /role via 8080 -> 502\nPUT /record…"
+    },
+    {
+      "index": 5,
+      "tool_id": "call-306d9758-06ff-47e0-805d-dc1cd62bab5e",
+      "kind": "lifecycle",
+      "started_after_ms": 35702,
+      "duration_ms": 168,
+      "description": "Perform fenced, durable promotion and proxy switch",
+      "command": "/nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python - <<'PY'\nimport os, tempfile, stat\n\nSTATE = \"/var/lib/failover\"\n\ndef atomic_write(path, content):\n    \"\"\"Write file atomically with fsync of both data and dir for reboot durability.\"\"\"\n    tmp = path + \".tmp\"\n    fd = os.open(tmp, os.O_WRONLY|os.O_CREAT|os.O_TRUNC, 0o644)\n    os.write(fd, content)\n    os.fsync(fd)\n    os.close(fd)\n    os.replace(tmp, path)\n    # fsync the directory so the rename + new file metadata are durable across reboot\n    dfd = os.open(os.path.dirname(path), os.O_RDONLY)\n    os.fsync(dfd)\n    os.close(dfd)\n    print(\"wrote\", path, \"->\", content.decode().strip() or \"(empty marker)\")\n\n# 1. CONFIRM the …",
+      "success": true,
+      "output_excerpt": "fence check: 8081 not listening -> old primary network-fenced\nwrote /var/lib/failover/primary.fenced -> primary fenced\nprimary.fenced created (durable marker)\nwrote /var/lib/failover/replica.role -> primary\nreplica promoted -> primary\nwrote /var/lib/failover/upstream -> 8082\nprox…"
+    }
+  ]
+}

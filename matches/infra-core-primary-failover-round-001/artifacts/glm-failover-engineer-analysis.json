@@ -1,0 +1,157 @@
+{
+  "schema_version": 1,
+  "analyzer": "aoe-controller/0.1.0",
+  "source_sha256": "d176d33f6a3711e46b5658c8f07af062941b63e675edbd4ff5e6cabe942ecea9",
+  "agent": "glm-failover-engineer",
+  "territory": "failover-three",
+  "model": "z-ai/glm-5.2",
+  "outcome": "running",
+  "metrics": {
+    "tool_calls": 10,
+    "tool_errors": 0,
+    "discoveries": 6,
+    "mutations": 2,
+    "lifecycle_actions": 0,
+    "validations": 2,
+    "first_mutation_after_ms": 3855,
+    "last_observed_after_ms": 58174
+  },
+  "architecture": {
+    "technologies": [
+      "Python",
+      "SQLite",
+      "systemd"
+    ],
+    "service_units": [
+      "failover-proxy.service",
+      "failover-replica.service",
+      "failover-seed.service"
+    ],
+    "persistent_paths": [
+      "/etc/cron",
+      "/etc/crontab",
+      "/etc/rc.local",
+      "/etc/systemd/system",
+      "/etc/systemd/system/failover",
+      "/etc/systemd/system/multi-user.target.wants/failover",
+      "/var/lib/failover",
+      "/var/lib/failover/primary.failed",
+      "/var/lib/failover/primary.fenced",
+      "/var/lib/failover/records.sqlite3",
+      "/var/lib/failover/replica.role",
+      "/var/lib/failover/upstream"
+    ]
+  },
+  "actions": [
+    {
+      "index": 0,
+      "tool_id": "dda724fe-d11f-4d7e-a931-7c57801f8ecf",
+      "kind": "validation",
+      "started_after_ms": 1792,
+      "duration_ms": 87,
+      "description": "Inspect ports, failover dir, and running processes",
+      "command": "ss -ltnp 2>/dev/null | grep -E ':(8080|8081|8082)\\s' ; echo \"---\"; ls -la /var/lib/failover/ 2>/dev/null; echo \"---procs---\"; ps aux | grep -iE 'failover|proxy|primary|replica|8080|8081|8082' | grep -v grep",
+      "success": true,
+      "output_excerpt": "LISTEN 0      5            0.0.0.0:8080       0.0.0.0:*    users:((\"python\",pid=547,fd=3))\nLISTEN 0      5          127.0.0.1:8082       0.0.0.0:*    users:((\"python\",pid=548,fd=3))\n---\ntotal 28\ndrwxr-xr-x 2 root root  4096 Aug 15 05:37 .\ndrwxr-xr-x 9 root root  4096 Aug 15 05:37…"
+    },
+    {
+      "index": 1,
+      "tool_id": "5dfae410-44a2-4455-84ff-0420eea535af",
+      "kind": "mutation",
+      "started_after_ms": 3855,
+      "duration_ms": 147,
+      "description": "Inspect role/upstream files and sqlite contents",
+      "command": "echo \"=== replica.role ===\"; cat /var/lib/failover/replica.role; echo; echo \"=== upstream ===\"; cat /var/lib/failover/upstream; echo; echo \"=== primary.failed exists ===\"; ls -la /var/lib/failover/primary.failed; echo \"=== primary.fenced exists? ===\"; ls -la /var/lib/failover/primary.fenced 2>&1; echo \"=== sqlite tables ===\"; sqlite3 /var/lib/failover/records.sqlite3 \".tables\" 2>&1; echo \"=== schema ===\"; sqlite3 /var/lib/failover/records.sqlite3 \".schema\" 2>&1; echo \"=== rows ===\"; sqlite3 /var/lib/failover/records.sqlite3 \"SELECT id, value FROM records;\" 2>&1",
+      "success": true,
+      "output_excerpt": "=== replica.role ===\nreplica\n\n=== upstream ===\n8081\n\n=== primary.failed exists ===\n-rw-r--r-- 1 root root 0 Aug 15 05:37 /var/lib/failover/primary.failed\n=== primary.fenced exists? ===\nls: cannot access '/var/lib/failover/primary.fenced': No such file or directory\n=== sqlite tabl…"
+    },
+    {
+      "index": 2,
+      "tool_id": "call-93aeed07-40a3-4a55-a2a8-823e266e51df",
+      "kind": "discovery",
+      "started_after_ms": 5886,
+      "duration_ms": 0,
+      "description": null,
+      "command": "Read /nix/store/gy7xaavwyh9mbwz4ll8h6z3ban0s6g93-failover-proxy.py",
+      "success": true,
+      "output_excerpt": "1\timport http.client\n2\tfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n3\tUPSTREAM = \"/var/lib/failover/upstream\"\n4\tclass Handler(BaseHTTPRequestHandler):\n5\t    def forward(self):\n6\t        try:\n7\t            with open(UPSTREAM) as source: port = int(source.rea…"
+    },
+    {
+      "index": 3,
+      "tool_id": "call-e4204769-727b-4708-b9fe-9a2122f5af6b",
+      "kind": "discovery",
+      "started_after_ms": 5886,
+      "duration_ms": 0,
+      "description": null,
+      "command": "Read /nix/store/3lf8if1z3ahcv9mdxqmwncn87hnwdymi-failover-replica.py",
+      "success": true,
+      "output_excerpt": "1\timport sqlite3\n2\tfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n3\tDB = \"/var/lib/failover/records.sqlite3\"\n4\tROLE = \"/var/lib/failover/replica.role\"\n5\tdef role():\n6\t    with open(ROLE) as source: return source.read().strip()\n7\tdef database():\n8\t    connecti…"
+    },
+    {
+      "index": 4,
+      "tool_id": "call-f4c7b590-8e96-407a-aeac-53f34a08ae62",
+      "kind": "discovery",
+      "started_after_ms": 15598,
+      "duration_ms": 357,
+      "description": "Determine init/supervisor and autostart mechanism",
+      "command": "echo \"=== ppid of services ===\"; ps -o pid,ppid,cmd -p 547,548; echo \"=== init system ===\"; ls -la /sbin/init /proc/1/exe 2>&1; echo \"=== systemctl? ===\"; which systemctl 2>&1; systemctl --is-system-running 2>&1; echo \"=== systemd unit dirs ===\"; ls -la /etc/systemd/system/ 2>&1 | head; echo \"=== running units ===\"; systemctl list-units --type=service --state=running 2>&1 | head -30; echo \"=== cron? ===\"; ls -la /etc/cron* /etc/crontab 2>&1; echo \"=== rc.local ===\"; ls -la /etc/rc.local 2>&1; echo \"=== nix-store list ===\"; ls /nix/store/ | grep -i failover",
+      "success": true,
+      "output_excerpt": "=== ppid of services ===\n    PID    PPID CMD\n    547       1 /nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python /nix/store/gy7xaavwyh9mbwz4ll8h6z3ban0s6g93-failover-proxy.py\n    548       1 /nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python /…"
+    },
+    {
+      "index": 5,
+      "tool_id": "call-c82896fc-c942-454f-bab0-19e31ea1162d",
+      "kind": "discovery",
+      "started_after_ms": 23365,
+      "duration_ms": 115,
+      "description": "Inspect failover systemd units and boot-enablement",
+      "command": "echo \"=== all failover units (including dead) ===\"; systemctl list-units --all 'failover*' --no-legend 2>&1; echo \"=== unit files on disk ===\"; ls -la /etc/systemd/system/failover* /etc/systemd/system/multi-user.target.wants/failover* 2>&1; echo \"=== is-enabled ===\"; for u in failover-proxy failover-replica failover-primary failover-seed; do echo -n \"$u: \"; systemctl is-enabled $u 2>&1; done; echo \"=== proxy unit ===\"; systemctl cat failover-proxy.service 2>&1; echo \"=== replica unit ===\"; systemctl cat failover-replica.service 2>&1; echo \"=== seed unit ===\"; systemctl cat failover-seed.service 2>&1",
+      "success": true,
+      "output_excerpt": "=== all failover units (including dead) ===\n  failover-proxy.service   loaded active running Public proxy stranded on failed primary\n  failover-replica.service loaded active running Healthy read-only failover replica\n  failover-seed.service    loaded active exited  Seed failed-pr…"
+    },
+    {
+      "index": 6,
+      "tool_id": "call-8cc0f36b-c02d-421f-a150-e75fbdfe82ee",
+      "kind": "discovery",
+      "started_after_ms": 27793,
+      "duration_ms": 24,
+      "description": "Read the boot seed script that re-seeds topology files",
+      "command": "echo \"=== seed start script dir ===\"; ls -la /nix/store/vnsdj3nml00cykxy4dmpcsgbwp76jspz-unit-script-failover-seed-start/ 2>&1; echo \"=== seed start script ===\"; cat /nix/store/vnsdj3nml00cykxy4dmpcsgbwp76jspz-unit-script-failover-seed-start/bin/failover-seed-start 2>&1",
+      "success": true,
+      "output_excerpt": "=== seed start script dir ===\ntotal 8\ndr-xr-xr-x 3 root root   4096 Jan  1  1970 .\ndrwxrwxr-t 1 root nixbld   40 Aug 15 05:36 ..\ndr-xr-xr-x 2 root root   4096 Jan  1  1970 bin\n=== seed start script ===\n#!/nix/store/byi2zpy2bgcf3dr6y0l8m50rmjj8z7q1-bash-5.3p15/bin/bash\nset -e\n\nins…"
+    },
+    {
+      "index": 7,
+      "tool_id": "call-5d3233ad-11fe-44de-816c-5c6e5899b150",
+      "kind": "discovery",
+      "started_after_ms": 48341,
+      "duration_ms": 203,
+      "description": "Apply durable fenced promotion and proxy switch",
+      "command": "python3 - <<'PY'\nimport os, tempfile\n\nSTATE = \"/var/lib/failover\"\n\ndef atomic_write(path, content):\n    \"\"\"Write content to path atomically with fsync of file and parent dir.\"\"\"\n    d = os.path.dirname(path)\n    fd, tmp = tempfile.mkstemp(dir=d, prefix=\".tmp.\")\n    try:\n        os.write(fd, content)\n        os.fsync(fd)\n    finally:\n        os.close(fd)\n    os.replace(tmp, path)\n    # fsync the directory so the rename/create is durable\n    dirfd = os.open(d, os.O_RDONLY|os.O_DIRECTORY)\n    try:\n        os.fsync(dirfd)\n    finally:\n        os.close(dirfd)\n\ndef atomic_create(path):\n    \"\"\"Create file if absent, fsync file + dir.\"\"\"\n    if os.path.exists(path):\n        # ensure existing content…",
+      "success": true,
+      "output_excerpt": "fence+promote+switch applied with fsync\n=== resulting state files ===\nreplica.role=primary\nupstream=8082\nprimary.failed: -rw-r--r-- 1 root root 0 Aug 15 05:37 /var/lib/failover/primary.failed\nprimary.fenced: -rw-r--r-- 1 root root 7 Aug 15 05:37 /var/lib/failover/primary.fenced"
+    },
+    {
+      "index": 8,
+      "tool_id": "call-ee43755c-07e4-4bf1-9987-b81e59a7f5f6",
+      "kind": "validation",
+      "started_after_ms": 53472,
+      "duration_ms": 193,
+      "description": "Verify public API contract end-to-end",
+      "command": "PUB=\"http://127.0.0.1:8080\"\necho \"=== 8081 must NOT listen ===\"; ss -ltn 2>/dev/null | grep ':8081 ' && echo \"WARN 8081 listening\" || echo \"OK: 8081 not listening\"\necho \"=== GET /health ===\"; curl -s -w \" [%{http_code}]\\n\" $PUB/health\necho \"=== GET /role ===\"; curl -s -w \" [%{http_code}]\\n\" $PUB/role\necho \"=== original record preserved: GET /records/customer-red-4a7 ===\"; curl -s -w \" [%{http_code}]\\n\" $PUB/records/customer-red-4a7\necho \"=== PUT new write /records/customer-purple-777 ===\"; curl -s -w \" [%{http_code}]\\n\" -X PUT --data 'purple-promoted' $PUB/records/customer-purple-777\necho \"=== GET the new write back ===\"; curl -s -w \" [%{http_code}]\\n\" $PUB/records/customer-purple-777\necho \"…",
+      "success": true,
+      "output_excerpt": "=== 8081 must NOT listen ===\nOK: 8081 not listening\n=== GET /health ===\nready [200]\n=== GET /role ===\nprimary [200]\n=== original record preserved: GET /records/customer-red-4a7 ===\nred-original [200]\n=== PUT new write /records/customer-purple-777 ===\n [204]\n=== GET the new write …"
+    },
+    {
+      "index": 9,
+      "tool_id": "call-79b13e51-31fc-4ce9-b430-4bdf20b92111",
+      "kind": "mutation",
+      "started_after_ms": 57928,
+      "duration_ms": 246,
+      "description": "Verify reboot durability via idempotent seed re-run and enabled units",
+      "command": "echo \"=== sqlite persistence of new write ===\"; sqlite3 /var/lib/failover/records.sqlite3 \"SELECT id,value FROM records ORDER BY id;\"\necho \"=== units enabled for boot ===\"; for u in failover-proxy failover-replica failover-seed; do echo -n \"$u: \"; systemctl is-enabled $u; done\necho \"=== simulate boot: re-run seed start script (should NOT overwrite state files) ===\"\n/nix/store/vnsdj3nml00cykxy4dmpcsgbwp76jspz-unit-script-failover-seed-start/bin/failover-seed-start\necho \"seed re-run exit=$?\"\necho -n \"after seed: replica.role=\"; cat /var/lib/failover/replica.role\necho -n \"after seed: upstream=\"; cat /var/lib/failover/upstream\necho -n \"after seed: primary.fenced: \"; ls -la /var/lib/failover/prim…",
+      "success": true,
+      "output_excerpt": "=== sqlite persistence of new write ===\ncustomer-blue-8d2|blue-original\ncustomer-green-f31|green-original\ncustomer-purple-777|purple-promoted\ncustomer-red-4a7|red-original\n=== units enabled for boot ===\nfailover-proxy: enabled\nfailover-replica: enabled\nfailover-seed: enabled\n=== …"
+    }
+  ]
+}

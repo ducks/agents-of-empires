@@ -1,0 +1,233 @@
+{
+  "schema_version": 1,
+  "analyzer": "aoe-controller/0.1.0",
+  "source_sha256": "dce1dde296918e4e14befdeea34af4588b1c6ba6772689c9b68cb899c06ab5b3",
+  "agent": "deepseek-rollout-engineer",
+  "territory": "rollout-two",
+  "model": "deepseek/deepseek-v4-flash-0731",
+  "outcome": "running",
+  "metrics": {
+    "tool_calls": 17,
+    "tool_errors": 0,
+    "discoveries": 5,
+    "mutations": 3,
+    "lifecycle_actions": 2,
+    "validations": 7,
+    "first_mutation_after_ms": 18882,
+    "last_observed_after_ms": 142830
+  },
+  "architecture": {
+    "technologies": [
+      "Python",
+      "SQLite",
+      "systemd"
+    ],
+    "service_units": [
+      "etc/systemd/system/rollout-proxy.service",
+      "etc/systemd/system/rollout-v1.service",
+      "etc/systemd/system/rollout-v2.service",
+      "rollout-proxy.service",
+      "rollout-v1.service",
+      "rollout-v2.service"
+    ],
+    "persistent_paths": [
+      "/etc/systemd/system/rollout-proxy.service",
+      "/etc/systemd/system/rollout-v1.service",
+      "/etc/systemd/system/rollout-v2.service",
+      "/opt/rollout",
+      "/opt/rollout/v2.py",
+      "/var/lib/rollout",
+      "/var/lib/rollout/records.sqlite3",
+      "/var/lib/rollout/upstream"
+    ]
+  },
+  "actions": [
+    {
+      "index": 1,
+      "tool_id": "call_fc8e1bc046bd4bc896a55c14",
+      "kind": "validation",
+      "started_after_ms": 10829,
+      "duration_ms": 94,
+      "description": "Test the live proxy endpoint",
+      "command": "curl -s http://localhost:8080/health 2>&1; echo \"---\"; curl -s http://localhost:8080/version 2>&1; echo \"---\"; curl -s http://localhost:8080/records/test 2>&1; echo \"---\"",
+      "success": true,
+      "output_excerpt": "ready---\nv1---\n---"
+    },
+    {
+      "index": 2,
+      "tool_id": "call_09c64e2fd81c4c9e88c5e781",
+      "kind": "validation",
+      "started_after_ms": 10923,
+      "duration_ms": 52,
+      "description": "Test v1 directly",
+      "command": "curl -s http://localhost:8081/health 2>&1; echo \"---\"; curl -s http://localhost:8081/version 2>&1",
+      "success": true,
+      "output_excerpt": "ready---\nv1"
+    },
+    {
+      "index": 3,
+      "tool_id": "call_2136a9b4cf824cef85cdc072",
+      "kind": "discovery",
+      "started_after_ms": 10976,
+      "duration_ms": 32,
+      "description": "Check upstream config and v2 slot",
+      "command": "cat /var/lib/rollout/upstream 2>&1; echo \"---\"; ls -la /opt/rollout/ 2>&1",
+      "success": true,
+      "output_excerpt": "8081\n---\ntotal 8\ndrwxr-xr-x 2 root root 4096 Aug 15 05:31 .\ndrwxr-xr-x 3 root root 4096 Aug 15 05:31 .."
+    },
+    {
+      "index": 4,
+      "tool_id": "call_8f6afb0d9904485fb4dc2c3d",
+      "kind": "validation",
+      "started_after_ms": 11008,
+      "duration_ms": 84,
+      "description": "Check service status",
+      "command": "systemctl status rollout-v1.service 2>&1; echo \"===\"; systemctl status rollout-proxy.service 2>&1; echo \"===\"; systemctl is-enabled rollout-v1.service rollout-proxy.service rollout-v2.service 2>&1",
+      "success": true,
+      "output_excerpt": "● rollout-v1.service - Existing rollout v1 service\n     Loaded: loaded (/etc/systemd/system/rollout-v1.service; enabled; preset: ignored)\n     Active: active (running) since Sat 2026-08-15 05:31:16 UTC; 18s ago\n Invocation: c7400dbc9b394f4fb77f68430e76ffa1\n   Main PID: 552 (pytho…"
+    },
+    {
+      "index": 5,
+      "tool_id": "call_2261d521121c47f884007f8f",
+      "kind": "discovery",
+      "started_after_ms": 18850,
+      "duration_ms": 32,
+      "description": "Read service unit files",
+      "command": "cat /etc/systemd/system/rollout-v1.service; echo \"===\"; cat /etc/systemd/system/rollout-v2.service; echo \"===\"; cat /etc/systemd/system/rollout-proxy.service",
+      "success": true,
+      "output_excerpt": "[Unit]\nAfter=rollout-seed.service\nDescription=Existing rollout v1 service\nRequires=rollout-seed.service\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE=/nix/store/c59mcax29xrwyfdqs308wkmn2srnmzkn-glibc-locales-2.42-67/lib/locale/locale-archive\"\nEnvironment=\"PATH=/nix/store/97d5ygrvqj55f4n…"
+    },
+    {
+      "index": 6,
+      "tool_id": "call_1438845086ff4a1c8c6dc9c9",
+      "kind": "mutation",
+      "started_after_ms": 18882,
+      "duration_ms": 55,
+      "description": "Inspect sqlite database schema",
+      "command": "ls -la /var/lib/rollout/; echo \"===\"; sqlite3 /var/lib/rollout/records.sqlite3 '.schema' 2>&1; echo \"===\"; sqlite3 /var/lib/rollout/records.sqlite3 'SELECT COUNT(*) FROM records;' 2>&1",
+      "success": true,
+      "output_excerpt": "total 24\ndrwxr-xr-x 2 root root  4096 Aug 15 05:31 .\ndrwxr-xr-x 9 root root  4096 Aug 15 05:31 ..\n-rw-r--r-- 1 root root 12288 Aug 15 05:31 records.sqlite3\n-rw-r--r-- 1 root root     5 Aug 15 05:31 upstream\n===\nCREATE TABLE records (id TEXT PRIMARY KEY, value TEXT NOT NULL);\n===\n…"
+    },
+    {
+      "index": 7,
+      "tool_id": "call_64c5036895bc4e93ab32220e",
+      "kind": "discovery",
+      "started_after_ms": 18938,
+      "duration_ms": 15,
+      "description": "Read the proxy source",
+      "command": "cat /nix/store/08ib8hkpsxizx3zrsv266idphl0r1hgb-rollout-proxy.py",
+      "success": true,
+      "output_excerpt": "import http.client\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n\nUPSTREAM = \"/var/lib/rollout/upstream\"\n\nclass Handler(BaseHTTPRequestHandler):\n    def forward(self):\n        try:\n            with open(UPSTREAM) as source:\n                port = int(source.…"
+    },
+    {
+      "index": 8,
+      "tool_id": "call_ffe8adf2b76943e793594296",
+      "kind": "discovery",
+      "started_after_ms": 31017,
+      "duration_ms": 18,
+      "description": "Read v1 source code",
+      "command": "cat /nix/store/13qi755lbgrlrh6c5jqjdlpf1f7nvffv-rollout-v1.py",
+      "success": true,
+      "output_excerpt": "import sqlite3\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n\nDB = \"/var/lib/rollout/records.sqlite3\"\n\ndef database():\n    connection = sqlite3.connect(DB, timeout=10)\n    connection.execute(\"CREATE TABLE IF NOT EXISTS records (id TEXT PRIMARY KEY, value TEX…"
+    },
+    {
+      "index": 9,
+      "tool_id": "call_ba64708b510548c698c615db",
+      "kind": "mutation",
+      "started_after_ms": 31035,
+      "duration_ms": 18,
+      "description": "Dump existing records",
+      "command": "sqlite3 /var/lib/rollout/records.sqlite3 'SELECT id, quote(value), length(value) FROM records;' 2>&1",
+      "success": true,
+      "output_excerpt": "customer-alpha-73c|'alpha-original'|14\ncustomer-beta-a19|'beta-original'|13"
+    },
+    {
+      "index": 10,
+      "tool_id": "call_4100daa9757e4ac2a4b1be75",
+      "kind": "discovery",
+      "started_after_ms": 86270,
+      "duration_ms": 302,
+      "description": "Check python has sqlite3 module",
+      "command": "/nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python -c \"import sqlite3, http.server; print('ok')\"",
+      "success": true,
+      "output_excerpt": "ok"
+    },
+    {
+      "index": 11,
+      "tool_id": "call_7a2a45fb8d6d47b8ac3945e3",
+      "kind": "mutation",
+      "started_after_ms": 95512,
+      "duration_ms": 0,
+      "description": null,
+      "command": "Write /opt/rollout/v2.py",
+      "success": true,
+      "output_excerpt": "Successfully wrote to /opt/rollout/v2.py"
+    },
+    {
+      "index": 12,
+      "tool_id": "call_30095335588b4d488fef98f2",
+      "kind": "lifecycle",
+      "started_after_ms": 99079,
+      "duration_ms": 1201,
+      "description": "Start v2 service",
+      "command": "systemctl start rollout-v2.service && sleep 1 && systemctl is-active rollout-v2.service",
+      "success": true,
+      "output_excerpt": "active"
+    },
+    {
+      "index": 13,
+      "tool_id": "call_5be1f66547a743fc95f81721",
+      "kind": "validation",
+      "started_after_ms": 108796,
+      "duration_ms": 8224,
+      "description": "Verify v2 directly on 8082",
+      "command": "echo \"v2 /health: $(curl -s -w '|%{http_code}' http://127.0.0.1:8082/health)\"; echo \"v2 /version: $(curl -s -w '|%{http_code}' http://127.0.0.1:8082/version)\"; echo \"v2 alpha: $(curl -s -w '|%{http_code}' http://127.0.0.1:8082/records/customer-alpha-73c)\"; echo \"v2 beta: $(curl -s -w '|%{http_code}' http://127.0.0.1:8082/records/customer-beta-a19)\"; echo \"v2 missing: $(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8082/records/does-not-exist)\"",
+      "success": true,
+      "output_excerpt": "v2 /health: ready|200\nv2 /version: v2|200\nv2 alpha: alpha-original|200\nv2 beta: beta-original|200\nv2 missing: 404"
+    },
+    {
+      "index": 14,
+      "tool_id": "call_4cded3008bf7419b97445cfd",
+      "kind": "validation",
+      "started_after_ms": 117020,
+      "duration_ms": 1123,
+      "description": "Confirm public endpoint still serving v1",
+      "command": "echo \"public /version (should be v1): $(curl -s http://127.0.0.1:8080/version)\"; echo \"public /health: $(curl -s -w '|%{http_code}' http://127.0.0.1:8080/health)\"",
+      "success": true,
+      "output_excerpt": "public /version (should be v1): v1\npublic /health: ready|200"
+    },
+    {
+      "index": 16,
+      "tool_id": "call_e073501d190d4441a9df17f5",
+      "kind": "lifecycle",
+      "started_after_ms": 126766,
+      "duration_ms": 1113,
+      "description": "Restart v2 and verify it survives",
+      "command": "systemctl restart rollout-v2.service && sleep 1 && systemctl is-active rollout-v2.service",
+      "success": true,
+      "output_excerpt": "active"
+    },
+    {
+      "index": 17,
+      "tool_id": "call_37a60f3b5b95462ab661fff6",
+      "kind": "validation",
+      "started_after_ms": 132754,
+      "duration_ms": 2321,
+      "description": "Verify v2 after restart",
+      "command": "echo \"health: $(curl -s -w '|%{http_code}' http://127.0.0.1:8082/health)\"; echo \"version: $(curl -s -w '|%{http_code}' http://127.0.0.1:8082/version)\"; echo \"alpha: $(curl -s -w '|%{http_code}' http://127.0.0.1:8082/records/customer-alpha-73c)\"; echo \"beta: $(curl -s -w '|%{http_code}' http://127.0.0.1:8082/records/customer-beta-a19)\"",
+      "success": true,
+      "output_excerpt": "health: ready|200\nversion: v2|200\nalpha: alpha-original|200\nbeta: beta-original|200"
+    },
+    {
+      "index": 18,
+      "tool_id": "call_6fb9687eaa58463995a9ff3e",
+      "kind": "validation",
+      "started_after_ms": 142785,
+      "duration_ms": 45,
+      "description": "Confirm v1 live just before flip",
+      "command": "echo \"pre-flip v1 direct: $(curl -s -w '|%{http_code}' http://127.0.0.1:8081/version)\"",
+      "success": true,
+      "output_excerpt": "pre-flip v1 direct: v1|200"
+    }
+  ]
+}

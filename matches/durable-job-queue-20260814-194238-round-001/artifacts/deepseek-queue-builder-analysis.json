@@ -1,0 +1,336 @@
+{
+  "schema_version": 1,
+  "analyzer": "aoe-controller/0.1.0",
+  "source_sha256": "6d8f09e8ed3aace8d2f998c51821feca9264f3cb32a8aceaf04d15c72e3a222a",
+  "agent": "deepseek-queue-builder",
+  "territory": "queue-one",
+  "model": "deepseek/deepseek-v4-flash-0731",
+  "outcome": "running",
+  "metrics": {
+    "tool_calls": 26,
+    "tool_errors": 3,
+    "discoveries": 4,
+    "mutations": 16,
+    "lifecycle_actions": 3,
+    "validations": 3,
+    "first_mutation_after_ms": 23376,
+    "last_observed_after_ms": 475357
+  },
+  "architecture": {
+    "technologies": [
+      "Python",
+      "Redis",
+      "SQLite",
+      "systemd"
+    ],
+    "service_units": [
+      "etc/systemd/system/queue-api.service",
+      "etc/systemd/system/queue-seed.service",
+      "etc/systemd/system/queue-worker.service",
+      "queue-api.service",
+      "queue-seed.service",
+      "queue-worker.service"
+    ],
+    "persistent_paths": [
+      "/etc/systemd/system",
+      "/etc/systemd/system/dev-mqueue.mount",
+      "/etc/systemd/system/queue-api.service",
+      "/etc/systemd/system/queue-seed.service",
+      "/etc/systemd/system/queue-worker.service",
+      "/opt/job-queue",
+      "/opt/job-queue/.keep",
+      "/opt/job-queue/api.py",
+      "/opt/job-queue/worker.py",
+      "/var/lib/job-queue",
+      "/var/lib/job-queue/jobs.sqlite3"
+    ]
+  },
+  "actions": [
+    {
+      "index": 1,
+      "tool_id": "call_9fb108b2e17e4ca7a62e0d77",
+      "kind": "discovery",
+      "started_after_ms": 11909,
+      "duration_ms": 5978,
+      "description": "Check environment: directories, python, systemd units",
+      "command": "ls -la /opt/job-queue/ 2>&1; echo \"---\"; ls -la /var/lib/job-queue/ 2>&1; echo \"---\"; python3 --version 2>&1; echo \"---\"; ls /etc/systemd/system/ | grep -i queue 2>&1; echo \"---\"; systemctl list-unit-files 2>/dev/null | grep -i queue",
+      "success": true,
+      "output_excerpt": "ls: cannot access '/opt/job-queue/': No such file or directory\n---\ntotal 20\ndrwxr-xr-x 2 root root  4096 Aug 15 02:43 .\ndrwxr-xr-x 9 root root  4096 Aug 15 02:43 ..\n-rw-r--r-- 1 root root 12288 Aug 15 02:43 jobs.sqlite3\n---\nPython 3.14.7\n---\ndev-mqueue.mount\nqueue-api.service\nque…"
+    },
+    {
+      "index": 2,
+      "tool_id": "call_7d63727b6b69413bb3a03343",
+      "kind": "discovery",
+      "started_after_ms": 17887,
+      "duration_ms": 64,
+      "description": "Check sqlite, systemd state, current user",
+      "command": "which sqlite3; echo \"---\"; systemctl is-system-running 2>&1; echo \"---\"; whoami; id",
+      "success": true,
+      "output_excerpt": "/run/current-system/sw/bin/sqlite3\n---\ndegraded\n---\nroot\nuid=0(root) gid=0(root) groups=0(root)"
+    },
+    {
+      "index": 3,
+      "tool_id": "call_77d84e9f96994c4f988a29f6",
+      "kind": "discovery",
+      "started_after_ms": 23330,
+      "duration_ms": 46,
+      "description": "Read existing systemd unit files",
+      "command": "cat /etc/systemd/system/queue-api.service; echo \"===\"; cat /etc/systemd/system/queue-worker.service; echo \"===\"; cat /etc/systemd/system/queue-seed.service; echo \"===\"; cat /etc/systemd/system/dev-mqueue.mount",
+      "success": true,
+      "output_excerpt": "[Unit]\nAfter=network.target queue-seed.service\nDescription=Agent-built durable queue API slot\nRequires=queue-seed.service\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE=/nix/store/c59mcax29xrwyfdqs308wkmn2srnmzkn-glibc-locales-2.42-67/lib/locale/locale-archive\"\nEnvironment=\"PATH=/nix/sto…"
+    },
+    {
+      "index": 4,
+      "tool_id": "call_1ebc14f2af3e4fc8ba7bb1d2",
+      "kind": "mutation",
+      "started_after_ms": 23376,
+      "duration_ms": 33,
+      "description": "Inspect existing SQLite schema and data",
+      "command": "sqlite3 /var/lib/job-queue/jobs.sqlite3 \".schema\"; echo \"===\"; sqlite3 /var/lib/job-queue/jobs.sqlite3 \"SELECT * FROM jobs LIMIT 10;\" 2>&1; echo \"===\"; sqlite3 /var/lib/job-queue/jobs.sqlite3 \"SELECT COUNT(*) FROM jobs;\" 2>&1",
+      "success": true,
+      "output_excerpt": "CREATE TABLE jobs (id TEXT PRIMARY KEY, payload TEXT NOT NULL, status TEXT NOT NULL, result TEXT, attempts INTEGER NOT NULL DEFAULT 0);\n===\naccepted-alpha-7d3|alpha|queued||0\naccepted-beta-91e|beta|queued||0\naccepted-gamma-c42|gamma|queued||0\n===\n3"
+    },
+    {
+      "index": 5,
+      "tool_id": "call_bbb8000c9aa64211a8847828",
+      "kind": "mutation",
+      "started_after_ms": 36417,
+      "duration_ms": 314,
+      "description": "Verify python interpreter paths and seed service state",
+      "command": "ls -la /nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python 2>&1; echo \"---\"; which python3; python3 -c \"import sqlite3; print('sqlite3 ok')\"; echo \"---\"; ls /nix/store/ | grep -i \"python3-3.14\" | head; echo \"---\"; systemctl status queue-seed.service --no-pager 2>&1 | head -20",
+      "success": true,
+      "output_excerpt": "lrwxrwxrwx 1 root root 10 Jan  1  1970 /nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python -> python3.14\n---\n/run/current-system/sw/bin/python3\nsqlite3 ok\n---\n00gr40y8pa7x732jpkwsvb3n6dxs0dch-python3-3.14.7-env.drv\n0gkcwag87140mwpw1qapxvl342szxa77-python3-3.14.6…"
+    },
+    {
+      "index": 6,
+      "tool_id": "call_7aff1698df9e44dcbaacb65d",
+      "kind": "validation",
+      "started_after_ms": 36731,
+      "duration_ms": 95,
+      "description": "Check mqueue fs, date, and port 8080 state",
+      "command": "date; echo \"---\"; cat /proc/filesystems | grep mqueue; echo \"---\"; ss -tlnp 2>/dev/null | grep 8080 || echo \"nothing on 8080\"",
+      "success": true,
+      "output_excerpt": "Sat Aug 15 02:44:01 AM UTC 2026\n---\nnodev\tmqueue\n---\nnothing on 8080"
+    },
+    {
+      "index": 7,
+      "tool_id": "call_4d9e5aedace64735a2b07166",
+      "kind": "discovery",
+      "started_after_ms": 155104,
+      "duration_ms": 412,
+      "description": "Test Nix python and sqlite3 autocommit API",
+      "command": "/nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python -c \"import sqlite3, json, http.server; import sqlite3; c=sqlite3.connect(':memory:', autocommit=True); c.execute('BEGIN IMMEDIATE'); c.execute('CREATE TABLE t(x)'); c.commit(); print('py+sqlite autocommit OK, sqlite', sqlite3.sqlite_version)\"",
+      "success": true,
+      "output_excerpt": "py+sqlite autocommit OK, sqlite 3.53.3"
+    },
+    {
+      "index": 8,
+      "tool_id": "call_d8a2b9ab369542f0accf3422",
+      "kind": "mutation",
+      "started_after_ms": 155516,
+      "duration_ms": 40,
+      "description": "Check journal mode and filesystems",
+      "command": "sqlite3 /var/lib/job-queue/jobs.sqlite3 \"PRAGMA journal_mode; PRAGMA synchronous; PRAGMA wal_checkpoint;\" 2>&1; echo \"---\"; ls -la /dev/mqueue 2>&1 | head -3; echo \"---\"; df -h /var/lib/job-queue /opt 2>&1",
+      "success": false,
+      "output_excerpt": "delete\n2\n0|-1|-1\n---\ntotal 0\ndrwxrwxrwt  2 root root   40 Aug 15 02:43 .\ndrwxr-xr-x 17 root root 3260 Aug 15 02:43 ..\n---\ndf: /opt: No such file or directory\nFilesystem      Size  Used Avail Use% Mounted on\n/dev/vda        2.0G   36M  1.8G   2% /\n\nExit code: exit status: 1"
+    },
+    {
+      "index": 10,
+      "tool_id": "call_ca04e2763776436186f54eca",
+      "kind": "mutation",
+      "started_after_ms": 166579,
+      "duration_ms": 33,
+      "description": "Create /opt/job-queue directory",
+      "command": "mkdir -p /opt/job-queue && touch /opt/job-queue/.keep && ls -la /opt/job-queue/",
+      "success": true,
+      "output_excerpt": "total 8\ndrwxr-xr-x 2 root root 4096 Aug 15 02:46 .\ndrwxr-xr-x 3 root root 4096 Aug 15 02:46 ..\n-rw-r--r-- 1 root root    0 Aug 15 02:46 .keep"
+    },
+    {
+      "index": 11,
+      "tool_id": "call_a123c5a92b8b4a44a2a8da38",
+      "kind": "mutation",
+      "started_after_ms": 191278,
+      "duration_ms": 0,
+      "description": null,
+      "command": "Write /opt/job-queue/api.py",
+      "success": true,
+      "output_excerpt": "Successfully wrote to /opt/job-queue/api.py"
+    },
+    {
+      "index": 12,
+      "tool_id": "call_f249e3b98bd44ee6b5ac3b9a",
+      "kind": "mutation",
+      "started_after_ms": 191278,
+      "duration_ms": 0,
+      "description": null,
+      "command": "Write /opt/job-queue/worker.py",
+      "success": true,
+      "output_excerpt": "Successfully wrote to /opt/job-queue/worker.py"
+    },
+    {
+      "index": 14,
+      "tool_id": "call_ccbf14b7775542fcb2484071",
+      "kind": "lifecycle",
+      "started_after_ms": 199306,
+      "duration_ms": 2920,
+      "description": "Restart and check status of both services",
+      "command": "chmod 644 /opt/job-queue/api.py /opt/job-queue/worker.py && rm -f /opt/job-queue/.keep && systemctl daemon-reload && systemctl restart queue-api.service queue-worker.service && sleep 2 && systemctl is-active queue-api.service queue-worker.service; echo \"---\"; systemctl status queue-api.service --no-pager 2>&1 | head -8; echo \"---\"; systemctl status queue-worker.service --no-pager 2>&1 | head -8",
+      "success": true,
+      "output_excerpt": "active\nactive\n---\n● queue-api.service - Agent-built durable queue API slot\n     Loaded: loaded (/etc/systemd/system/queue-api.service; enabled; preset: ignored)\n     Active: active (running) since Sat 2026-08-15 02:46:45 UTC; 2s ago\n Invocation: 719861700113476c9a6486c3dc93cee8\n …"
+    },
+    {
+      "index": 15,
+      "tool_id": "call_d92de8ce79484057b4a1b2b4",
+      "kind": "mutation",
+      "started_after_ms": 208556,
+      "duration_ms": 170,
+      "description": "Verify health endpoint and seeded job completion",
+      "command": "echo \"=== health ===\"; curl -s -w \"\\nHTTP %{http_code}\\n\" http://127.0.0.1:8080/health; echo; echo \"=== seeded jobs ===\"; for id in accepted-alpha-7d3 accepted-beta-91e accepted-gamma-c42; do curl -s \"http://127.0.0.1:8080/jobs/$id\"; echo; done; echo \"=== DB ===\"; sqlite3 /var/lib/job-queue/jobs.sqlite3 \"SELECT id, status, result, attempts FROM jobs ORDER BY rowid;\"",
+      "success": true,
+      "output_excerpt": "=== health ===\nready\nHTTP 200\n\n=== seeded jobs ===\n{\"id\": \"accepted-alpha-7d3\", \"payload\": \"alpha\", \"status\": \"queued\", \"result\": null, \"attempts\": 0}\n{\"id\": \"accepted-beta-91e\", \"payload\": \"beta\", \"status\": \"queued\", \"result\": null, \"attempts\": 0}\n{\"id\": \"accepted-gamma-c42\", \"p…"
+    },
+    {
+      "index": 16,
+      "tool_id": "call_d67ece16445d452bb9bf7486",
+      "kind": "validation",
+      "started_after_ms": 213603,
+      "duration_ms": 38,
+      "description": "Check worker and api logs",
+      "command": "journalctl -u queue-worker.service --no-pager -n 30 2>&1; echo \"===\"; journalctl -u queue-api.service --no-pager -n 10 2>&1",
+      "success": true,
+      "output_excerpt": "Aug 15 02:46:58 queue-one python[1354]: [worker] completed accepted-alpha-7d3\nAug 15 02:46:58 queue-one python[1354]: [worker] completed accepted-alpha-7d3\nAug 15 02:46:58 queue-one python[1354]: [worker] completed accepted-alpha-7d3\nAug 15 02:46:58 queue-one python[1354]: [worke…"
+    },
+    {
+      "index": 17,
+      "tool_id": "call_6c8fd0fbe2d44886ab49f3dd",
+      "kind": "mutation",
+      "started_after_ms": 252907,
+      "duration_ms": 198,
+      "description": "Reproduce worker transaction behavior in isolation",
+      "command": "cd /tmp && rm -f t1.sqlite3 && /nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python - <<'EOF'\nimport sqlite3\nconn = sqlite3.connect(\"/tmp/t1.sqlite3\", timeout=10, autocommit=True)\nconn.execute(\"PRAGMA journal_mode=WAL\")\nconn.execute(\"CREATE TABLE jobs (id TEXT PRIMARY KEY, payload TEXT NOT NULL, status TEXT NOT NULL, result TEXT, attempts INTEGER NOT NULL DEFAULT 0)\")\nconn.execute(\"INSERT INTO jobs VALUES ('x','alpha','queued',NULL,0)\")\nconn.commit()\n# replicate worker loop\nconn.execute(\"BEGIN IMMEDIATE\")\ncur = conn.execute(\"SELECT id, payload FROM jobs WHERE status='queued' ORDER BY rowid LIMIT 1\")\nrow = cur.fetchone()\nprint(\"row:\", row)\nconn.execute(\"UPDATE jobs SET status…",
+      "success": true,
+      "output_excerpt": "row: ('x', 'alpha')\nin-tx status: ('done',)\nafter commit:  ('done', 'processed:alpha', 1)\n=== CLI read-back ===\nx|queued||0"
+    },
+    {
+      "index": 18,
+      "tool_id": "call_da4dc36c693a4db9a9436124",
+      "kind": "mutation",
+      "started_after_ms": 280358,
+      "duration_ms": 133,
+      "description": "Check sqlite3 CLI version and fresh connection read",
+      "command": "sqlite3 --version; echo \"---\"; ls -la /tmp/t1.sqlite3*; echo \"---\"; /nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python - <<'EOF'\nimport sqlite3\n# fresh connection, read-only check\nc = sqlite3.connect(\"/tmp/t1.sqlite3\", timeout=5)\nprint(\"journal_mode from fresh conn:\", c.execute(\"PRAGMA journal_mode\").fetchone())\nprint(\"fresh conn read:\", c.execute(\"SELECT id,status,result,attempts FROM jobs\").fetchall())\nc.close()\nEOF",
+      "success": true,
+      "output_excerpt": "3.53.3 2026-06-26 20:14:12 d4c0e51e4aeb96955b99185ab9cde75c339e2c29c3f3f12428d364a10d78alt1 (64-bit)\n---\n-rw-r--r-- 1 root root 12288 Aug 15 02:47 /tmp/t1.sqlite3\n---\njournal_mode from fresh conn: ('wal',)\nfresh conn read: [('x', 'queued', None, 0)]"
+    },
+    {
+      "index": 19,
+      "tool_id": "call_e0f6c2ce43f0443487015025",
+      "kind": "mutation",
+      "started_after_ms": 315320,
+      "duration_ms": 312,
+      "description": "Compare transaction control variants on Python 3.14",
+      "command": "cd /tmp && rm -f v2.sqlite3 v3.sqlite3 v4.sqlite3 && /nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python - <<'EOF'\nimport sqlite3\n\ndef setup(path):\n    c = sqlite3.connect(path, timeout=10, autocommit=True)\n    c.execute(\"PRAGMA journal_mode=WAL\")\n    c.execute(\"CREATE TABLE jobs (id TEXT PRIMARY KEY, payload TEXT NOT NULL, status TEXT NOT NULL, result TEXT, attempts INTEGER NOT NULL DEFAULT 0)\")\n    c.execute(\"INSERT INTO jobs VALUES ('x','alpha','queued',NULL,0)\")\n    c.execute(\"COMMIT\")\n    c.close()\n\ndef show(path, label):\n    c = sqlite3.connect(path, timeout=5)\n    print(label, c.execute(\"SELECT id,status,result,attempts FROM jobs\").fetchall())\n    c.close()\n\n# Varian…",
+      "success": false,
+      "output_excerpt": "Traceback (most recent call last):\n  File \"<stdin>\", line 17, in <module>\n  File \"<stdin>\", line 8, in setup\nsqlite3.OperationalError: cannot commit - no transaction is active\n\nExit code: exit status: 1"
+    },
+    {
+      "index": 20,
+      "tool_id": "call_37feed69b80b4bb8b891b46c",
+      "kind": "mutation",
+      "started_after_ms": 330726,
+      "duration_ms": 434,
+      "description": "Compare transaction variants, fixed setup",
+      "command": "cd /tmp && rm -f v2.sqlite3 v3.sqlite3 v4.sqlite3 && /nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python - <<'EOF'\nimport sqlite3\n\ndef show(path, label):\n    c = sqlite3.connect(path, timeout=5)\n    print(label, c.execute(\"SELECT id,status,result,attempts FROM jobs\").fetchall())\n    c.close()\n\ndef setup(path, autocommit):\n    c = sqlite3.connect(path, timeout=10, autocommit=autocommit)\n    c.execute(\"PRAGMA journal_mode=WAL\")\n    c.execute(\"CREATE TABLE jobs (id TEXT PRIMARY KEY, payload TEXT NOT NULL, status TEXT NOT NULL, result TEXT, attempts INTEGER NOT NULL DEFAULT 0)\")\n    c.execute(\"INSERT INTO jobs VALUES ('x','alpha','queued',NULL,0)\")\n    c.close()\n\n# Variant A: a…",
+      "success": false,
+      "output_excerpt": "A (autocommit=True + BEGIN/COMMIT): [('x', 'done', 'processed:alpha', 1)]\nB default isolation_level: ''\nB (legacy + BEGIN IMMEDIATE + commit()): [('x', 'done', 'processed:alpha', 1)]\n\nTraceback (most recent call last):\n  File \"<stdin>\", line 37, in <module>\nsqlite3.OperationalErr…"
+    },
+    {
+      "index": 21,
+      "tool_id": "call_cbf40b4b18324a5d9c0b2f80",
+      "kind": "mutation",
+      "started_after_ms": 379992,
+      "duration_ms": 238,
+      "description": "Test conn.commit() semantics in autocommit mode",
+      "command": "cd /tmp && rm -f v5.sqlite3 v6.sqlite3 && /nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python - <<'EOF'\nimport sqlite3\n\ndef setup(path):\n    c = sqlite3.connect(path, timeout=10, autocommit=True)\n    c.execute(\"PRAGMA journal_mode=WAL\")\n    c.execute(\"CREATE TABLE jobs (id TEXT PRIMARY KEY, payload TEXT NOT NULL, status TEXT NOT NULL, result TEXT, attempts INTEGER NOT NULL DEFAULT 0)\")\n    c.execute(\"INSERT INTO jobs VALUES ('x','alpha','queued',NULL,0)\")\n    c.close()\n\ndef show(path, label):\n    c = sqlite3.connect(path, timeout=5)\n    print(label, c.execute(\"SELECT id,status,result,attempts FROM jobs\").fetchall())\n    c.close()\n\n# Test 1: worker pattern with conn.commit()…",
+      "success": true,
+      "output_excerpt": "T1 conn.commit() ok\nT1 fresh reader after close: [('x', 'queued', None, 0)]\nT2 conn.commit() after INSERT ok\nT2 fresh reader after close: [('x', 'queued', None, 0), ('y', 'queued', None, 0)]"
+    },
+    {
+      "index": 22,
+      "tool_id": "call_1b7fd90e78804d2a994eec5a",
+      "kind": "mutation",
+      "started_after_ms": 402502,
+      "duration_ms": 0,
+      "description": null,
+      "command": "Edit /opt/job-queue/worker.py",
+      "success": true,
+      "output_excerpt": "Updated /opt/job-queue/worker.py"
+    },
+    {
+      "index": 23,
+      "tool_id": "call_4a535eef35da4bf680b77c89",
+      "kind": "mutation",
+      "started_after_ms": 402502,
+      "duration_ms": 0,
+      "description": null,
+      "command": "Edit /opt/job-queue/api.py",
+      "success": true,
+      "output_excerpt": "Updated /opt/job-queue/api.py"
+    },
+    {
+      "index": 24,
+      "tool_id": "call_ed1756a4c1d24a1184af1191",
+      "kind": "lifecycle",
+      "started_after_ms": 408878,
+      "duration_ms": 3641,
+      "description": "Restart services and verify seeded jobs complete",
+      "command": "systemctl restart queue-api.service queue-worker.service && sleep 3 && echo \"=== DB after restart ===\" && sqlite3 /var/lib/job-queue/jobs.sqlite3 \"SELECT id, status, result, attempts FROM jobs ORDER BY rowid;\" && echo \"=== logs ===\" && journalctl -u queue-worker.service --no-pager --since \"1 min ago\" | tail -10",
+      "success": true,
+      "output_excerpt": "=== DB after restart ===\naccepted-alpha-7d3|done|processed:alpha|1\naccepted-beta-91e|done|processed:beta|1\naccepted-gamma-c42|done|processed:gamma|1\n=== logs ===\nAug 15 02:50:00 queue-one python[1354]: [worker] completed accepted-alpha-7d3\nAug 15 02:50:00 queue-one python[1354]: …"
+    },
+    {
+      "index": 25,
+      "tool_id": "call_dd81dd1f76b14b34ba3ad58a",
+      "kind": "validation",
+      "started_after_ms": 424222,
+      "duration_ms": 2221,
+      "description": "Verify API endpoints and new job submission",
+      "command": "journalctl -u queue-worker.service --no-pager --since \"02:50:13\" | tail -6; echo \"=== API GET seeded ===\"; curl -s http://127.0.0.1:8080/jobs/accepted-beta-91e; echo; echo \"=== submit new jobs ===\"; curl -s -w \" [%{http_code}]\\n\" -d \"hello world\" http://127.0.0.1:8080/jobs/new-x1; curl -s -w \" [%{http_code}]\\n\" -d \"unicode: 你好 🚀\" http://127.0.0.1:8080/jobs/new-x2; sleep 2; echo \"=== new jobs now ===\"; curl -s http://127.0.0.1:8080/jobs/new-x1; echo; curl -s http://127.0.0.1:8080/jobs/new-x2; echo; echo \"=== missing id ===\"; curl -s -w \" [%{http_code}]\\n\" http://127.0.0.1:8080/jobs/nope-123; echo \"=== health exact ===\"; curl -s http://127.0.0.1:8080/health | od -c | head -2",
+      "success": true,
+      "output_excerpt": "Aug 15 02:50:13 queue-one systemd[1]: Stopping Agent-built durable queue worker slot...\nAug 15 02:50:14 queue-one systemd[1]: queue-worker.service: Deactivated successfully.\nAug 15 02:50:14 queue-one systemd[1]: Stopped Agent-built durable queue worker slot.\nAug 15 02:50:14 queue…"
+    },
+    {
+      "index": 26,
+      "tool_id": "call_896f25d62dd4473a824867ed",
+      "kind": "mutation",
+      "started_after_ms": 446913,
+      "duration_ms": 4981,
+      "description": "Crash worker with kill -9 mid-drain, verify recovery",
+      "command": "set -e\n# Batch 1: crash the worker while it drains a big batch\nfor i in $(seq 1 30); do curl -s -o /dev/null -d \"crash-batch-$i\" http://127.0.0.1:8080/jobs/crash-$i; done\nWPID=$(systemctl show -p MainPID --value queue-worker.service)\nkill -9 $WPID\necho \"killed worker pid $WPID at $(date +%T)\"\nsleep 4   # systemd Restart=always brings it back\nsystemctl is-active queue-worker.service\necho \"=== crash-batch results ===\"\nsqlite3 /var/lib/job-queue/jobs.sqlite3 \"SELECT status, COUNT(*) FROM jobs WHERE id LIKE 'crash-%' GROUP BY status; SELECT COUNT(*) AS not_done FROM jobs WHERE id LIKE 'crash-%' AND status!='done'; SELECT COUNT(*) AS bad_attempts FROM jobs WHERE id LIKE 'crash-%' AND attempts != …",
+      "success": true,
+      "output_excerpt": "killed worker pid 2387 at 02:50:52\nactive\n=== crash-batch results ===\ndone|30\n0\n0\n0"
+    },
+    {
+      "index": 27,
+      "tool_id": "call_a277e225ee954e6c931e603b",
+      "kind": "lifecycle",
+      "started_after_ms": 470928,
+      "duration_ms": 124,
+      "description": "Check init, virtualization, reboot tool, journal settings",
+      "command": "echo \"PID1: $(cat /proc/1/comm)\"; systemd-detect-virt 2>/dev/null || echo \"no virt\"; echo \"bootid: $(cat /proc/sys/kernel/random/boot_id)\"; ls /run/systemd/system >/dev/null && echo \"systemd running\"; echo \"---\"; which reboot shutdown; echo \"---\"; sqlite3 /var/lib/job-queue/jobs.sqlite3 \"PRAGMA journal_mode; PRAGMA synchronous; PRAGMA busy_timeout;\"; ls -la /var/lib/job-queue/",
+      "success": true,
+      "output_excerpt": "PID1: systemd\nkvm\nbootid: 11e0639f-48f8-4acf-9fe1-9dd5d814b448\nsystemd running\n---\n/run/current-system/sw/bin/reboot\n/run/current-system/sw/bin/shutdown\n---\nwal\n2\n0\ntotal 52\ndrwxr-xr-x 2 root root  4096 Aug 15 02:51 .\ndrwxr-xr-x 9 root root  4096 Aug 15 02:43 ..\n-rw-r--r-- 1 root…"
+    },
+    {
+      "index": 28,
+      "tool_id": "call_fe2d9855acbf40d7b92d4cd6",
+      "kind": "mutation",
+      "started_after_ms": 471052,
+      "duration_ms": 4305,
+      "description": "Concurrent POST storm while worker drains",
+      "command": "# concurrent submission + drain while worker runs\n(for i in $(seq 1 40); do curl -s -o /dev/null -d \"conc-$i\" http://127.0.0.1:8080/jobs/conc-$i & done; wait)\nsleep 3\nsqlite3 /var/lib/job-queue/jobs.sqlite3 \"SELECT COUNT(*) AS total, SUM(status='done') AS done, SUM(attempts != 1) AS bad_attempts, SUM(result != 'processed:conc-' || substr(id, 6)) AS bad_results FROM jobs WHERE id LIKE 'conc-%';\"",
+      "success": true,
+      "output_excerpt": "40|40|0|0"
+    }
+  ]
+}

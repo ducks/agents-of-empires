@@ -1,0 +1,172 @@
+{
+  "schema_version": 1,
+  "analyzer": "aoe-controller/0.1.0",
+  "source_sha256": "895717755f31512dd27382d585bbd0fd99d25761d629ce312c313254bc6baf40",
+  "agent": "glm-rollout-engineer",
+  "territory": "rollout-three",
+  "model": "z-ai/glm-5.2",
+  "outcome": "completed",
+  "metrics": {
+    "tool_calls": 12,
+    "tool_errors": 0,
+    "discoveries": 2,
+    "mutations": 2,
+    "lifecycle_actions": 2,
+    "validations": 6,
+    "first_mutation_after_ms": 34318,
+    "last_observed_after_ms": 66742
+  },
+  "architecture": {
+    "technologies": [
+      "Python",
+      "SQLite",
+      "systemd"
+    ],
+    "service_units": [
+      "etc/systemd/system/rollout-v2.service",
+      "rollout-v2.service"
+    ],
+    "persistent_paths": [
+      "/etc/systemd/system/rollout-v2.service",
+      "/opt/rollout",
+      "/opt/rollout/v2.py",
+      "/var/lib/rollout",
+      "/var/lib/rollout/records.sqlite3",
+      "/var/lib/rollout/upstream"
+    ]
+  },
+  "actions": [
+    {
+      "index": 0,
+      "tool_id": "chatcmpl-tool-a6d55a48bf034beb",
+      "kind": "validation",
+      "started_after_ms": 4294,
+      "duration_ms": 120,
+      "description": "Inspect rollout services",
+      "command": "systemctl list-units --all 'rollout*' --no-pager 2>&1; echo \"---\"; systemctl status rollout-proxy rollout-v1 rollout-v2 --no-pager 2>&1 | head -60",
+      "success": true,
+      "output_excerpt": "UNIT                  LOAD   ACTIVE SUB     DESCRIPTION\n  rollout-proxy.service loaded active running Stable public rollout proxy\n  rollout-seed.service  loaded active exited  Seed live v1 state\n  rollout-v1.service    loaded active running Existing rollout v1 service\n● rollout-v…"
+    },
+    {
+      "index": 1,
+      "tool_id": "chatcmpl-tool-bdd1fc4840683f55",
+      "kind": "validation",
+      "started_after_ms": 4415,
+      "duration_ms": 86,
+      "description": "Inspect rollout files and ports",
+      "command": "ls -la /opt/rollout/ /var/lib/rollout/ 2>&1; echo \"---UPSTREAM---\"; cat /var/lib/rollout/upstream 2>&1; echo; echo \"---PORTS---\"; ss -ltnp 2>&1 | grep -E '808[012]'",
+      "success": true,
+      "output_excerpt": "/opt/rollout/:\ntotal 8\ndrwxr-xr-x 2 root root 4096 Aug 13 19:30 .\ndrwxr-xr-x 3 root root 4096 Aug 13 19:30 ..\n\n/var/lib/rollout/:\ntotal 24\ndrwxr-xr-x 2 root root  4096 Aug 13 19:30 .\ndrwxr-xr-x 9 root root  4096 Aug 13 19:30 ..\n-rw-r--r-- 1 root root 12288 Aug 13 19:30 records.sq…"
+    },
+    {
+      "index": 2,
+      "tool_id": "chatcmpl-tool-8b9a832833141d2b",
+      "kind": "discovery",
+      "started_after_ms": 9266,
+      "duration_ms": 46,
+      "description": "Inspect unit and service code",
+      "command": "cat /etc/systemd/system/rollout-v2.service; echo \"---PROXY---\"; cat /nix/store/08ib8hkpsxizx3zrsv266idphl0r1hgb-rollout-proxy.py; echo \"---V1---\"; cat /nix/store/13qi755lbgrlrh6c5jqjdlpf1f7nvffv-rollout-v1.py",
+      "success": true,
+      "output_excerpt": "[Unit]\nAfter=rollout-seed.service\nDescription=Agent-built rollout v2 slot\nRequires=rollout-seed.service\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE=/nix/store/c59mcax29xrwyfdqs308wkmn2srnmzkn-glibc-locales-2.42-67/lib/locale/locale-archive\"\nEnvironment=\"PATH=/nix/store/97d5ygrvqj55f4n…"
+    },
+    {
+      "index": 3,
+      "tool_id": "chatcmpl-tool-9d3a271c6cd542b7",
+      "kind": "discovery",
+      "started_after_ms": 9313,
+      "duration_ms": 115,
+      "description": "Inspect database schema",
+      "command": "python3 -c \"\nimport sqlite3\nc=sqlite3.connect('/var/lib/rollout/records.sqlite3')\nfor row in c.execute(\\\"SELECT name,sql FROM sqlite_master WHERE type='table'\\\"):\n    print(row)\nprint('---ROWS---')\ntry:\n    for row in c.execute('SELECT * FROM records LIMIT 5'):\n        print(row)\nexcept Exception as e:\n    print('err',e)\nprint('---COUNT---')\ntry:\n    print(c.execute('SELECT COUNT(*) FROM records').fetchone())\nexcept Exception as e:\n    print('err',e)\n\"",
+      "success": true,
+      "output_excerpt": "('records', 'CREATE TABLE records (id TEXT PRIMARY KEY, value TEXT NOT NULL)')\n---ROWS---\n('customer-alpha-73c', 'alpha-original')\n('customer-beta-a19', 'beta-original')\n---COUNT---\n(2,)"
+    },
+    {
+      "index": 4,
+      "tool_id": "chatcmpl-tool-ac75871519fec72d",
+      "kind": "mutation",
+      "started_after_ms": 34318,
+      "duration_ms": 0,
+      "description": null,
+      "command": "Write /opt/rollout/v2.py",
+      "success": true,
+      "output_excerpt": "Successfully wrote to /opt/rollout/v2.py"
+    },
+    {
+      "index": 5,
+      "tool_id": "chatcmpl-tool-9fee1b28ec8080d9",
+      "kind": "lifecycle",
+      "started_after_ms": 36560,
+      "duration_ms": 1081,
+      "description": "Start v2 service",
+      "command": "systemctl reset-failed rollout-v2.service && systemctl start rollout-v2.service && sleep 1 && systemctl is-active rollout-v2.service && ss -ltnp 2>&1 | grep 8082",
+      "success": true,
+      "output_excerpt": "active\nLISTEN 0      5          127.0.0.1:8082       0.0.0.0:*    users:((\"python\",pid=3933,fd=3))"
+    },
+    {
+      "index": 6,
+      "tool_id": "chatcmpl-tool-b97eae39c7267b07",
+      "kind": "validation",
+      "started_after_ms": 42091,
+      "duration_ms": 185,
+      "description": "Verify v2 endpoints directly",
+      "command": "echo \"--health--\"; curl -s -o /tmp/h -w \"%{http_code}\\n\" http://127.0.0.1:8082/health; cat /tmp/h; echo; echo \"--version--\"; curl -s -o /tmp/v -w \"%{http_code}\\n\" http://127.0.0.1:8082/version; cat /tmp/v; echo; echo \"--existing rec1--\"; curl -s -w \"\\n%{http_code}\\n\" http://127.0.0.1:8082/records/customer-alpha-73c; echo \"--existing rec2--\"; curl -s -w \"\\n%{http_code}\\n\" http://127.0.0.1:8082/records/customer-beta-a19; echo \"--missing--\"; curl -s -w \"\\n%{http_code}\\n\" http://127.0.0.1:8082/records/does-not-exist",
+      "success": true,
+      "output_excerpt": "--health--\n200\nready\n--version--\n200\nv2\n--existing rec1--\nalpha-original\n200\n--existing rec2--\nbeta-original\n200\n--missing--\n\n404"
+    },
+    {
+      "index": 7,
+      "tool_id": "chatcmpl-tool-874cff550d9183ed",
+      "kind": "validation",
+      "started_after_ms": 50470,
+      "duration_ms": 107,
+      "description": "Test v2 PUT and check public endpoint pre-switch",
+      "command": "echo \"--put v2--\"; curl -s -w \"%{http_code}\\n\" -X PUT --data-binary 'v2-test-payload' http://127.0.0.1:8082/records/v2-cutover-probe; echo \"--get v2 probe--\"; curl -s -w \"\\n%{http_code}\\n\" http://127.0.0.1:8082/records/v2-cutover-probe; echo \"--public version (pre-switch)--\"; curl -s -w \"\\n%{http_code}\\n\" http://127.0.0.1:8080/version; echo \"--public health--\"; curl -s -w \"\\n%{http_code}\\n\" http://127.0.0.1:8080/health",
+      "success": true,
+      "output_excerpt": "--put v2--\n204\n--get v2 probe--\nv2-test-payload\n200\n--public version (pre-switch)--\nv1\n200\n--public health--\nready\n200"
+    },
+    {
+      "index": 8,
+      "tool_id": "chatcmpl-tool-8f3aa6e577109fa1",
+      "kind": "mutation",
+      "started_after_ms": 53656,
+      "duration_ms": 32,
+      "description": "Atomically switch upstream to 8082",
+      "command": "cd /var/lib/rollout && printf '8082' > upstream.tmp && mv -f upstream.tmp upstream && echo \"switched\" && cat upstream; echo",
+      "success": true,
+      "output_excerpt": "switched\n8082"
+    },
+    {
+      "index": 9,
+      "tool_id": "chatcmpl-tool-ae833eaa23806729",
+      "kind": "validation",
+      "started_after_ms": 57682,
+      "duration_ms": 136,
+      "description": "Verify public endpoint now served by v2",
+      "command": "echo \"--public version--\"; curl -s -w \"\\n%{http_code}\\n\" http://127.0.0.1:8080/version; echo \"--public health--\"; curl -s -w \"\\n%{http_code}\\n\" http://127.0.0.1:8080/health; echo \"--rec1--\"; curl -s -w \"\\n%{http_code}\\n\" http://127.0.0.1:8080/records/customer-alpha-73c; echo \"--rec2--\"; curl -s -w \"\\n%{http_code}\\n\" http://127.0.0.1:8080/records/customer-beta-a19; echo \"--probe--\"; curl -s -w \"\\n%{http_code}\\n\" http://127.0.0.1:8080/records/v2-cutover-probe; echo \"--missing--\"; curl -s -w \"\\n%{http_code}\\n\" http://127.0.0.1:8080/records/missing",
+      "success": true,
+      "output_excerpt": "--public version--\nv2\n200\n--public health--\nready\n200\n--rec1--\nalpha-original\n200\n--rec2--\nbeta-original\n200\n--probe--\nv2-test-payload\n200\n--missing--\n\n404"
+    },
+    {
+      "index": 10,
+      "tool_id": "chatcmpl-tool-83b4dc5ab688be4e",
+      "kind": "lifecycle",
+      "started_after_ms": 61490,
+      "duration_ms": 1128,
+      "description": "Restart v2 and verify recovery",
+      "command": "systemctl restart rollout-v2.service && sleep 1 && systemctl is-active rollout-v2.service && echo \"--after restart--\" && curl -s -w \"\\n%{http_code}\\n\" http://127.0.0.1:8080/version && curl -s -w \"\\n%{http_code}\\n\" http://127.0.0.1:8080/health && curl -s -w \"\\n%{http_code}\\n\" http://127.0.0.1:8080/records/customer-alpha-73c && curl -s -w \"\\n%{http_code}\\n\" http://127.0.0.1:8080/records/customer-beta-a19",
+      "success": true,
+      "output_excerpt": "active\n--after restart--\nv2\n200\nready\n200\nalpha-original\n200\nbeta-original\n200"
+    },
+    {
+      "index": 11,
+      "tool_id": "chatcmpl-tool-acab03af667acfd8",
+      "kind": "validation",
+      "started_after_ms": 66604,
+      "duration_ms": 138,
+      "description": "Confirm enabled state, ports, upstream, records",
+      "command": "echo \"--enabled states--\"; for u in rollout-proxy rollout-v1 rollout-v2; do printf \"%s: \" \"$u\"; systemctl is-enabled \"$u\"; done; echo \"--final ports--\"; ss -ltnp 2>&1 | grep -E '808[012]'; echo \"--upstream--\"; cat /var/lib/rollout/upstream; echo; echo \"--db intact--\"; python3 -c \"import sqlite3;c=sqlite3.connect('/var/lib/rollout/records.sqlite3');print(c.execute('SELECT id,value FROM records ORDER BY id').fetchall())\"",
+      "success": true,
+      "output_excerpt": "--enabled states--\nrollout-proxy: enabled\nrollout-v1: enabled\nrollout-v2: enabled\n--final ports--\nLISTEN 0      5          127.0.0.1:8082       0.0.0.0:*    users:((\"python\",pid=5627,fd=3))\nLISTEN 0      5          127.0.0.1:8081       0.0.0.0:*    users:((\"python\",pid=548,fd=3))…"
+    }
+  ]
+}

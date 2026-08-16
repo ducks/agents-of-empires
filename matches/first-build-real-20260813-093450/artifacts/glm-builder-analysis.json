@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "analyzer": "aoe-controller/0.1.0",
+  "source_sha256": "cdf70a51b633a3d6ef9508d41648b45a67e7e68e4200ab606543cfcaa933e42d",
+  "agent": "glm-builder",
+  "territory": "builder-three",
+  "model": "z-ai/glm-5.2",
+  "outcome": "completed",
+  "metrics": {
+    "tool_calls": 8,
+    "tool_errors": 0,
+    "discoveries": 1,
+    "mutations": 3,
+    "lifecycle_actions": 2,
+    "validations": 2,
+    "first_mutation_after_ms": 13013,
+    "last_observed_after_ms": 54313
+  },
+  "architecture": {
+    "technologies": [
+      "Python",
+      "systemd"
+    ],
+    "service_units": [
+      "builder-app.service"
+    ],
+    "persistent_paths": [
+      "/etc/os-release",
+      "/opt",
+      "/opt/builder",
+      "/opt/builder/app.py",
+      "/var/lib/builder-app/records"
+    ]
+  },
+  "actions": [
+    {
+      "index": 0,
+      "tool_id": "6fa304e8-5dc0-41c2-886d-b4a24d0c9a14",
+      "kind": "discovery",
+      "started_after_ms": 3124,
+      "duration_ms": 99,
+      "description": "Inspect environment",
+      "command": "cat /etc/os-release 2>/dev/null | head -5; echo \"---\"; systemctl --version 2>/dev/null | head -1; echo \"---\"; which python3 python; echo \"---\"; ls -la /opt/builder/ 2>/dev/null; echo \"---\"; systemctl cat builder-app.service 2>/dev/null",
+      "success": true,
+      "output_excerpt": "ANSI_COLOR=\"0;38;2;126;186;228\"\nBUG_REPORT_URL=\"https://github.com/NixOS/nixpkgs/issues\"\nBUILD_ID=\"26.11.20260810.2fcb964\"\nCPE_NAME=\"cpe:/o:nixos:nixos:26.11\"\nDEFAULT_HOSTNAME=nixos\n---\nsystemd 261 (261.1)\n---\n/run/current-system/sw/bin/python3\n/run/current-system/sw/bin/python\n-…"
+    },
+    {
+      "index": 1,
+      "tool_id": "3d330385-12fe-4874-8a87-d9b82b48cc74",
+      "kind": "validation",
+      "started_after_ms": 8774,
+      "duration_ms": 327,
+      "description": "Check state and python",
+      "command": "ls -la /opt/ 2>/dev/null; echo \"---builder---\"; ls -la /opt/builder/ 2>/dev/null; echo \"---var/lib---\"; ls -ld /var/lib 2>/dev/null; echo \"---enabled?---\"; systemctl is-enabled builder-app.service 2>&1; echo \"---active?---\"; systemctl is-active builder-app.service 2>&1; echo \"---python---\"; python3 --version; python3 -c \"import http.server,socketserver; print('ok')\"",
+      "success": true,
+      "output_excerpt": "---builder---\n---var/lib---\ndrwxr-xr-x 8 root root 4096 Aug 13 16:35 /var/lib\n---enabled?---\nenabled\n---active?---\nfailed\n---python---\nPython 3.14.6\nok"
+    },
+    {
+      "index": 2,
+      "tool_id": "chatcmpl-tool-a6fb15659b866e54",
+      "kind": "mutation",
+      "started_after_ms": 13013,
+      "duration_ms": 24,
+      "description": "Create directories",
+      "command": "mkdir -p /opt/builder /var/lib/builder-app/records",
+      "success": true,
+      "output_excerpt": null
+    },
+    {
+      "index": 3,
+      "tool_id": "chatcmpl-tool-990c43cbc6d20e94",
+      "kind": "mutation",
+      "started_after_ms": 26484,
+      "duration_ms": 0,
+      "description": null,
+      "command": "Write /opt/builder/app.py",
+      "success": true,
+      "output_excerpt": "Successfully wrote to /opt/builder/app.py"
+    },
+    {
+      "index": 4,
+      "tool_id": "chatcmpl-tool-a9b364772c7d65b3",
+      "kind": "lifecycle",
+      "started_after_ms": 28631,
+      "duration_ms": 1068,
+      "description": "Start the service",
+      "command": "chmod +x /opt/builder/app.py; systemctl restart builder-app.service; sleep 1; systemctl is-active builder-app.service; echo \"---status---\"; systemctl status builder-app.service --no-pager -l 2>&1 | head -15",
+      "success": true,
+      "output_excerpt": "active\n---status---\n● builder-app.service - Agent-built application slot\n     Loaded: loaded (/etc/systemd/system/builder-app.service; enabled; preset: ignored)\n     Active: active (running) since Thu 2026-08-13 16:35:55 UTC; 1s ago\n Invocation: d8c5121df2ea4e96a9f8f70d42afc116\n …"
+    },
+    {
+      "index": 5,
+      "tool_id": "chatcmpl-tool-be72f61c064b43d0",
+      "kind": "mutation",
+      "started_after_ms": 37419,
+      "duration_ms": 158,
+      "description": "Verify contract endpoints",
+      "command": "set -e\necho \"== health ==\"\ncurl -s -w \"\\nstatus=%{http_code}\\n\" http://127.0.0.1:8080/health\necho\necho \"== put record ==\"\ncurl -s -o /dev/null -w \"status=%{http_code}\\n\" -X PUT --data-binary 'hello world line1\nline2 \"with quotes\" <and brackets>' http://127.0.0.1:8080/records/test1\necho\necho \"== get record ==\"\ncurl -s -w \"\\nstatus=%{http_code}\\n\" http://127.0.0.1:8080/records/test1\necho\necho \"== binary put ==\"\nhead -c 256 /dev/urandom > /tmp/bin.dat\ncurl -s -o /dev/null -w \"put_status=%{http_code}\\n\" -X PUT --data-binary @/tmp/bin.dat http://127.0.0.1:8080/records/bin1\ncurl -s http://127.0.0.1:8080/records/bin1 > /tmp/bin.out\necho \"binary_match=$(cmp -s /tmp/bin.dat /tmp/bin.out && echo yes |…",
+      "success": true,
+      "output_excerpt": "== health ==\nready\nstatus=200\n\n== put record ==\nstatus=204\n\n== get record ==\nhello world line1\nline2 \"with quotes\" <and brackets>\nstatus=200\n\n== binary put ==\nput_status=204\nbinary_match=yes\n\n== missing record ==\nmissing_status=404"
+    },
+    {
+      "index": 6,
+      "tool_id": "chatcmpl-tool-bdde93837b188081",
+      "kind": "lifecycle",
+      "started_after_ms": 42038,
+      "duration_ms": 1118,
+      "description": "Durability across restart",
+      "command": "echo \"== before restart ==\"\ncurl -s -w \" status=%{http_code}\\n\" http://127.0.0.1:8080/records/test1\nsystemctl restart builder-app.service\nsleep 1\nsystemctl is-active builder-app.service\necho \"== after restart ==\"\ncurl -s -w \" status=%{http_code}\\n\" http://127.0.0.1:8080/records/test1\necho \"== binary after restart ==\"\ncurl -s http://127.0.0.1:8080/records/bin1 > /tmp/bin.out2\necho \"binary_match=$(cmp -s /tmp/bin.dat /tmp/bin.out2 && echo yes || echo no)\"\necho \"== persisted files ==\"\nls -la /var/lib/builder-app/records/",
+      "success": true,
+      "output_excerpt": "== before restart ==\nhello world line1\nline2 \"with quotes\" <and brackets> status=200\nactive\n== after restart ==\nhello world line1\nline2 \"with quotes\" <and brackets> status=200\n== binary after restart ==\nbinary_match=yes\n== persisted files ==\ntotal 16\ndrwxr-xr-x 2 root root 4096 A…"
+    },
+    {
+      "index": 7,
+      "tool_id": "chatcmpl-tool-b6cd6988d01a94f6",
+      "kind": "validation",
+      "started_after_ms": 54132,
+      "duration_ms": 181,
+      "description": "Final verification",
+      "command": "echo \"enabled: $(systemctl is-enabled builder-app.service)\"\necho \"active:  $(systemctl is-active builder-app.service)\"\necho \"listening:\"\nss -ltnp 2>/dev/null | grep ':8080' || true\necho \"== final contract sweep ==\"\ncurl -s -w \" health=%{http_code}\\n\" http://127.0.0.1:8080/health\ncurl -s -o /dev/null -w \" put=%{http_code}\\n\" -X PUT --data-binary 'final-check' http://127.0.0.1:8080/records/final\ncurl -s -w \" get=%{http_code}\\n\" http://127.0.0.1:8080/records/final",
+      "success": true,
+      "output_excerpt": "enabled: enabled\nactive:  active\nlistening:\nLISTEN 0      5            0.0.0.0:8080       0.0.0.0:*    users:((\"python\",pid=727,fd=3))\n== final contract sweep ==\nready health=200\n put=204\nfinal-check get=200"
+    }
+  ]
+}

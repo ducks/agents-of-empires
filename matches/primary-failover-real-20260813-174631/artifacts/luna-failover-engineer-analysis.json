@@ -1,0 +1,233 @@
+{
+  "schema_version": 1,
+  "analyzer": "aoe-controller/0.1.0",
+  "source_sha256": "9ebdc2c0ebdccaded56dd146bdaa0d3af0053a5c4c56252bce565564b76621b0",
+  "agent": "luna-failover-engineer",
+  "territory": "failover-two",
+  "model": "openai/gpt-5.6-luna",
+  "outcome": "running",
+  "metrics": {
+    "tool_calls": 16,
+    "tool_errors": 3,
+    "discoveries": 7,
+    "mutations": 6,
+    "lifecycle_actions": 0,
+    "validations": 3,
+    "first_mutation_after_ms": 19053,
+    "last_observed_after_ms": 59296
+  },
+  "architecture": {
+    "technologies": [
+      "Nginx",
+      "Python",
+      "SQLite",
+      "systemd"
+    ],
+    "service_units": [
+      "etc/systemd/system/failover-promote.service",
+      "etc/systemd/system/failover-proxy.service",
+      "etc/systemd/system/failover-replica.service",
+      "etc/systemd/system/failover-seed.service",
+      "failover-promote.service",
+      "failover-proxy.service",
+      "failover-replica.service",
+      "failover-seed.service"
+    ],
+    "persistent_paths": [
+      "/etc/nginx",
+      "/etc/systemd",
+      "/etc/systemd/system",
+      "/etc/systemd/system/failover-",
+      "/etc/systemd/system/failover-promote.service",
+      "/etc/systemd/system/failover-proxy.service",
+      "/etc/systemd/system/failover-proxy.service.d/promotion.conf",
+      "/etc/systemd/system/failover-replica.service",
+      "/etc/systemd/system/failover-replica.service.d/promotion.conf",
+      "/etc/systemd/system/failover-seed.service",
+      "/var/lib/failover",
+      "/var/lib/failover/primary.failed",
+      "/var/lib/failover/primary.fenced",
+      "/var/lib/failover/records.sqlite3",
+      "/var/lib/failover/replica.role",
+      "/var/lib/failover/upstream"
+    ]
+  },
+  "actions": [
+    {
+      "index": 1,
+      "tool_id": "call_jMGuVo7NZ3skw1s8vrKDP1Ce",
+      "kind": "validation",
+      "started_after_ms": 7491,
+      "duration_ms": 124,
+      "description": "Inspect processes, listeners, and failover state",
+      "command": "ps -efww; printf '\\n--- listening ---\\n'; ss -ltnp; printf '\\n--- state dir ---\\n'; ls -la /var/lib/failover; printf '\\n--- files ---\\n'; file /var/lib/failover/*; printf '\\n--- mounts ---\\n'; findmnt /var/lib/failover || true",
+      "success": true,
+      "output_excerpt": "UID          PID    PPID  C STIME TTY          TIME CMD\nroot           1       0  5 00:46 ?        00:00:01 /run/current-system/systemd/lib/systemd/systemd --switched-root --system --deserialize=46\nroot           2       0  0 00:46 ?        00:00:00 [kthreadd]\nroot           3   …"
+    },
+    {
+      "index": 2,
+      "tool_id": "call_Mtx1IsGBoIB9v1qHZE196AF5",
+      "kind": "discovery",
+      "started_after_ms": 7615,
+      "duration_ms": 11437,
+      "description": "Inspect service and proxy configuration",
+      "command": "systemctl list-unit-files --type=service --no-pager; printf '\\n--- active ---\\n'; systemctl --no-pager --type=service --state=running || true; printf '\\n--- failover refs ---\\n'; grep -RInE '8081|8082|failover|records.sqlite3|replica.role|upstream' /etc/systemd /etc/nginx /etc 2>/dev/null | head -300",
+      "success": true,
+      "output_excerpt": "UNIT FILE                                   STATE           PRESET\nautovt@.service                             alias           -\nblk-availability.service                    linked          ignored\ncapsule@.service                            linked          ignored\nconsole-getty.s…"
+    },
+    {
+      "index": 3,
+      "tool_id": "call_mVz8bgfHafoXFbFKIjnVn2qK",
+      "kind": "mutation",
+      "started_after_ms": 19053,
+      "duration_ms": 67,
+      "description": "Inspect roles, fencing markers, and customer records",
+      "command": "printf '%s\\n' '--- role ---'; od -An -tx1c /var/lib/failover/replica.role 2>/dev/null || true; printf '%s\\n' '--- upstream ---'; od -An -tx1c /var/lib/failover/upstream 2>/dev/null || true; printf '%s\\n' '--- markers ---'; for f in /var/lib/failover/primary.failed /var/lib/failover/primary.fenced; do if [ -e \"$f\" ]; then stat \"$f\"; od -An -tx1c \"$f\" 2>/dev/null; else echo MISSING:$f; fi; done; printf '%s\\n' '--- sqlite ---'; sqlite3 /var/lib/failover/records.sqlite3 '.databases' '.tables' 'select * from records;' 2>&1 || true",
+      "success": true,
+      "output_excerpt": "--- role ---\n  72  65  70  6c  69  63  61  0a\n   r   e   p   l   i   c   a  \\n\n--- upstream ---\n  38  30  38  31  0a\n   8   0   8   1  \\n\n--- markers ---\n  File: /var/lib/failover/primary.failed\n  Size: 0         \tBlocks: 0          IO Block: 4096   regular empty file\nDevice: 253…"
+    },
+    {
+      "index": 4,
+      "tool_id": "call_MV9wuYYwG85Rden0YbptqofO",
+      "kind": "discovery",
+      "started_after_ms": 22961,
+      "duration_ms": 2,
+      "description": null,
+      "command": "Read /etc/systemd/system/failover-seed.service",
+      "success": true,
+      "output_excerpt": "1\t[Unit]\n2\tBefore=failover-replica.service failover-proxy.service\n3\tDescription=Seed failed-primary topology and replicated state\n4\t\n5\t[Service]\n6\tEnvironment=\"LOCALE_ARCHIVE=/nix/store/c59mcax29xrwyfdqs308wkmn2srnmzkn-glibc-locales-2.42-67/lib/locale/locale-archive\"\n7\tEnvironmen…"
+    },
+    {
+      "index": 5,
+      "tool_id": "call_LKUugpuMSbXMmAWS00oRlaHg",
+      "kind": "discovery",
+      "started_after_ms": 22961,
+      "duration_ms": 1,
+      "description": null,
+      "command": "Read /etc/systemd/system/failover-replica.service",
+      "success": true,
+      "output_excerpt": "1\t[Unit]\n2\tAfter=failover-seed.service\n3\tDescription=Healthy read-only failover replica\n4\tRequires=failover-seed.service\n5\t\n6\t[Service]\n7\tEnvironment=\"LOCALE_ARCHIVE=/nix/store/c59mcax29xrwyfdqs308wkmn2srnmzkn-glibc-locales-2.42-67/lib/locale/locale-archive\"\n8\tEnvironment=\"PATH=/…"
+    },
+    {
+      "index": 6,
+      "tool_id": "call_NiSdO44Qes8fuWMhswer1lCk",
+      "kind": "discovery",
+      "started_after_ms": 22961,
+      "duration_ms": 1,
+      "description": null,
+      "command": "Read /etc/systemd/system/failover-proxy.service",
+      "success": true,
+      "output_excerpt": "1\t[Unit]\n2\tAfter=failover-seed.service\n3\tDescription=Public proxy stranded on failed primary\n4\tRequires=failover-seed.service\n5\t\n6\t[Service]\n7\tEnvironment=\"LOCALE_ARCHIVE=/nix/store/c59mcax29xrwyfdqs308wkmn2srnmzkn-glibc-locales-2.42-67/lib/locale/locale-archive\"\n8\tEnvironment=\"P…"
+    },
+    {
+      "index": 7,
+      "tool_id": "call_3ZvRchxaEONKuruVsjA6HlV8",
+      "kind": "discovery",
+      "started_after_ms": 22963,
+      "duration_ms": 32,
+      "description": "Read failover implementation and seed behavior",
+      "command": "sed -n '1,260p' /nix/store/3lf8if1z3ahcv9mdxqmwncn87hnwdymi-failover-replica.py; printf '\\n--- proxy ---\\n'; sed -n '1,260p' /nix/store/gy7xaavwyh9mbwz4ll8h6z3ban0s6g93-failover-proxy.py; printf '\\n--- seed script ---\\n'; sed -n '1,260p' /nix/store/vnsdj3nml00cykxy4dmpcsgbwp76jspz-unit-script-failover-seed-start/bin/failover-seed-start",
+      "success": true,
+      "output_excerpt": "import sqlite3\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\nDB = \"/var/lib/failover/records.sqlite3\"\nROLE = \"/var/lib/failover/replica.role\"\ndef role():\n    with open(ROLE) as source: return source.read().strip()\ndef database():\n    connection = sqlite3.con…"
+    },
+    {
+      "index": 8,
+      "tool_id": "call_ml9eq0PDyOBlXQnGUlLxY3qg",
+      "kind": "validation",
+      "started_after_ms": 22996,
+      "duration_ms": 60,
+      "description": "Inspect complete systemd topology",
+      "command": "systemctl cat failover-seed.service failover-replica.service failover-proxy.service; printf '\\n--- status ---\\n'; systemctl status failover-seed.service failover-replica.service failover-proxy.service --no-pager -l; printf '\\n--- boot deps ---\\n'; systemctl show failover-seed.service failover-replica.service failover-proxy.service -p Id -p FragmentPath -p UnitFileState -p WantedBy -p Before -p After -p Requires -p Restart -p RestartSec",
+      "success": true,
+      "output_excerpt": "# /etc/systemd/system/failover-seed.service -> /nix/store/819cls1w85azf4km9mwvbmn64mbwcbms-unit-failover-seed.service/failover-seed.service\n[Unit]\nBefore=failover-replica.service failover-proxy.service\nDescription=Seed failed-primary topology and replicated state\n\n[Service]\nEnvir…"
+    },
+    {
+      "index": 9,
+      "tool_id": "call_1iniQXNCSKv2dbSxophOLjNQ",
+      "kind": "validation",
+      "started_after_ms": 37276,
+      "duration_ms": 118,
+      "description": "Check current public and replica behavior",
+      "command": "for url in http://127.0.0.1:8080/health http://127.0.0.1:8080/role http://127.0.0.1:8080/records/customer-red-4a7 http://127.0.0.1:8082/health http://127.0.0.1:8082/role; do printf '%s: ' \"$url\"; curl --max-time 2 -sS -w ' [%{http_code}]\\n' \"$url\" || true; done; printf '8081: '; curl --max-time 1 -sS -w '[%{http_code}]\\n' http://127.0.0.1:8081/health || true",
+      "success": true,
+      "output_excerpt": "http://127.0.0.1:8080/health:  [502]\nhttp://127.0.0.1:8080/role:  [502]\nhttp://127.0.0.1:8080/records/customer-red-4a7:  [502]\nhttp://127.0.0.1:8082/health: ready [200]\nhttp://127.0.0.1:8082/role: replica [200]\n8081: [000]\n\ncurl: (7) Failed to connect to 127.0.0.1:8081 after 0 ms…"
+    },
+    {
+      "index": 10,
+      "tool_id": "call_lsIhybycaBfOhXhP7swQGFof",
+      "kind": "discovery",
+      "started_after_ms": 37394,
+      "duration_ms": 20,
+      "description": "Inspect state ownership and unit links",
+      "command": "stat -c '%n mode=%a uid=%u gid=%g size=%s inode=%i' /var/lib/failover/*; ls -la /etc/systemd/system/failover-*",
+      "success": true,
+      "output_excerpt": "/var/lib/failover/primary.failed mode=644 uid=0 gid=0 size=0 inode=245\n/var/lib/failover/records.sqlite3 mode=644 uid=0 gid=0 size=12288 inode=257\n/var/lib/failover/replica.role mode=644 uid=0 gid=0 size=8 inode=244\n/var/lib/failover/upstream mode=644 uid=0 gid=0 size=5 inode=243…"
+    },
+    {
+      "index": 12,
+      "tool_id": "call_JMJfygirZlohVydSo25PeD5h",
+      "kind": "mutation",
+      "started_after_ms": 53340,
+      "duration_ms": 0,
+      "description": null,
+      "command": "Write /usr/local/sbin/failover-promote",
+      "success": true,
+      "output_excerpt": "Successfully wrote to /usr/local/sbin/failover-promote"
+    },
+    {
+      "index": 13,
+      "tool_id": "call_9bUXd2wsUh5HHPiazLTPzZIZ",
+      "kind": "mutation",
+      "started_after_ms": 53340,
+      "duration_ms": 1,
+      "description": null,
+      "command": "Write /etc/systemd/system/failover-promote.service",
+      "success": false,
+      "output_excerpt": "Tool Write failed: Read-only file system (os error 30)"
+    },
+    {
+      "index": 14,
+      "tool_id": "call_f0GG9a7ZtiTtjaXfYi6rdPn6",
+      "kind": "mutation",
+      "started_after_ms": 53342,
+      "duration_ms": 1,
+      "description": null,
+      "command": "Write /etc/systemd/system/failover-replica.service.d/promotion.conf",
+      "success": false,
+      "output_excerpt": "Tool Write failed: Read-only file system (os error 30)"
+    },
+    {
+      "index": 15,
+      "tool_id": "call_0eRLLtdxGMIIYHQcot4sn5w4",
+      "kind": "mutation",
+      "started_after_ms": 53344,
+      "duration_ms": 1,
+      "description": null,
+      "command": "Write /etc/systemd/system/failover-proxy.service.d/promotion.conf",
+      "success": false,
+      "output_excerpt": "Tool Write failed: Read-only file system (os error 30)"
+    },
+    {
+      "index": 16,
+      "tool_id": "call_U4vo50aPNJIgJ0adC8MhI7PD",
+      "kind": "mutation",
+      "started_after_ms": 59128,
+      "duration_ms": 136,
+      "description": "Run the durable fencing and promotion sequence",
+      "command": "ls -ld /usr/local /usr/local/sbin; stat -c '%n mode=%a size=%s' /usr/local/sbin/failover-promote; chmod 0755 /usr/local/sbin/failover-promote; /usr/local/sbin/failover-promote; printf 'promotion exit=%s\\n' \"$?\"",
+      "success": true,
+      "output_excerpt": "drwxr-xr-x 3 root root 4096 Aug 14 00:48 /usr/local\ndrwxr-xr-x 2 root root 4096 Aug 14 00:48 /usr/local/sbin\n/usr/local/sbin/failover-promote mode=644 size=1724\npromotion exit=0"
+    },
+    {
+      "index": 17,
+      "tool_id": "call_g10Qq8VxMhYYF1O9x06LEkFf",
+      "kind": "discovery",
+      "started_after_ms": 59265,
+      "duration_ms": 31,
+      "description": "Confirm writable system locations and existing overrides",
+      "command": "find /etc/systemd/system -maxdepth 2 -type d -name 'failover-*' -o -name 'failover-promote.service' 2>/dev/null; mount | head -30",
+      "success": true,
+      "output_excerpt": "/dev/vda on / type ext4 (rw,relatime,x-initrd.mount)\ntmpfs on /nix/.rw-store type tmpfs (rw,relatime,mode=755,x-initrd.mount)\nnix-store on /nix/.ro-store type 9p (rw,relatime,cache=0xf,access=client,msize=16384,trans=virtio,x-initrd.mount,x-systemd.requires=modprobe@9pnet_virtio.…"
+    }
+  ]
+}

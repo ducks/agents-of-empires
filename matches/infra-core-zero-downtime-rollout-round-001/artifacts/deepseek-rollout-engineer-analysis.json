@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "analyzer": "aoe-controller/0.1.0",
+  "source_sha256": "4ff2520fee86fdb14bff82e174cec5c9b438803a7d33f95cc0b168bdccde2afc",
+  "agent": "deepseek-rollout-engineer",
+  "territory": "rollout-one",
+  "model": "deepseek/deepseek-v4-flash-0731",
+  "outcome": "running",
+  "metrics": {
+    "tool_calls": 5,
+    "tool_errors": 0,
+    "discoveries": 4,
+    "mutations": 0,
+    "lifecycle_actions": 0,
+    "validations": 1,
+    "first_mutation_after_ms": null,
+    "last_observed_after_ms": 19946
+  },
+  "architecture": {
+    "technologies": [
+      "Python",
+      "SQLite",
+      "systemd"
+    ],
+    "service_units": [
+      "etc/systemd/system/rollout-proxy.service",
+      "etc/systemd/system/rollout-v1.service",
+      "etc/systemd/system/rollout-v2.service",
+      "rollout-proxy.service",
+      "rollout-v1.service",
+      "rollout-v2.service"
+    ],
+    "persistent_paths": [
+      "/etc/systemd/system/rollout-proxy.service",
+      "/etc/systemd/system/rollout-v1.service",
+      "/etc/systemd/system/rollout-v2.service",
+      "/opt/rollout",
+      "/var/lib/rollout",
+      "/var/lib/rollout/upstream"
+    ]
+  },
+  "actions": [
+    {
+      "index": 1,
+      "tool_id": "call_c5de4220388d402395c223e6",
+      "kind": "validation",
+      "started_after_ms": 9160,
+      "duration_ms": 73,
+      "description": "Check status of rollout services",
+      "command": "systemctl status rollout-v1.service rollout-proxy.service rollout-v2.service --no-pager -l 2>&1 | head -60",
+      "success": true,
+      "output_excerpt": "● rollout-v1.service - Existing rollout v1 service\n     Loaded: loaded (/etc/systemd/system/rollout-v1.service; enabled; preset: ignored)\n     Active: active (running) since Sat 2026-08-15 05:28:25 UTC; 16s ago\n Invocation: 35d75d17600b4c6d9192aa613f4642f9\n   Main PID: 560 (pytho…"
+    },
+    {
+      "index": 2,
+      "tool_id": "call_616a8204f7224001b73c4e7d",
+      "kind": "discovery",
+      "started_after_ms": 9233,
+      "duration_ms": 31,
+      "description": "Inspect rollout directories and upstream file",
+      "command": "ls -la /opt/rollout/ /var/lib/rollout/ 2>&1; echo \"---\"; cat /var/lib/rollout/upstream 2>&1",
+      "success": true,
+      "output_excerpt": "/opt/rollout/:\ntotal 8\ndrwxr-xr-x 2 root root 4096 Aug 15 05:28 .\ndrwxr-xr-x 3 root root 4096 Aug 15 05:28 ..\n\n/var/lib/rollout/:\ntotal 24\ndrwxr-xr-x 2 root root  4096 Aug 15 05:28 .\ndrwxr-xr-x 9 root root  4096 Aug 15 05:28 ..\n-rw-r--r-- 1 root root 12288 Aug 15 05:28 records.sq…"
+    },
+    {
+      "index": 3,
+      "tool_id": "call_73db0b0814684e839971bf7a",
+      "kind": "discovery",
+      "started_after_ms": 19814,
+      "duration_ms": 25,
+      "description": "Read all three systemd unit files",
+      "command": "cat /etc/systemd/system/rollout-v1.service; echo \"======PROXY======\"; cat /etc/systemd/system/rollout-proxy.service; echo \"======V2======\"; cat /etc/systemd/system/rollout-v2.service",
+      "success": true,
+      "output_excerpt": "[Unit]\nAfter=rollout-seed.service\nDescription=Existing rollout v1 service\nRequires=rollout-seed.service\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE=/nix/store/c59mcax29xrwyfdqs308wkmn2srnmzkn-glibc-locales-2.42-67/lib/locale/locale-archive\"\nEnvironment=\"PATH=/nix/store/97d5ygrvqj55f4n…"
+    },
+    {
+      "index": 4,
+      "tool_id": "call_ab8581e7abdb4351aa615145",
+      "kind": "discovery",
+      "started_after_ms": 19840,
+      "duration_ms": 42,
+      "description": "Read v1 and proxy python scripts",
+      "command": "cat /nix/store/13qi755lbgrlrh6c5jqjdlpf1f7nvffv-rollout-v1.py; echo \"======PROXY SCRIPT======\"; cat /nix/store/08ib8hkpsxizx3zrsv266idphl0r1hgb-rollout-proxy.py",
+      "success": true,
+      "output_excerpt": "import sqlite3\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n\nDB = \"/var/lib/rollout/records.sqlite3\"\n\ndef database():\n    connection = sqlite3.connect(DB, timeout=10)\n    connection.execute(\"CREATE TABLE IF NOT EXISTS records (id TEXT PRIMARY KEY, value TEX…"
+    },
+    {
+      "index": 5,
+      "tool_id": "call_3b71abbde4024c7b9f51e4e0",
+      "kind": "discovery",
+      "started_after_ms": 19882,
+      "duration_ms": 64,
+      "description": "Inspect sqlite database schema and contents",
+      "command": "python3 -c \"\nimport sqlite3\ncon = sqlite3.connect('file:/var/lib/rollout/records.sqlite3?mode=ro', uri=True)\ncur = con.cursor()\ncur.execute(\\\"SELECT name FROM sqlite_master WHERE type='table'\\\")\nprint('tables:', cur.fetchall())\nfor (t,) in cur.execute(\\\"SELECT name FROM sqlite_master WHERE type='table'\\\"):\n    cur.execute(f'SELECT * FROM {t}')\n    rows = cur.fetchall()\n    print(t, 'rows:', len(rows))\n    for r in rows[:5]:\n        print(' ', r)\n\"",
+      "success": true,
+      "output_excerpt": "tables: [('records',)]\nrecords rows: 2\n  ('customer-alpha-73c', 'alpha-original')\n  ('customer-beta-a19', 'beta-original')"
+    }
+  ]
+}

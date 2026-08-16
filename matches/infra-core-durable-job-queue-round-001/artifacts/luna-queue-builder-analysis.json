@@ -1,0 +1,196 @@
+{
+  "schema_version": 1,
+  "analyzer": "aoe-controller/0.1.0",
+  "source_sha256": "637f90c5e6113f507e6d2ca2a4ca9bdccdc775243cab66dd558d3c2064116e5a",
+  "agent": "luna-queue-builder",
+  "territory": "queue-two",
+  "model": "openai/gpt-5.6-luna",
+  "outcome": "running",
+  "metrics": {
+    "tool_calls": 14,
+    "tool_errors": 1,
+    "discoveries": 6,
+    "mutations": 4,
+    "lifecycle_actions": 1,
+    "validations": 3,
+    "first_mutation_after_ms": 4981,
+    "last_observed_after_ms": 43796
+  },
+  "architecture": {
+    "technologies": [
+      "Python",
+      "SQLite",
+      "systemd"
+    ],
+    "service_units": [
+      "*/queue-api.service",
+      "*/queue-worker.service",
+      "queue-api.service",
+      "queue-seed.service",
+      "queue-worker.service"
+    ],
+    "persistent_paths": [
+      "/opt/job-queue",
+      "/opt/job-queue/api.py",
+      "/opt/job-queue/worker.py",
+      "/var/lib/job-queue",
+      "/var/lib/job-queue/jobs.sqlite3"
+    ]
+  },
+  "actions": [
+    {
+      "index": 1,
+      "tool_id": "call_Nd0nwoariXIQIeaem3zj29ct",
+      "kind": "discovery",
+      "started_after_ms": 4883,
+      "duration_ms": 0,
+      "description": null,
+      "command": "Glob {\"include_build_dirs\":true,\"include_hidden\":true,\"path\":\"/opt/job-queue\",\"pattern\":\"**/*\"}",
+      "success": false,
+      "output_excerpt": "could not resolve path /opt/job-queue"
+    },
+    {
+      "index": 2,
+      "tool_id": "call_pMzWbq4o7QLDoOMZrhh1BqL7",
+      "kind": "validation",
+      "started_after_ms": 4883,
+      "duration_ms": 97,
+      "description": "Inspect queue systemd units",
+      "command": "systemctl status queue-api.service queue-worker.service --no-pager || true; printf '\\n--- units ---\\n'; systemctl cat queue-api.service queue-worker.service 2>&1 || true",
+      "success": true,
+      "output_excerpt": "× queue-api.service - Agent-built durable queue API slot\n     Loaded: loaded (/etc/systemd/system/queue-api.service; enabled; preset: ignored)\n     Active: failed (Result: start-limit-hit) since Sat 2026-08-15 05:09:22 UTC; 3s ago\n   Duration: 147ms\n Invocation: 1b3ffc5e462c4d1ea…"
+    },
+    {
+      "index": 3,
+      "tool_id": "call_SaVAtWsNQFAmWHEd9RaXNYYg",
+      "kind": "mutation",
+      "started_after_ms": 4981,
+      "duration_ms": 52,
+      "description": "Inspect existing queue database",
+      "command": "ls -la /var/lib/job-queue 2>&1; if [ -f /var/lib/job-queue/jobs.sqlite3 ]; then sqlite3 /var/lib/job-queue/jobs.sqlite3 '.schema' '.mode column' 'select * from jobs;' 2>&1; fi",
+      "success": true,
+      "output_excerpt": "total 20\ndrwxr-xr-x 2 root root  4096 Aug 15 05:09 .\ndrwxr-xr-x 9 root root  4096 Aug 15 05:09 ..\n-rw-r--r-- 1 root root 12288 Aug 15 05:09 jobs.sqlite3\nCREATE TABLE jobs (id TEXT PRIMARY KEY, payload TEXT NOT NULL, status TEXT NOT NULL, result TEXT, attempts INTEGER NOT NULL DEF…"
+    },
+    {
+      "index": 4,
+      "tool_id": "call_nk1TTu6liN1gM90nUFdjtuBe",
+      "kind": "discovery",
+      "started_after_ms": 5033,
+      "duration_ms": 1070,
+      "description": "Locate queue deployment artifacts",
+      "command": "find / -maxdepth 3 -iname '*job*queue*' -o -path '*/queue-api.service' -o -path '*/queue-worker.service' 2>/dev/null | sort",
+      "success": true,
+      "output_excerpt": "/var/lib/job-queue"
+    },
+    {
+      "index": 5,
+      "tool_id": "call_UAIwVEjoxFyCRVL4cgl6nBLc",
+      "kind": "validation",
+      "started_after_ms": 8947,
+      "duration_ms": 28,
+      "description": "Inspect queue service failure logs",
+      "command": "journalctl -u queue-api.service -u queue-worker.service -n 80 --no-pager -o cat",
+      "success": true,
+      "output_excerpt": "Started Agent-built durable queue API slot.\nStarted Agent-built durable queue worker slot.\n/nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python: can't open file '/opt/job-queue/api.py': [Errno 2] No such file or directory\n/nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g…"
+    },
+    {
+      "index": 6,
+      "tool_id": "call_1I8C2MVsVNArgfwMWk7LOWXG",
+      "kind": "validation",
+      "started_after_ms": 8976,
+      "duration_ms": 45,
+      "description": "Inspect seed unit and target directory",
+      "command": "systemctl cat queue-seed.service 2>&1 || true; systemctl status queue-seed.service --no-pager || true; ls -la /opt /opt/job-queue 2>&1 || true",
+      "success": true,
+      "output_excerpt": "# /etc/systemd/system/queue-seed.service -> /nix/store/cby1pq2f53kg8q9gjfc27rqxkkqgy629-unit-queue-seed.service/queue-seed.service\n[Unit]\nBefore=queue-api.service queue-worker.service\nDescription=Seed opaque jobs accepted before the deployment\n\n[Service]\nEnvironment=\"LOCALE_ARCHI…"
+    },
+    {
+      "index": 7,
+      "tool_id": "call_CaEwOId9maayFOs8oWgHK72s",
+      "kind": "mutation",
+      "started_after_ms": 9021,
+      "duration_ms": 28,
+      "description": "Inspect runtime and database permissions",
+      "command": "stat -c '%A %U:%G %n' /var/lib/job-queue /var/lib/job-queue/jobs.sqlite3; command -v python3; python3 --version; command -v sqlite3 || true",
+      "success": true,
+      "output_excerpt": "drwxr-xr-x root:root /var/lib/job-queue\n-rw-r--r-- root:root /var/lib/job-queue/jobs.sqlite3\n/run/current-system/sw/bin/python3\nPython 3.14.7\n/run/current-system/sw/bin/sqlite3"
+    },
+    {
+      "index": 8,
+      "tool_id": "call_VDwblODxOEmghGGYnM7H5zmR",
+      "kind": "discovery",
+      "started_after_ms": 9050,
+      "duration_ms": 54,
+      "description": "Inspect enabled queue units",
+      "command": "systemctl is-enabled queue-api.service queue-worker.service; systemctl list-unit-files 'queue*' --no-pager",
+      "success": true,
+      "output_excerpt": "enabled\nenabled\nUNIT FILE            STATE   PRESET\nqueue-api.service    enabled ignored\nqueue-seed.service   enabled ignored\nqueue-worker.service enabled ignored\n\n3 unit files listed."
+    },
+    {
+      "index": 10,
+      "tool_id": "call_ivkzCfGUHy7UrnIhSt0OLA2o",
+      "kind": "mutation",
+      "started_after_ms": 29366,
+      "duration_ms": 0,
+      "description": null,
+      "command": "Write /opt/job-queue/api.py",
+      "success": true,
+      "output_excerpt": "Successfully wrote to /opt/job-queue/api.py"
+    },
+    {
+      "index": 11,
+      "tool_id": "call_SFZAJgQyOBto3r1vglYXX7GQ",
+      "kind": "mutation",
+      "started_after_ms": 32099,
+      "duration_ms": 0,
+      "description": null,
+      "command": "Write /opt/job-queue/worker.py",
+      "success": true,
+      "output_excerpt": "Successfully wrote to /opt/job-queue/worker.py"
+    },
+    {
+      "index": 12,
+      "tool_id": "call_eUCcDFL2SglAD8PWZpfJwG4n",
+      "kind": "discovery",
+      "started_after_ms": 36570,
+      "duration_ms": 0,
+      "description": null,
+      "command": "Read /opt/job-queue/api.py",
+      "success": true,
+      "output_excerpt": "1\t#!/run/current-system/sw/bin/python3\n2\timport json\n3\timport sqlite3\n4\tfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n5\tfrom urllib.parse import unquote, urlsplit\n6\t\n7\tDB_PATH = \"/var/lib/job-queue/jobs.sqlite3\"\n8\t\n9\t\n10\tdef connect():\n11\t    connection = sq…"
+    },
+    {
+      "index": 13,
+      "tool_id": "call_NngJfFXPzea3lO9G0ancFOlU",
+      "kind": "discovery",
+      "started_after_ms": 36570,
+      "duration_ms": 0,
+      "description": null,
+      "command": "Read /opt/job-queue/worker.py",
+      "success": true,
+      "output_excerpt": "1\t#!/run/current-system/sw/bin/python3\n2\timport sqlite3\n3\timport time\n4\t\n5\tDB_PATH = \"/var/lib/job-queue/jobs.sqlite3\"\n6\t\n7\t\n8\tdef connect():\n9\t    connection = sqlite3.connect(DB_PATH, timeout=30.0)\n10\t    connection.execute(\"PRAGMA busy_timeout=30000\")\n11\t    connection.execute…"
+    },
+    {
+      "index": 14,
+      "tool_id": "call_bnLtYYBpiYnuJEcSt5GtCq2P",
+      "kind": "discovery",
+      "started_after_ms": 36571,
+      "duration_ms": 175,
+      "description": "Check queue script syntax and permissions",
+      "command": "python3 -m py_compile /opt/job-queue/api.py /opt/job-queue/worker.py && stat -c '%A %U:%G %n' /opt/job-queue/api.py /opt/job-queue/worker.py",
+      "success": true,
+      "output_excerpt": "-rw-r--r-- root:root /opt/job-queue/api.py\n-rw-r--r-- root:root /opt/job-queue/worker.py"
+    },
+    {
+      "index": 16,
+      "tool_id": "call_iqCr2fL0hagHM0gkaikV9UjK",
+      "kind": "lifecycle",
+      "started_after_ms": 41766,
+      "duration_ms": 2030,
+      "description": "Start and enable durable queue services",
+      "command": "systemctl reset-failed queue-api.service queue-worker.service && systemctl daemon-reload && systemctl enable queue-api.service queue-worker.service && systemctl restart queue-worker.service queue-api.service && sleep 1 && systemctl is-active queue-api.service queue-worker.service && systemctl is-enabled queue-api.service queue-worker.service",
+      "success": true,
+      "output_excerpt": "active\nactive\nenabled\nenabled"
+    }
+  ]
+}

@@ -1,0 +1,156 @@
+{
+  "schema_version": 1,
+  "analyzer": "aoe-controller/0.1.0",
+  "source_sha256": "62dcf178831ca4f0b49ea4406feb4f0764aedd74014bef2172762ad58886d4f0",
+  "agent": "glm-queue-builder",
+  "territory": "queue-one",
+  "model": "z-ai/glm-5.2",
+  "outcome": "completed",
+  "metrics": {
+    "tool_calls": 10,
+    "tool_errors": 0,
+    "discoveries": 3,
+    "mutations": 3,
+    "lifecycle_actions": 3,
+    "validations": 1,
+    "first_mutation_after_ms": 11364,
+    "last_observed_after_ms": 85542
+  },
+  "architecture": {
+    "technologies": [
+      "Python",
+      "SQLite",
+      "systemd"
+    ],
+    "service_units": [
+      "etc/systemd/system/queue-api.service",
+      "etc/systemd/system/queue-seed.service",
+      "etc/systemd/system/queue-worker.service",
+      "queue-api.service",
+      "queue-seed.service",
+      "queue-worker.service"
+    ],
+    "persistent_paths": [
+      "/etc/systemd/system/queue-api.service",
+      "/etc/systemd/system/queue-seed.service",
+      "/etc/systemd/system/queue-worker.service",
+      "/opt/job-queue",
+      "/opt/job-queue/api.py",
+      "/opt/job-queue/worker.py",
+      "/var/lib/job-queue",
+      "/var/lib/job-queue/jobs.sqlite3"
+    ]
+  },
+  "actions": [
+    {
+      "index": 0,
+      "tool_id": "call_fe2847454b2243e1bb7ec7e5",
+      "kind": "discovery",
+      "started_after_ms": 2889,
+      "duration_ms": 5607,
+      "description": "Inspect existing queue slots",
+      "command": "ls -la /opt/job-queue/ 2>/dev/null; echo \"---\"; ls -la /var/lib/job-queue/ 2>/dev/null; echo \"---\"; systemctl list-unit-files 2>/dev/null | grep -i queue; echo \"---\"; cat /etc/systemd/system/queue-api.service 2>/dev/null; echo \"---worker---\"; cat /etc/systemd/system/queue-worker.service 2>/dev/null",
+      "success": true,
+      "output_excerpt": "---\ntotal 20\ndrwxr-xr-x 2 root root  4096 Aug 15 03:26 .\ndrwxr-xr-x 9 root root  4096 Aug 15 03:26 ..\n-rw-r--r-- 1 root root 12288 Aug 15 03:26 jobs.sqlite3\n---\ndev-mqueue.mount                            enabled         ignored\nqueue-api.service                           enabled…"
+    },
+    {
+      "index": 1,
+      "tool_id": "call_67bc2c0d27c14fce86701876",
+      "kind": "mutation",
+      "started_after_ms": 11364,
+      "duration_ms": 141,
+      "description": "Inspect seed service and DB schema",
+      "command": "cat /etc/systemd/system/queue-seed.service 2>/dev/null; echo \"===DB schema===\"; sqlite3 /var/lib/job-queue/jobs.sqlite3 \".schema\" 2>/dev/null || python3 -c \"import sqlite3; c=sqlite3.connect('/var/lib/job-queue/jobs.sqlite3'); print(list(c.execute(\\\"SELECT sql FROM sqlite_master WHERE type='table'\\\"))); print(list(c.execute('SELECT * FROM jobs LIMIT 5')))\"",
+      "success": true,
+      "output_excerpt": "[Unit]\nBefore=queue-api.service queue-worker.service\nDescription=Seed opaque jobs accepted before the deployment\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE=/nix/store/c59mcax29xrwyfdqs308wkmn2srnmzkn-glibc-locales-2.42-67/lib/locale/locale-archive\"\nEnvironment=\"PATH=/nix/store/97d5yg…"
+    },
+    {
+      "index": 2,
+      "tool_id": "call_8f068883c8604f029a1074c3",
+      "kind": "discovery",
+      "started_after_ms": 14663,
+      "duration_ms": 92,
+      "description": "Check DB contents and python",
+      "command": "python3 -c \"\nimport sqlite3\nc=sqlite3.connect('/var/lib/job-queue/jobs.sqlite3')\nprint('count', c.execute('SELECT COUNT(*) FROM jobs').fetchone())\nprint('statuses', list(c.execute('SELECT status, COUNT(*) FROM jobs GROUP BY status')))\nfor r in c.execute('SELECT * FROM jobs LIMIT 5'): print(r)\n\"; echo \"---\"; which sqlite3; echo \"---python---\"; /nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python --version",
+      "success": true,
+      "output_excerpt": "count (3,)\nstatuses [('queued', 3)]\n('accepted-alpha-7d3', 'alpha', 'queued', None, 0)\n('accepted-beta-91e', 'beta', 'queued', None, 0)\n('accepted-gamma-c42', 'gamma', 'queued', None, 0)\n---\n/run/current-system/sw/bin/sqlite3\n---python---\nPython 3.14.7"
+    },
+    {
+      "index": 3,
+      "tool_id": "call_5de18460fbc4453f8b58fee5",
+      "kind": "mutation",
+      "started_after_ms": 48976,
+      "duration_ms": 0,
+      "description": null,
+      "command": "Write /opt/job-queue/api.py",
+      "success": true,
+      "output_excerpt": "Successfully wrote to /opt/job-queue/api.py"
+    },
+    {
+      "index": 4,
+      "tool_id": "call_cfa1006bd8cf42f7b99cb4b6",
+      "kind": "mutation",
+      "started_after_ms": 58360,
+      "duration_ms": 0,
+      "description": null,
+      "command": "Write /opt/job-queue/worker.py",
+      "success": true,
+      "output_excerpt": "Successfully wrote to /opt/job-queue/worker.py"
+    },
+    {
+      "index": 5,
+      "tool_id": "call_ab0f7f60ed2247b98f744512",
+      "kind": "lifecycle",
+      "started_after_ms": 60487,
+      "duration_ms": 2065,
+      "description": "Reload and start services",
+      "command": "systemctl daemon-reload; systemctl restart queue-api.service queue-worker.service; sleep 1.5; systemctl is-active queue-api.service queue-worker.service; echo \"---health---\"; curl -s -w \"\\n%{http_code}\\n\" http://127.0.0.1:8080/health",
+      "success": true,
+      "output_excerpt": "active\nactive\n---health---\nready\n200"
+    },
+    {
+      "index": 6,
+      "tool_id": "call_cc6ddffa00b14689b7e7e82a",
+      "kind": "discovery",
+      "started_after_ms": 64744,
+      "duration_ms": 1085,
+      "description": "Verify seeded jobs processed",
+      "command": "sleep 1; python3 -c \"\nimport sqlite3\nc=sqlite3.connect('/var/lib/job-queue/jobs.sqlite3')\nprint('statuses', list(c.execute('SELECT status, COUNT(*) FROM jobs GROUP BY status')))\nfor r in c.execute('SELECT id,payload,status,result,attempts FROM jobs'): print(r)\n\"",
+      "success": true,
+      "output_excerpt": "statuses [('done', 3)]\n('accepted-alpha-7d3', 'alpha', 'done', 'processed:alpha', 1)\n('accepted-beta-91e', 'beta', 'done', 'processed:beta', 1)\n('accepted-gamma-c42', 'gamma', 'done', 'processed:gamma', 1)"
+    },
+    {
+      "index": 7,
+      "tool_id": "call_a79c8b50255a4a8284a1997e",
+      "kind": "lifecycle",
+      "started_after_ms": 71509,
+      "duration_ms": 2998,
+      "description": "Test full API contract and restart durability",
+      "command": "set -e\n# Post a new job, then restart worker mid-flight simulation: post a job, immediately restart worker\ncurl -s -o /dev/null -w \"POST new: %{http_code}\\n\" -X POST --data-binary 'hello-world' http://127.0.0.1:8080/jobs/test-001\nsleep 0.3\necho \"--- GET test-001 ---\"\ncurl -s http://127.0.0.1:8080/jobs/test-001; echo\n\n# Restart worker to prove durability\nsystemctl restart queue-worker.service\nsleep 1\necho \"--- after worker restart ---\"\ncurl -s http://127.0.0.1:8080/jobs/test-001; echo\n\n# Restart api too\nsystemctl restart queue-api.service\nsleep 1\ncurl -s -w \"\\nhealth: %{http_code}\\n\" http://127.0.0.1:8080/health\ncurl -s http://127.0.0.1:8080/jobs/accepted-alpha-7d3; echo\n\n# UTF-8 payload test…",
+      "success": true,
+      "output_excerpt": "POST new: 202\n--- GET test-001 ---\n{\"id\": \"test-001\", \"payload\": \"hello-world\", \"status\": \"done\", \"result\": \"processed:hello-world\", \"attempts\": 1}\n--- after worker restart ---\n{\"id\": \"test-001\", \"payload\": \"hello-world\", \"status\": \"done\", \"result\": \"processed:hello-world\", \"atte…"
+    },
+    {
+      "index": 8,
+      "tool_id": "call_5fa2e51249184f688d0f8e69",
+      "kind": "lifecycle",
+      "started_after_ms": 81081,
+      "duration_ms": 1186,
+      "description": "Test crash recovery exactly-once",
+      "command": "python3 -c \"\nimport sqlite3\nc=sqlite3.connect('/var/lib/job-queue/jobs.sqlite3')\n# Simulate a job claimed but worker crashed before completion\nc.execute(\\\"INSERT INTO jobs (id,payload,status,result,attempts) VALUES ('crash-1','crashed','processing',NULL,1)\\\")\nc.commit()\nprint('inserted stranded job')\n\"\nsystemctl restart queue-worker.service\nsleep 1\ncurl -s http://127.0.0.1:8080/jobs/crash-1; echo\necho \"--- check no job has attempts != 1 or != done (except none) ---\"\npython3 -c \"\nimport sqlite3\nc=sqlite3.connect('/var/lib/job-queue/jobs.sqlite3')\nfor r in c.execute('SELECT id,status,attempts FROM jobs'): print(r)\nprint('bad:', list(c.execute('SELECT id FROM jobs WHERE status!=\\\\'done\\\\' OR at…",
+      "success": true,
+      "output_excerpt": "inserted stranded job\n{\"id\": \"crash-1\", \"payload\": \"crashed\", \"status\": \"done\", \"result\": \"processed:crashed\", \"attempts\": 1}\n--- check no job has attempts != 1 or != done (except none) ---\n('accepted-alpha-7d3', 'done', 1)\n('accepted-beta-91e', 'done', 1)\n('accepted-gamma-c42', …"
+    },
+    {
+      "index": 9,
+      "tool_id": "call_71c8db7e865948b6942f1105",
+      "kind": "validation",
+      "started_after_ms": 85406,
+      "duration_ms": 136,
+      "description": "Confirm enabled and running",
+      "command": "systemctl is-enabled queue-api.service queue-worker.service queue-seed.service; echo \"---status---\"; systemctl status queue-api.service queue-worker.service --no-pager | head -20",
+      "success": true,
+      "output_excerpt": "enabled\nenabled\nenabled\n---status---\n● queue-api.service - Agent-built durable queue API slot\n     Loaded: loaded (/etc/systemd/system/queue-api.service; enabled; preset: ignored)\n     Active: active (running) since Sat 2026-08-15 03:27:54 UTC; 12s ago\n Invocation: 119ecbd6f3d249…"
+    }
+  ]
+}

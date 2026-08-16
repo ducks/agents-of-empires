@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "analyzer": "aoe-controller/0.1.0",
+  "source_sha256": "7f21235f431da6a4258af16c8c5a07a57ac7e53eba9cd04557a33b36e7d51e89",
+  "agent": "deepseek-rollout-engineer",
+  "territory": "rollout-three",
+  "model": "deepseek/deepseek-v4-flash-0731",
+  "outcome": "running",
+  "metrics": {
+    "tool_calls": 6,
+    "tool_errors": 0,
+    "discoveries": 4,
+    "mutations": 1,
+    "lifecycle_actions": 0,
+    "validations": 1,
+    "first_mutation_after_ms": 23776,
+    "last_observed_after_ms": 118624
+  },
+  "architecture": {
+    "technologies": [
+      "Python",
+      "SQLite",
+      "systemd"
+    ],
+    "service_units": [
+      "etc/systemd/system/rollout-proxy.service",
+      "etc/systemd/system/rollout-seed.service",
+      "etc/systemd/system/rollout-v1.service",
+      "etc/systemd/system/rollout-v2.service",
+      "rollout-proxy.service",
+      "rollout-v1.service",
+      "rollout-v2.service"
+    ],
+    "persistent_paths": [
+      "/etc/systemd/system/rollout-proxy.service",
+      "/etc/systemd/system/rollout-seed.service",
+      "/etc/systemd/system/rollout-v1.service",
+      "/etc/systemd/system/rollout-v2.service",
+      "/opt/rollout",
+      "/var/lib/rollout",
+      "/var/lib/rollout/records.sqlite3",
+      "/var/lib/rollout/upstream"
+    ]
+  },
+  "actions": [
+    {
+      "index": 0,
+      "tool_id": "call_bcdd3eb7f32b48c6b2ab720f",
+      "kind": "discovery",
+      "started_after_ms": 8381,
+      "duration_ms": 48,
+      "description": "Inspect rollout services and state files",
+      "command": "systemctl list-units --type=service --all | grep -i rollout; echo ---; ls -la /opt/rollout/ /var/lib/rollout/ 2>&1; echo ---; cat /var/lib/rollout/upstream 2>&1",
+      "success": true,
+      "output_excerpt": "rollout-proxy.service                       loaded    active   running Stable public rollout proxy\n  rollout-seed.service                        loaded    active   exited  Seed live v1 state\n  rollout-v1.service                          loaded    active   running Existing rollout…"
+    },
+    {
+      "index": 1,
+      "tool_id": "call_79406a5d2a9943eea8d648d8",
+      "kind": "discovery",
+      "started_after_ms": 8430,
+      "duration_ms": 40,
+      "description": "Read systemd unit files",
+      "command": "cat /etc/systemd/system/rollout-proxy.service 2>/dev/null; echo ---; cat /etc/systemd/system/rollout-v1.service 2>/dev/null; echo ---; cat /etc/systemd/system/rollout-v2.service 2>/dev/null",
+      "success": true,
+      "output_excerpt": "[Unit]\nAfter=rollout-seed.service rollout-v1.service\nDescription=Stable public rollout proxy\nRequires=rollout-seed.service rollout-v1.service\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE=/nix/store/c59mcax29xrwyfdqs308wkmn2srnmzkn-glibc-locales-2.42-67/lib/locale/locale-archive\"\nEnviro…"
+    },
+    {
+      "index": 2,
+      "tool_id": "call_1b532cb6d9b643d2ba7c777a",
+      "kind": "discovery",
+      "started_after_ms": 23740,
+      "duration_ms": 35,
+      "description": "Read v1 service and proxy source",
+      "command": "cat /nix/store/13qi755lbgrlrh6c5jqjdlpf1f7nvffv-rollout-v1.py; echo ===PROXY===; cat /nix/store/08ib8hkpsxizx3zrsv266idphl0r1hgb-rollout-proxy.py",
+      "success": true,
+      "output_excerpt": "import sqlite3\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n\nDB = \"/var/lib/rollout/records.sqlite3\"\n\ndef database():\n    connection = sqlite3.connect(DB, timeout=10)\n    connection.execute(\"CREATE TABLE IF NOT EXISTS records (id TEXT PRIMARY KEY, value TEX…"
+    },
+    {
+      "index": 3,
+      "tool_id": "call_beac0fa1cf8c4eba83f79be8",
+      "kind": "mutation",
+      "started_after_ms": 23776,
+      "duration_ms": 50,
+      "description": "Inspect sqlite DB and v2 failure logs",
+      "command": "sqlite3 /var/lib/rollout/records.sqlite3 '.schema' 2>&1; echo ---; sqlite3 /var/lib/rollout/records.sqlite3 'SELECT count(*) FROM records;' 2>&1; sqlite3 /var/lib/rollout/records.sqlite3 'SELECT * FROM records LIMIT 5;' 2>&1; echo ---; journalctl -u rollout-v2.service -n 20 --no-pager 2>&1",
+      "success": true,
+      "output_excerpt": "CREATE TABLE records (id TEXT PRIMARY KEY, value TEXT NOT NULL);\n---\n2\ncustomer-alpha-73c|alpha-original\ncustomer-beta-a19|beta-original\n---\nAug 15 05:34:12 rollout-three systemd[1]: rollout-v2.service: Failed with result 'exit-code'.\nAug 15 05:34:13 rollout-three systemd[1]: rol…"
+    },
+    {
+      "index": 4,
+      "tool_id": "call_01b1cb58947d45cbbb2cc6f7",
+      "kind": "discovery",
+      "started_after_ms": 118291,
+      "duration_ms": 215,
+      "description": "Inspect seed service and enable states",
+      "command": "cat /etc/systemd/system/rollout-seed.service 2>/dev/null; echo ---; for f in /nix/store/*rollout-seed*; do echo \"$f\"; cat \"$f\" 2>/dev/null; done; echo ---; systemctl is-enabled rollout-proxy.service rollout-v1.service rollout-v2.service 2>&1",
+      "success": true,
+      "output_excerpt": "[Unit]\nBefore=rollout-v1.service rollout-v2.service rollout-proxy.service\nDescription=Seed live v1 state\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE=/nix/store/c59mcax29xrwyfdqs308wkmn2srnmzkn-glibc-locales-2.42-67/lib/locale/locale-archive\"\nEnvironment=\"PATH=/nix/store/97d5ygrvqj55f4…"
+    },
+    {
+      "index": 5,
+      "tool_id": "call_9daf020ce9bb4aa989d8c14a",
+      "kind": "validation",
+      "started_after_ms": 118506,
+      "duration_ms": 118,
+      "description": "Baseline health of public, v1, and v2 ports",
+      "command": "printf 'public: '; curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/health; echo; echo 'public version:'; curl -s http://127.0.0.1:8080/version; echo; echo 'v1 direct:'; curl -s http://127.0.0.1:8081/version; echo; echo 'records via public:'; curl -s http://127.0.0.1:8080/records/customer-alpha-73c; echo; curl -s http://127.0.0.1:8080/records/customer-beta-a19; echo; echo '8082 probe:'; curl -s -m 2 -o /dev/null -w '%{http_code}\\n' http://127.0.0.1:8082/health 2>&1 || echo 'not listening'",
+      "success": true,
+      "output_excerpt": "public: 200\npublic version:\nv1\nv1 direct:\nv1\nrecords via public:\nalpha-original\nbeta-original\n8082 probe:\n000\nnot listening"
+    }
+  ]
+}

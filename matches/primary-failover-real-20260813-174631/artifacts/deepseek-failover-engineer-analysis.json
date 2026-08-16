@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "analyzer": "aoe-controller/0.1.0",
+  "source_sha256": "d0d90b36f9239a0038f9dfa40f9d1b0f2102c58105bb7c240d15ea765449bc5b",
+  "agent": "deepseek-failover-engineer",
+  "territory": "failover-one",
+  "model": "deepseek/deepseek-v4-flash-0731",
+  "outcome": "running",
+  "metrics": {
+    "tool_calls": 8,
+    "tool_errors": 1,
+    "discoveries": 3,
+    "mutations": 3,
+    "lifecycle_actions": 0,
+    "validations": 2,
+    "first_mutation_after_ms": 25593,
+    "last_observed_after_ms": 47739
+  },
+  "architecture": {
+    "technologies": [
+      "Python",
+      "SQLite"
+    ],
+    "service_units": [],
+    "persistent_paths": [
+      "/var/lib/failover",
+      "/var/lib/failover/primary.failed",
+      "/var/lib/failover/primary.fenced",
+      "/var/lib/failover/records.sqlite3",
+      "/var/lib/failover/replica.role",
+      "/var/lib/failover/upstream"
+    ]
+  },
+  "actions": [
+    {
+      "index": 0,
+      "tool_id": "call_77140d1238e64655bb023e33",
+      "kind": "discovery",
+      "started_after_ms": 10023,
+      "duration_ms": 33,
+      "description": "Inspect failover state directory",
+      "command": "ls -la /var/lib/failover/ 2>&1; echo \"---\"; cat /var/lib/failover/replica.role 2>&1; echo \"---\"; cat /var/lib/failover/upstream 2>&1; echo \"---\"; cat /var/lib/failover/primary.failed 2>&1",
+      "success": true,
+      "output_excerpt": "total 28\ndrwxr-xr-x 2 root root  4096 Aug 15 05:37 .\ndrwxr-xr-x 9 root root  4096 Aug 15 05:37 ..\n-rw-r--r-- 1 root root     0 Aug 15 05:37 primary.failed\n-rw-r--r-- 1 root root 12288 Aug 15 05:37 records.sqlite3\n-rw-r--r-- 1 root root     8 Aug 15 05:37 replica.role\n-rw-r--r-- 1…"
+    },
+    {
+      "index": 1,
+      "tool_id": "call_b6a11e179c7e4d1bad61f21f",
+      "kind": "validation",
+      "started_after_ms": 10057,
+      "duration_ms": 47,
+      "description": "Check listening ports and processes",
+      "command": "ss -tlnp 2>/dev/null | grep -E ':8080|:8081|:8082' ; echo \"---\"; ps aux | grep -iE 'proxy|replica|failover|808[012]' | grep -v grep",
+      "success": true,
+      "output_excerpt": "LISTEN 0      5          127.0.0.1:8082       0.0.0.0:*    users:((\"python\",pid=547,fd=3))\nLISTEN 0      5            0.0.0.0:8080       0.0.0.0:*    users:((\"python\",pid=546,fd=3))\n---\nroot         546  0.9  2.9 109604 21560 ?        Ss   05:37   0:00 /nix/store/3n4qphl9s728sz8f…"
+    },
+    {
+      "index": 2,
+      "tool_id": "call_06402f898e8d4cf2a76c66a0",
+      "kind": "discovery",
+      "started_after_ms": 15020,
+      "duration_ms": 0,
+      "description": null,
+      "command": "Read /nix/store/gy7xaavwyh9mbwz4ll8h6z3ban0s6g93-failover-proxy.py",
+      "success": true,
+      "output_excerpt": "1\timport http.client\n2\tfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n3\tUPSTREAM = \"/var/lib/failover/upstream\"\n4\tclass Handler(BaseHTTPRequestHandler):\n5\t    def forward(self):\n6\t        try:\n7\t            with open(UPSTREAM) as source: port = int(source.rea…"
+    },
+    {
+      "index": 3,
+      "tool_id": "call_9e5c575b714647c3a95411b8",
+      "kind": "discovery",
+      "started_after_ms": 15020,
+      "duration_ms": 0,
+      "description": null,
+      "command": "Read /nix/store/3lf8if1z3ahcv9mdxqmwncn87hnwdymi-failover-replica.py",
+      "success": true,
+      "output_excerpt": "1\timport sqlite3\n2\tfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n3\tDB = \"/var/lib/failover/records.sqlite3\"\n4\tROLE = \"/var/lib/failover/replica.role\"\n5\tdef role():\n6\t    with open(ROLE) as source: return source.read().strip()\n7\tdef database():\n8\t    connecti…"
+    },
+    {
+      "index": 5,
+      "tool_id": "call_06399311c67a4b428f51e1f3",
+      "kind": "mutation",
+      "started_after_ms": 25593,
+      "duration_ms": 44,
+      "description": "Check existing records and fencing status",
+      "command": "sqlite3 /var/lib/failover/records.sqlite3 \"SELECT id, value FROM records;\" 2>&1; echo \"---\"; ls -la /var/lib/failover/primary.fenced 2>&1; echo \"---\"; ss -tlnp 2>/dev/null | grep ':8081'",
+      "success": false,
+      "output_excerpt": "customer-red-4a7|red-original\ncustomer-blue-8d2|blue-original\ncustomer-green-f31|green-original\n---\nls: cannot access '/var/lib/failover/primary.fenced': No such file or directory\n---\n\nExit code: exit status: 1"
+    },
+    {
+      "index": 7,
+      "tool_id": "call_87d1c84468e744469741338e",
+      "kind": "mutation",
+      "started_after_ms": 32053,
+      "duration_ms": 39,
+      "description": "Fence old primary and promote replica atomically",
+      "command": "touch /var/lib/failover/primary.fenced && echo \"primary\" > /var/lib/failover/replica.role && echo \"8082\" > /var/lib/failover/upstream && echo \"--- fencing ---\"; ls -la /var/lib/failover/primary.fenced; echo \"--- role ---\"; cat /var/lib/failover/replica.role; echo \"--- upstream ---\"; cat /var/lib/failover/upstream; echo \"--- preserved ---\"; cat /var/lib/failover/primary.failed; echo \"(empty file preserved)\"",
+      "success": true,
+      "output_excerpt": "--- fencing ---\n-rw-r--r-- 1 root root 0 Aug 15 05:37 /var/lib/failover/primary.fenced\n--- role ---\nprimary\n--- upstream ---\n8082\n--- preserved ---\n(empty file preserved)"
+    },
+    {
+      "index": 9,
+      "tool_id": "call_7ba38d39d81745d09cdc6d31",
+      "kind": "mutation",
+      "started_after_ms": 40974,
+      "duration_ms": 419,
+      "description": "Full API contract verification",
+      "command": "echo \"=== GET /health ===\"\ncurl -s -o /dev/null -w \"HTTP %{http_code}\" http://127.0.0.1:8080/health\necho\ncurl -s http://127.0.0.1:8080/health\necho\necho\necho \"=== GET /role ===\"\ncurl -s -o /dev/null -w \"HTTP %{http_code}\" http://127.0.0.1:8080/role\necho\ncurl -s http://127.0.0.1:8080/role\necho\necho\necho \"=== GET existing records ===\"\nfor id in customer-red-4a7 customer-blue-8d2 customer-green-f31; do\n  code=$(curl -s -o /dev/null -w \"%{http_code}\" \"http://127.0.0.1:8080/records/$id\")\n  body=$(curl -s \"http://127.0.0.1:8080/records/$id\")\n  echo \"[$id] HTTP $code body='$body'\"\ndone\necho\necho \"=== PUT new record ===\"\ncurl -s -o /dev/null -w \"HTTP %{http_code}\" -X PUT -d \"test-value-42\" \"http://12…",
+      "success": true,
+      "output_excerpt": "=== GET /health ===\nHTTP 200\nready\n\n=== GET /role ===\nHTTP 200\nprimary\n\n=== GET existing records ===\n[customer-red-4a7] HTTP 200 body='red-original'\n[customer-blue-8d2] HTTP 200 body='blue-original'\n[customer-green-f31] HTTP 200 body='green-original'\n\n=== PUT new record ===\nHTTP …"
+    },
+    {
+      "index": 10,
+      "tool_id": "call_c1687e6a087443e4a69a073c",
+      "kind": "validation",
+      "started_after_ms": 47670,
+      "duration_ms": 69,
+      "description": "Confirm services still running",
+      "command": "echo \"=== Services still running ===\"; ps aux | grep -E 'python.*failover' | grep -v grep; echo \"=== Ports ===\"; ss -tlnp | grep -E ':8080|:8082'",
+      "success": true,
+      "output_excerpt": "=== Services still running ===\nroot         546  0.3  2.9 109604 21572 ?        Ss   05:37   0:00 /nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python /nix/store/gy7xaavwyh9mbwz4ll8h6z3ban0s6g93-failover-proxy.py\nroot         547  0.4  3.1 111428 22904 ?        S…"
+    }
+  ]
+}

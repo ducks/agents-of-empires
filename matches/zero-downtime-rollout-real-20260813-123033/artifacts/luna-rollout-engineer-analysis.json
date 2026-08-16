@@ -1,0 +1,216 @@
+{
+  "schema_version": 1,
+  "analyzer": "aoe-controller/0.1.0",
+  "source_sha256": "c95c284d83f37cffef7f4d7d6de6af852d7de8ac3fcbf3b44f647c5128dcf8d9",
+  "agent": "luna-rollout-engineer",
+  "territory": "rollout-two",
+  "model": "openai/gpt-5.6-luna",
+  "outcome": "running",
+  "metrics": {
+    "tool_calls": 16,
+    "tool_errors": 2,
+    "discoveries": 4,
+    "mutations": 7,
+    "lifecycle_actions": 1,
+    "validations": 4,
+    "first_mutation_after_ms": 6600,
+    "last_observed_after_ms": 98354
+  },
+  "architecture": {
+    "technologies": [
+      "Python",
+      "SQLite",
+      "systemd"
+    ],
+    "service_units": [
+      "rollout-proxy.service",
+      "rollout-v1.service",
+      "rollout-v2.service"
+    ],
+    "persistent_paths": [
+      "/opt/rollout",
+      "/opt/rollout/v2.py",
+      "/var/lib/rollout",
+      "/var/lib/rollout/records.sqlite3",
+      "/var/lib/rollout/upstream"
+    ]
+  },
+  "actions": [
+    {
+      "index": 1,
+      "tool_id": "call_hZuV72kPyCNmGdPzEwMG4HiS",
+      "kind": "mutation",
+      "started_after_ms": 6600,
+      "duration_ms": 143,
+      "description": "Inspect service status, upstream, and database",
+      "command": "systemctl status --no-pager rollout-v1.service rollout-v2.service rollout-proxy.service; printf '\\n--- upstream ---\\n'; stat -c '%A %U:%G %n' /var/lib/rollout/upstream; od -An -tx1 -c /var/lib/rollout/upstream; printf '\\n--- records ---\\n'; stat -c '%A %U:%G %s %n' /var/lib/rollout/records.sqlite3; sqlite3 /var/lib/rollout/records.sqlite3 '.tables' '.schema' 'select count(*) from records;'",
+      "success": true,
+      "output_excerpt": "● rollout-v1.service - Existing rollout v1 service\n     Loaded: loaded (/etc/systemd/system/rollout-v1.service; enabled; preset: ignored)\n     Active: active (running) since Thu 2026-08-13 19:30:54 UTC; 16s ago\n Invocation: 7c1015c719da45caa484404f9b388ac6\n   Main PID: 547 (pytho…"
+    },
+    {
+      "index": 2,
+      "tool_id": "call_yv7iyEydzS5oUyQUVBvR6TTk",
+      "kind": "discovery",
+      "started_after_ms": 6744,
+      "duration_ms": 43,
+      "description": "Inspect rollout unit definitions and deployed files",
+      "command": "printf '%s\\n' '--- unit files ---'; systemctl cat rollout-v1.service rollout-v2.service rollout-proxy.service; printf '%s\\n' '--- deployed files ---'; ls -l /opt/rollout /var/lib/rollout",
+      "success": true,
+      "output_excerpt": "--- unit files ---\n# /etc/systemd/system/rollout-v1.service -> /nix/store/rcrgmhnjq004n1y7kzpbn6mp5mxfqblh-unit-rollout-v1.service/rollout-v1.service\n[Unit]\nAfter=rollout-seed.service\nDescription=Existing rollout v1 service\nRequires=rollout-seed.service\n\n[Service]\nEnvironment=\"LO…"
+    },
+    {
+      "index": 3,
+      "tool_id": "call_oaB8ck7kLtALgsfBCUoF5puT",
+      "kind": "validation",
+      "started_after_ms": 6787,
+      "duration_ms": 112,
+      "description": "Check public endpoint and listeners",
+      "command": "printf '%s\\n' '--- public checks ---'; curl -sS -i http://127.0.0.1:8080/health; curl -sS -i http://127.0.0.1:8080/version; printf '%s\\n' '--- process/listeners ---'; ss -ltnp | grep -E ':(8080|8081|8082)\\b' || true",
+      "success": true,
+      "output_excerpt": "--- public checks ---\nHTTP/1.0 200 OK\r\nServer: BaseHTTP/0.6 Python/3.14.7\r\nDate: Thu, 13 Aug 2026 19:31:11 GMT\r\nContent-Length: 5\r\n\r\nreadyHTTP/1.0 200 OK\r\nServer: BaseHTTP/0.6 Python/3.14.7\r\nDate: Thu, 13 Aug 2026 19:31:11 GMT\r\nContent-Length: 2\r\n\r\nv1--- process/listeners ---\nLIS…"
+    },
+    {
+      "index": 4,
+      "tool_id": "call_1haOzCII54MhlF5GqnZKmruH",
+      "kind": "discovery",
+      "started_after_ms": 11652,
+      "duration_ms": 0,
+      "description": null,
+      "command": "Read /nix/store/13qi755lbgrlrh6c5jqjdlpf1f7nvffv-rollout-v1.py",
+      "success": true,
+      "output_excerpt": "1\timport sqlite3\n2\tfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n3\t\n4\tDB = \"/var/lib/rollout/records.sqlite3\"\n5\t\n6\tdef database():\n7\t    connection = sqlite3.connect(DB, timeout=10)\n8\t    connection.execute(\"CREATE TABLE IF NOT EXISTS records (id TEXT PRIMAR…"
+    },
+    {
+      "index": 5,
+      "tool_id": "call_PJLJcdWfTv3zmsAfYODweF70",
+      "kind": "mutation",
+      "started_after_ms": 11653,
+      "duration_ms": 15,
+      "description": "Inspect existing record values without modifying state",
+      "command": "sqlite3 -header -column /var/lib/rollout/records.sqlite3 'select id, quote(value), typeof(value), length(value) from records order by id;'",
+      "success": true,
+      "output_excerpt": "id            quote(value)    typeof(value)  length(value)\n------------------  ----------------  -------------  -------------\ncustomer-alpha-73c  'alpha-original'  text                      14\ncustomer-beta-a19   'beta-original'   text                      13"
+    },
+    {
+      "index": 6,
+      "tool_id": "call_4PjnzfXbapygK6LfMLBsfq6e",
+      "kind": "validation",
+      "started_after_ms": 11668,
+      "duration_ms": 25,
+      "description": "Inspect v2 startup failure logs",
+      "command": "journalctl -u rollout-v2.service --no-pager -n 30 -o cat",
+      "success": true,
+      "output_excerpt": "Started Agent-built rollout v2 slot.\n/nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python: can't open file '/opt/rollout/v2.py': [Errno 2] No such file or directory\nrollout-v2.service: Main process exited, code=exited, status=2/INVALIDARGUMENT\nrollout-v2.service:…"
+    },
+    {
+      "index": 7,
+      "tool_id": "call_KVH94qBQqmeWtEfUGKpMZUx4",
+      "kind": "discovery",
+      "started_after_ms": 11694,
+      "duration_ms": 71,
+      "description": "Inspect v2 deployment path and service identity",
+      "command": "ls -la /opt /opt/rollout; namei -l /opt/rollout/v2.py 2>&1 || true; systemctl is-enabled rollout-v2.service; systemctl show rollout-v2.service -p User -p Group -p WorkingDirectory -p ExecStart",
+      "success": true,
+      "output_excerpt": "/opt:\ntotal 12\ndrwxr-xr-x  3 root root 4096 Aug 13 19:30 .\ndrwxr-xr-x 18 root root 4096 Aug 13 19:30 ..\ndrwxr-xr-x  2 root root 4096 Aug 13 19:30 rollout\n\n/opt/rollout:\ntotal 8\ndrwxr-xr-x 2 root root 4096 Aug 13 19:30 .\ndrwxr-xr-x 3 root root 4096 Aug 13 19:30 ..\nf: /opt/rollout/…"
+    },
+    {
+      "index": 8,
+      "tool_id": "call_gMvD7eau3tB6SUyRJQhEQphg",
+      "kind": "mutation",
+      "started_after_ms": 24458,
+      "duration_ms": 0,
+      "description": null,
+      "command": "Write /opt/rollout/v2.py",
+      "success": true,
+      "output_excerpt": "Successfully wrote to /opt/rollout/v2.py"
+    },
+    {
+      "index": 9,
+      "tool_id": "call_5gVVMPKyMJwiQTmFWjQ29zMV",
+      "kind": "mutation",
+      "started_after_ms": 30229,
+      "duration_ms": 0,
+      "description": null,
+      "command": "Edit /opt/rollout/v2.py",
+      "success": true,
+      "output_excerpt": "Updated /opt/rollout/v2.py"
+    },
+    {
+      "index": 11,
+      "tool_id": "call_dvMMp9uadiayJbqyW63PfiB5",
+      "kind": "lifecycle",
+      "started_after_ms": 39088,
+      "duration_ms": 746,
+      "description": "Start v2 and validate readiness and existing records",
+      "command": "python_bin=/nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python; \"$python_bin\" -m py_compile /opt/rollout/v2.py && systemctl reset-failed rollout-v2.service && systemctl start rollout-v2.service && sleep 0.3 && systemctl is-active rollout-v2.service && curl --fail --silent --show-error http://127.0.0.1:8082/health && printf '\\n' && curl --fail --silent --show-error http://127.0.0.1:8082/version && printf '\\n' && curl --fail --silent --show-error http://127.0.0.1:8082/records/customer-alpha-73c && printf '\\n' && curl --fail --silent --show-error http://127.0.0.1:8082/records/customer-beta-a19 && printf '\\n' && curl --silent --show-error -o /dev/null -w 'missing status=%{http_…",
+      "success": true,
+      "output_excerpt": "active\nready\nv2\nalpha-original\nbeta-original\nmissing status=404"
+    },
+    {
+      "index": 12,
+      "tool_id": "call_GbtA7LSsMAYbfXkdA98akkuE",
+      "kind": "mutation",
+      "started_after_ms": 48364,
+      "duration_ms": 141,
+      "description": "Validate v2 UTF-8 PUT/GET and restore test state",
+      "command": "set -e\nid='__v2_preflight__'\nbody='v2-✓-payload'\nprintf '%s' \"$body\" | curl --fail --silent --show-error --request PUT --data-binary @- -H 'Content-Type: application/octet-stream' -o /dev/null -w 'PUT status=%{http_code}\\n' \"http://127.0.0.1:8082/records/$id\"\nactual=$(curl --fail --silent --show-error \"http://127.0.0.1:8082/records/$id\")\ntest \"$actual\" = \"$body\"\nprintf 'GET exact UTF-8 body: yes\\n'\nsqlite3 /var/lib/rollout/records.sqlite3 \"delete from records where id='$id';\"\ntest \"$(sqlite3 /var/lib/rollout/records.sqlite3 \"select count(*) from records where id='$id';\")\" = 0\nprintf 'preflight record cleanup: yes\\n'\nfor id in customer-alpha-73c customer-beta-a19; do curl --fail --silent --sh…",
+      "success": true,
+      "output_excerpt": "PUT status=204\nGET exact UTF-8 body: yes\npreflight record cleanup: yes\nalpha-original\nbeta-original"
+    },
+    {
+      "index": 13,
+      "tool_id": "call_NMfrBMJBXrNWoSFXFNoyUnbp",
+      "kind": "validation",
+      "started_after_ms": 56460,
+      "duration_ms": 292,
+      "description": "Atomically switch proxy upstream to ready v2",
+      "command": "set -e\ncurl --fail --silent --show-error http://127.0.0.1:8082/health | grep -Fx ready >/dev/null\ncurl --fail --silent --show-error http://127.0.0.1:8082/version | grep -Fx v2 >/dev/null\nfor id in customer-alpha-73c customer-beta-a19; do\n  curl --fail --silent --show-error \"http://127.0.0.1:8082/records/$id\" >/dev/null\ndone\n/nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python - <<'PY'\nimport os\nimport tempfile\n\npath = \"/var/lib/rollout/upstream\"\ndirectory = os.path.dirname(path)\nfd, temporary = tempfile.mkstemp(prefix=\".upstream.\", dir=directory)\ntry:\n    os.write(fd, b\"8082\\n\")\n    os.fsync(fd)\n    os.fchmod(fd, os.stat(path).st_mode & 0o7777)\n    os.fchown(fd, os.stat(path…",
+      "success": true,
+      "output_excerpt": "upstream now:   38  30  38  32  0a\n   8   0   8   2  \\n\npublic proxy is serving v2"
+    },
+    {
+      "index": 15,
+      "tool_id": "call_ynZEluMza8LIlSpINLxnMZrE",
+      "kind": "mutation",
+      "started_after_ms": 77440,
+      "duration_ms": 239,
+      "description": "Run final public contract and service health checks",
+      "command": "set -euo pipefail\nwork=$(mktemp -d)\ntrap 'rm -rf \"$work\"' EXIT\nprintf ready > \"$work/health.expected\"\nprintf v2 > \"$work/version.expected\"\nprintf alpha-original > \"$work/alpha.expected\"\nprintf beta-original > \"$work/beta.expected\"\n\ncheck_body() {\n  local url=$1 expected=$2 label=$3\n  local status\n  status=$(curl --silent --show-error --output \"$work/$label.actual\" --write-out '%{http_code}' \"$url\")\n  test \"$status\" = 200\n  cmp \"$expected\" \"$work/$label.actual\"\n}\ncheck_body http://127.0.0.1:8080/health \"$work/health.expected\" public-health\ncheck_body http://127.0.0.1:8080/version \"$work/version.expected\" public-version\ncheck_body http://127.0.0.1:8080/records/customer-alpha-73c \"$work/alpha.e…",
+      "success": false,
+      "output_excerpt": "PUT status=204\npublic contract checks: PASS\nstate rows: customer-alpha-73c | alpha-original\ncustomer-beta-a19 | beta-original\nupstream: 8082\n\nsh: line 35: printf: --: invalid option\nprintf: usage: printf [-v var] format [arguments]\n\nExit code: exit status: 2"
+    },
+    {
+      "index": 16,
+      "tool_id": "call_p9hb9Rv1gDI4tXvtAUuSsGyR",
+      "kind": "validation",
+      "started_after_ms": 81147,
+      "duration_ms": 73,
+      "description": "Confirm all rollout services are enabled, active, and listening",
+      "command": "printf '%s\\n' '--- service summary ---'; systemctl is-enabled rollout-v2.service rollout-proxy.service rollout-v1.service; systemctl is-active rollout-v2.service rollout-proxy.service rollout-v1.service; systemctl show rollout-v2.service rollout-proxy.service rollout-v1.service -p MainPID -p NRestarts --no-pager; printf '%s\\n' '--- recent v2 log ---'; journalctl -u rollout-v2.service --no-pager -n 12 -o cat; printf '%s\\n' '--- listeners ---'; ss -ltnp | grep -E ':(8080|8081|8082)\\b'",
+      "success": true,
+      "output_excerpt": "--- service summary ---\nenabled\nenabled\nenabled\nactive\nactive\nactive\nMainPID=4200\nNRestarts=0\n\nMainPID=548\nNRestarts=0\n\nMainPID=547\nNRestarts=0\n--- recent v2 log ---\nrollout-v2.service: Main process exited, code=exited, status=2/INVALIDARGUMENT\nrollout-v2.service: Failed with res…"
+    },
+    {
+      "index": 17,
+      "tool_id": "call_Ttrsmf8qvNBs8FciY0fYyhbH",
+      "kind": "discovery",
+      "started_after_ms": 84896,
+      "duration_ms": 0,
+      "description": null,
+      "command": "Read /nix/store/08ib8hkpsxizx3zrsv266idphl0r1hgb-rollout-proxy.py",
+      "success": true,
+      "output_excerpt": "1\timport http.client\n2\tfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n3\t\n4\tUPSTREAM = \"/var/lib/rollout/upstream\"\n5\t\n6\tclass Handler(BaseHTTPRequestHandler):\n7\t    def forward(self):\n8\t        try:\n9\t            with open(UPSTREAM) as source:\n10\t             …"
+    },
+    {
+      "index": 18,
+      "tool_id": "call_Zn30ppK8ZeM2smeCFJ5QoLbd",
+      "kind": "mutation",
+      "started_after_ms": 97959,
+      "duration_ms": 395,
+      "description": "Stress-check the public v2 route for stable availability",
+      "command": "set -e\nfor i in $(seq 1 100); do\n  test \"$(curl --silent --show-error http://127.0.0.1:8080/health)\" = ready\n  test \"$(curl --silent --show-error http://127.0.0.1:8080/version)\" = v2\n  test \"$(curl --silent --show-error http://127.0.0.1:8080/records/customer-alpha-73c)\" = alpha-original\ndone\nprintf '%s\\n' '100 consecutive public health/version/existing-record checks: PASS'\ntest \"$(cat /var/lib/rollout/upstream)\" = '8082'\ntest \"$(sqlite3 /var/lib/rollout/records.sqlite3 'select count(*) from records;')\" = 2\nprintf '%s\\n' 'final upstream and record-count checks: PASS'",
+      "success": false,
+      "output_excerpt": "Exit code: exit status: 1"
+    }
+  ]
+}

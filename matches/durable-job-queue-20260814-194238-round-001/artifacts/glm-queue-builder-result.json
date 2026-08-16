@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "agent": "glm-queue-builder",
+  "territory": "queue-three",
+  "status": "completed",
+  "summary": "No flask available — I'll use the standard library. The schema and 3 queued jobs already exist. Plan:All three pre-existing jobs completed with attempts=1. Now verify the endpoints and durability.Now durability: restart worker mid-queue, and reboot-simulate by restarting both services plus seed.All 20 completed with attempts=1 despite worker restart. Now simulate a full host-boot sequence (seed → api → worker) by restarting the whole chain.All three units are `enabled` (auto-start on boot). Services are running cleanly.The durable job queue is deployed, verified, and running.\n\n## What was built\n\n**`/opt/job-queue/api.py`** — stdlib `http.server` (no Flask available), port 8080:\n- `GET /health` → `200` with body `ready`\n- `POST /jobs/<id>` → accepts UTF-8 body, persists synchronously via `INSERT … ON CONFLICT DO UPDATE` (re-posts re-queue), returns `202`\n- `GET /jobs/<id>` → JSON with `id`, `payload`, `status`, `result`, integer `attempts`\n\n**`/opt/job-queue/worker.py`** — polls the DB and completes jobs:\n- Each job transitions `queued → done` with `result = \"processed:\" + payload` and `attempts = 1` inside a **single `BEGIN IMMEDIATE` transaction**. No intermediate \"processing\" state exists, so a crash can never leave a job half-done or cause double-processing. Re-running on a completed job is a no-op.\n- WAL mode + `busy_timeout=30000` for safe concurrent access with the API.\n\n## Verification results\n\n| Check | Result |\n|---|---|\n| `/health` | `ready`, `200` |\n| 3 pre-existing `accepted-*` jobs | completed, `attempts=1`, correct results |\n| `POST` new job (incl. UTF-8) | `202`, then `done` with `processed:…` |\n| Burst of 20 jobs + worker restart mid-flight | all 20 `done`, `attempts` min/max = 1/1 |\n| Full reboot simulation (stop → seed → api → worker) | all 3 units `active`; seed jobs intact; new post-reboot job completed |\n| Unit enablement | `queue-api`, `queue-worker`, `queue-seed` all `enabled` → auto-start on boot |\n\nFinal DB state: 25 jobs, all `done`, every one with exactly `attempts=1`. Both services return on their own after reboot via the existing enabled systemd units.",
+  "usage": {
+    "rounds": null,
+    "tool_calls": null,
+    "input_tokens": 121240,
+    "output_tokens": 4608,
+    "cost_microusd": 32055,
+    "resource_units": 1
+  },
+  "transcript": "series/durable-job-queue-20260814-194238/round-001/agents/glm-queue-builder/transcript.json"
+}

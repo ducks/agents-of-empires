@@ -1,0 +1,317 @@
+{
+  "schema_version": 1,
+  "analyzer": "aoe-controller/0.1.0",
+  "source_sha256": "3b321e464b9a162b7d460010dd5c2353ea145884aa7a716f53192f9c46f72548",
+  "agent": "deepseek-queue-builder",
+  "territory": "queue-two",
+  "model": "deepseek/deepseek-v4-flash-0731",
+  "outcome": "completed",
+  "metrics": {
+    "tool_calls": 25,
+    "tool_errors": 0,
+    "discoveries": 4,
+    "mutations": 7,
+    "lifecycle_actions": 1,
+    "validations": 13,
+    "first_mutation_after_ms": 19822,
+    "last_observed_after_ms": 175802
+  },
+  "architecture": {
+    "technologies": [
+      "Python",
+      "SQLite",
+      "systemd"
+    ],
+    "service_units": [
+      "queue-api.service",
+      "queue-seed.service",
+      "queue-worker.service"
+    ],
+    "persistent_paths": [
+      "/etc/os-release",
+      "/etc/systemd/system",
+      "/opt/job-queue",
+      "/opt/job-queue/api.py",
+      "/opt/job-queue/worker.py",
+      "/var/lib/job-queue",
+      "/var/lib/job-queue/jobs.sqlite3"
+    ]
+  },
+  "actions": [
+    {
+      "index": 0,
+      "tool_id": "call_ebb2506fffa243dea109b5a2",
+      "kind": "discovery",
+      "started_after_ms": 7680,
+      "duration_ms": 5301,
+      "description": "Inspect job-queue directory and systemd units",
+      "command": "ls -la /opt/job-queue/ 2>/dev/null; echo \"---\"; ls -la /var/lib/job-queue/ 2>/dev/null; echo \"---\"; systemctl list-unit-files | grep -i queue",
+      "success": true,
+      "output_excerpt": "---\ntotal 20\ndrwxr-xr-x 2 root root  4096 Aug 15 02:59 .\ndrwxr-xr-x 9 root root  4096 Aug 15 02:59 ..\n-rw-r--r-- 1 root root 12288 Aug 15 02:59 jobs.sqlite3\n---\ndev-mqueue.mount                            enabled         ignored\nqueue-api.service                           enabled…"
+    },
+    {
+      "index": 1,
+      "tool_id": "call_4b82ebdc572c489d9654b301",
+      "kind": "discovery",
+      "started_after_ms": 12982,
+      "duration_ms": 149,
+      "description": "Check OS and python availability",
+      "command": "cat /etc/os-release 2>/dev/null | head -5; echo \"---\"; which python3 sqlite3; python3 --version 2>/dev/null",
+      "success": true,
+      "output_excerpt": "ANSI_COLOR=\"0;38;2;126;186;228\"\nBUG_REPORT_URL=\"https://github.com/NixOS/nixpkgs/issues\"\nBUILD_ID=\"26.11.20260813.0e251e2\"\nCPE_NAME=\"cpe:/o:nixos:nixos:26.11\"\nDEFAULT_HOSTNAME=nixos\n---\n/run/current-system/sw/bin/python3\n/run/current-system/sw/bin/sqlite3\nPython 3.14.7"
+    },
+    {
+      "index": 2,
+      "tool_id": "call_5398374b59964ac88f6d1559",
+      "kind": "discovery",
+      "started_after_ms": 19774,
+      "duration_ms": 47,
+      "description": "Show systemd unit file contents",
+      "command": "systemctl cat queue-api.service 2>&1; echo \"===\"; systemctl cat queue-worker.service 2>&1; echo \"===\"; systemctl cat queue-seed.service 2>&1",
+      "success": true,
+      "output_excerpt": "# /etc/systemd/system/queue-api.service -> /nix/store/437m1ipdnnh6sf8prkac75d7pzrbsxrd-unit-queue-api.service/queue-api.service\n[Unit]\nAfter=network.target queue-seed.service\nDescription=Agent-built durable queue API slot\nRequires=queue-seed.service\n\n[Service]\nEnvironment=\"LOCALE…"
+    },
+    {
+      "index": 3,
+      "tool_id": "call_2651ec12476c45628084bb29",
+      "kind": "mutation",
+      "started_after_ms": 19822,
+      "duration_ms": 36,
+      "description": "Inspect SQLite schema and data",
+      "command": "sqlite3 /var/lib/job-queue/jobs.sqlite3 \".schema\"; echo \"===\"; sqlite3 /var/lib/job-queue/jobs.sqlite3 \"SELECT id, status, attempts, payload FROM jobs;\" 2>&1",
+      "success": true,
+      "output_excerpt": "CREATE TABLE jobs (id TEXT PRIMARY KEY, payload TEXT NOT NULL, status TEXT NOT NULL, result TEXT, attempts INTEGER NOT NULL DEFAULT 0);\n===\naccepted-alpha-7d3|queued|0|alpha\naccepted-beta-91e|queued|0|beta\naccepted-gamma-c42|queued|0|gamma"
+    },
+    {
+      "index": 4,
+      "tool_id": "call_5490569bb63a47ab8ec8128c",
+      "kind": "discovery",
+      "started_after_ms": 45904,
+      "duration_ms": 33,
+      "description": "Read seed script and check filesystem persistence",
+      "command": "cat /nix/store/2dfn4ylvf2r7j47aqms6mn63pnk0nj5h-unit-script-queue-seed-start/bin/queue-seed-start 2>/dev/null; echo \"===\"; df -h / /opt /var/lib | head -10; echo \"===\"; mount | grep -E ' / | /var| /opt'",
+      "success": true,
+      "output_excerpt": "#!/nix/store/byi2zpy2bgcf3dr6y0l8m50rmjj8z7q1-bash-5.3p15/bin/bash\nset -e\n\ninstall -d -m 0755 /var/lib/job-queue\n/nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python - <<'PY'\nimport sqlite3\ndb = sqlite3.connect('/var/lib/job-queue/jobs.sqlite3')\ndb.execute('CREAT…"
+    },
+    {
+      "index": 5,
+      "tool_id": "call_9e70d591b874430585d6dab2",
+      "kind": "validation",
+      "started_after_ms": 45938,
+      "duration_ms": 1265,
+      "description": "Check seed service status and search for related files",
+      "command": "systemctl status queue-seed.service --no-pager 2>&1 | head -20; echo \"===\"; ls -la /etc/systemd/system/ | grep -i queue; echo \"===\"; ls -la /root 2>/dev/null; find / -maxdepth 3 -name '*.py' -path '*job*' 2>/dev/null",
+      "success": true,
+      "output_excerpt": "● queue-seed.service - Seed opaque jobs accepted before the deployment\n     Loaded: loaded (/etc/systemd/system/queue-seed.service; enabled; preset: ignored)\n     Active: active (exited) since Sat 2026-08-15 02:59:08 UTC; 53s ago\n Invocation: b4232cf359444dbfb923b559f23676ac\n    …"
+    },
+    {
+      "index": 7,
+      "tool_id": "call_fec0bbe6575e436baa2df2df",
+      "kind": "mutation",
+      "started_after_ms": 83655,
+      "duration_ms": 34,
+      "description": "Create /opt/job-queue directory",
+      "command": "install -d -m 0755 /opt/job-queue && ls -la /opt/job-queue",
+      "success": true,
+      "output_excerpt": "total 8\ndrwxr-xr-x 2 root root 4096 Aug 15 03:00 .\ndrwxr-xr-x 3 root root 4096 Aug 15 03:00 .."
+    },
+    {
+      "index": 8,
+      "tool_id": "call_775b4f8df2ac43829ed4c11d",
+      "kind": "mutation",
+      "started_after_ms": 96972,
+      "duration_ms": 0,
+      "description": null,
+      "command": "Write /opt/job-queue/api.py",
+      "success": true,
+      "output_excerpt": "Successfully wrote to /opt/job-queue/api.py"
+    },
+    {
+      "index": 9,
+      "tool_id": "call_21313c62f36b4c7380924fc9",
+      "kind": "mutation",
+      "started_after_ms": 106873,
+      "duration_ms": 0,
+      "description": null,
+      "command": "Write /opt/job-queue/worker.py",
+      "success": true,
+      "output_excerpt": "Successfully wrote to /opt/job-queue/worker.py"
+    },
+    {
+      "index": 10,
+      "tool_id": "call_531826626e7e4d0ea9698fe0",
+      "kind": "mutation",
+      "started_after_ms": 110965,
+      "duration_ms": 22,
+      "description": "Make scripts executable",
+      "command": "chmod +x /opt/job-queue/api.py /opt/job-queue/worker.py && ls -la /opt/job-queue/",
+      "success": true,
+      "output_excerpt": "total 16\ndrwxr-xr-x 2 root root 4096 Aug 15 03:01 .\ndrwxr-xr-x 3 root root 4096 Aug 15 03:00 ..\n-rwxr-xr-x 1 root root 2908 Aug 15 03:00 api.py\n-rwxr-xr-x 1 root root 1907 Aug 15 03:01 worker.py"
+    },
+    {
+      "index": 11,
+      "tool_id": "call_07fd045e877149c687a4f038",
+      "kind": "lifecycle",
+      "started_after_ms": 114658,
+      "duration_ms": 698,
+      "description": "Start both services",
+      "command": "systemctl daemon-reload && systemctl start queue-api.service queue-worker.service 2>&1",
+      "success": true,
+      "output_excerpt": null
+    },
+    {
+      "index": 13,
+      "tool_id": "call_1b7903b9ea6f4a9d867fb4b3",
+      "kind": "validation",
+      "started_after_ms": 124002,
+      "duration_ms": 2064,
+      "description": "Check service status",
+      "command": "sleep 2 && systemctl status queue-api.service queue-worker.service --no-pager 2>&1 | head -30",
+      "success": true,
+      "output_excerpt": "● queue-api.service - Agent-built durable queue API slot\n     Loaded: loaded (/etc/systemd/system/queue-api.service; enabled; preset: ignored)\n     Active: active (running) since Sat 2026-08-15 03:01:11 UTC; 10s ago\n Invocation: 7f763547835e4dffb99ea3de6d84eaee\n   Main PID: 1172 …"
+    },
+    {
+      "index": 14,
+      "tool_id": "call_4ad8a7ee86c0452e83eda3c0",
+      "kind": "validation",
+      "started_after_ms": 126066,
+      "duration_ms": 39,
+      "description": "Test health endpoint",
+      "command": "curl -s http://127.0.0.1:8080/health",
+      "success": true,
+      "output_excerpt": "ready"
+    },
+    {
+      "index": 15,
+      "tool_id": "call_9c0bfc618e384c0db1c901c1",
+      "kind": "validation",
+      "started_after_ms": 130606,
+      "duration_ms": 29,
+      "description": "Check first pre-existing job",
+      "command": "curl -s http://127.0.0.1:8080/jobs/accepted-alpha-7d3",
+      "success": true,
+      "output_excerpt": "{\"id\": \"accepted-alpha-7d3\", \"payload\": \"alpha\", \"status\": \"done\", \"result\": \"processed:alpha\", \"attempts\": 1}"
+    },
+    {
+      "index": 16,
+      "tool_id": "call_cc7f20204a48434aa6182d8a",
+      "kind": "validation",
+      "started_after_ms": 130635,
+      "duration_ms": 26,
+      "description": "Check second pre-existing job",
+      "command": "curl -s http://127.0.0.1:8080/jobs/accepted-beta-91e",
+      "success": true,
+      "output_excerpt": "{\"id\": \"accepted-beta-91e\", \"payload\": \"beta\", \"status\": \"done\", \"result\": \"processed:beta\", \"attempts\": 1}"
+    },
+    {
+      "index": 17,
+      "tool_id": "call_500c57160abc4ffb852c8c7c",
+      "kind": "validation",
+      "started_after_ms": 130662,
+      "duration_ms": 26,
+      "description": "Check third pre-existing job",
+      "command": "curl -s http://127.0.0.1:8080/jobs/accepted-gamma-c42",
+      "success": true,
+      "output_excerpt": "{\"id\": \"accepted-gamma-c42\", \"payload\": \"gamma\", \"status\": \"done\", \"result\": \"processed:gamma\", \"attempts\": 1}"
+    },
+    {
+      "index": 19,
+      "tool_id": "call_eb0af866db39488a9fd1248e",
+      "kind": "validation",
+      "started_after_ms": 138466,
+      "duration_ms": 36,
+      "description": "Submit a new job",
+      "command": "curl -s -X POST http://127.0.0.1:8080/jobs/test-new-job-001 -d 'hello-world'",
+      "success": true,
+      "output_excerpt": "{\"id\": \"test-new-job-001\", \"accepted\": true}"
+    },
+    {
+      "index": 20,
+      "tool_id": "call_900446376beb45b6ac6827bf",
+      "kind": "validation",
+      "started_after_ms": 141183,
+      "duration_ms": 1042,
+      "description": "Verify new job was processed",
+      "command": "sleep 1 && curl -s http://127.0.0.1:8080/jobs/test-new-job-001",
+      "success": true,
+      "output_excerpt": "{\"id\": \"test-new-job-001\", \"payload\": \"hello-world\", \"status\": \"done\", \"result\": \"processed:hello-world\", \"attempts\": 1}"
+    },
+    {
+      "index": 21,
+      "tool_id": "call_8a5ecaa627ec427dad8db1cf",
+      "kind": "validation",
+      "started_after_ms": 145856,
+      "duration_ms": 45,
+      "description": "Verify idempotent POST doesn't overwrite",
+      "command": "curl -s -X POST http://127.0.0.1:8080/jobs/test-new-job-001 -d 'DIFFERENT' && echo \"\" && curl -s http://127.0.0.1:8080/jobs/test-new-job-001",
+      "success": true,
+      "output_excerpt": "{\"id\": \"test-new-job-001\", \"accepted\": true}\n{\"id\": \"test-new-job-001\", \"payload\": \"hello-world\", \"status\": \"done\", \"result\": \"processed:hello-world\", \"attempts\": 1}"
+    },
+    {
+      "index": 22,
+      "tool_id": "call_53007e821ee4424ba09dbf5c",
+      "kind": "mutation",
+      "started_after_ms": 149726,
+      "duration_ms": 28,
+      "description": "Insert a stuck processing job to test recovery",
+      "command": "sqlite3 /var/lib/job-queue/jobs.sqlite3 \"INSERT INTO jobs(id, payload, status, result, attempts) VALUES('crash-test', 'crashme', 'processing', NULL, 1);\" && echo \"Stuck job inserted\"",
+      "success": true,
+      "output_excerpt": "Stuck job inserted"
+    },
+    {
+      "index": 23,
+      "tool_id": "call_ea6f9fe3d6ac4bb0ae0dcbda",
+      "kind": "validation",
+      "started_after_ms": 153324,
+      "duration_ms": 3041,
+      "description": "Check if crash job was recovered and processed",
+      "command": "sleep 3 && curl -s http://127.0.0.1:8080/jobs/crash-test",
+      "success": true,
+      "output_excerpt": "{\"id\": \"crash-test\", \"payload\": \"crashme\", \"status\": \"done\", \"result\": \"processed:crashme\", \"attempts\": 1}"
+    },
+    {
+      "index": 24,
+      "tool_id": "call_abf1244606af4f78ad6abe98",
+      "kind": "mutation",
+      "started_after_ms": 161425,
+      "duration_ms": 14,
+      "description": "Check for any incomplete jobs",
+      "command": "sqlite3 /var/lib/job-queue/jobs.sqlite3 \"SELECT id, status, result, attempts FROM jobs WHERE status != 'done'\"",
+      "success": true,
+      "output_excerpt": null
+    },
+    {
+      "index": 25,
+      "tool_id": "call_094906165e474e8291e8065b",
+      "kind": "validation",
+      "started_after_ms": 164269,
+      "duration_ms": 2078,
+      "description": "Kill worker and verify systemd restarts it",
+      "command": "systemctl kill -s SIGKILL queue-worker.service 2>&1; sleep 2; systemctl is-active queue-worker.service 2>&1",
+      "success": true,
+      "output_excerpt": "active"
+    },
+    {
+      "index": 26,
+      "tool_id": "call_13231b291c004b8d94480c27",
+      "kind": "validation",
+      "started_after_ms": 169938,
+      "duration_ms": 1086,
+      "description": "Verify worker processes jobs after restart",
+      "command": "curl -s -X POST http://127.0.0.1:8080/jobs/restart-test -d 'restart-works' && sleep 1 && curl -s http://127.0.0.1:8080/jobs/restart-test",
+      "success": true,
+      "output_excerpt": "{\"id\": \"restart-test\", \"accepted\": true}{\"id\": \"restart-test\", \"payload\": \"restart-works\", \"status\": \"done\", \"result\": \"processed:restart-works\", \"attempts\": 1}"
+    },
+    {
+      "index": 27,
+      "tool_id": "call_4ce1b2648c8945eaae43150c",
+      "kind": "validation",
+      "started_after_ms": 174735,
+      "duration_ms": 1067,
+      "description": "Test UTF-8 payload handling",
+      "command": "curl -s -X POST http://127.0.0.1:8080/jobs/unicode-test -d 'héllo wörld 🎉' && sleep 1 && curl -s http://127.0.0.1:8080/jobs/unicode-test",
+      "success": true,
+      "output_excerpt": "{\"id\": \"unicode-test\", \"accepted\": true}{\"id\": \"unicode-test\", \"payload\": \"h\\u00e9llo w\\u00f6rld \\ud83c\\udf89\", \"status\": \"done\", \"result\": \"processed:h\\u00e9llo w\\u00f6rld \\ud83c\\udf89\", \"attempts\": 1}"
+    }
+  ]
+}

@@ -1,0 +1,195 @@
+{
+  "schema_version": 1,
+  "analyzer": "aoe-controller/0.1.0",
+  "source_sha256": "a6677b5fb8dc5b315374018a821a52d3469c3e2c0a975089c373582763c7560b",
+  "agent": "luna-queue-builder",
+  "territory": "queue-one",
+  "model": "openai/gpt-5.6-luna",
+  "outcome": "running",
+  "metrics": {
+    "tool_calls": 14,
+    "tool_errors": 0,
+    "discoveries": 6,
+    "mutations": 4,
+    "lifecycle_actions": 1,
+    "validations": 3,
+    "first_mutation_after_ms": 6595,
+    "last_observed_after_ms": 46802
+  },
+  "architecture": {
+    "technologies": [
+      "Python",
+      "SQLite",
+      "systemd"
+    ],
+    "service_units": [
+      "queue-api.service",
+      "queue-seed.service",
+      "queue-worker.service"
+    ],
+    "persistent_paths": [
+      "/etc/systemd/system",
+      "/opt/job-queue",
+      "/opt/job-queue/api.py",
+      "/opt/job-queue/worker.py",
+      "/var/lib/job-queue",
+      "/var/lib/job-queue/jobs.sqlite3"
+    ]
+  },
+  "actions": [
+    {
+      "index": 1,
+      "tool_id": "call_paJwKLDgVOG9ULGBobRivB0U",
+      "kind": "discovery",
+      "started_after_ms": 6489,
+      "duration_ms": 33,
+      "description": "Inspect queue directories and host layout",
+      "command": "pwd; printf '\\n/root listing:\\n'; ls -la /root; printf '\\n/opt:\\n'; ls -la /opt 2>&1 || true; printf '\\njob queue paths:\\n'; ls -la /opt/job-queue /var/lib/job-queue 2>&1 || true",
+      "success": true,
+      "output_excerpt": "/root\n\n/root listing:\ntotal 24\ndrwx------  5 root root 4096 Aug 15 03:28 .\ndrwxr-xr-x 17 root root 4096 Aug 15 03:28 ..\ndrwxr-xr-x  3 root root 4096 Aug 15 03:28 .config\ndrwxr-xr-x  3 root root 4096 Aug 15 03:28 .local\n-rw-r--r--  1 root root   48 Aug 15 03:28 .nix-channels\ndrwx-…"
+    },
+    {
+      "index": 2,
+      "tool_id": "call_54mWTuMfnJ18jrNmB190VzTa",
+      "kind": "validation",
+      "started_after_ms": 6522,
+      "duration_ms": 72,
+      "description": "Inspect existing systemd queue slots",
+      "command": "systemctl status queue-api.service --no-pager 2>&1 || true; printf '\\n--- worker ---\\n'; systemctl status queue-worker.service --no-pager 2>&1 || true; printf '\\n--- units ---\\n'; systemctl cat queue-api.service 2>&1 || true; printf '\\n'; systemctl cat queue-worker.service 2>&1 || true",
+      "success": true,
+      "output_excerpt": "× queue-api.service - Agent-built durable queue API slot\n     Loaded: loaded (/etc/systemd/system/queue-api.service; enabled; preset: ignored)\n     Active: failed (Result: start-limit-hit) since Sat 2026-08-15 03:28:48 UTC; 6s ago\n   Duration: 135ms\n Invocation: 5167e2a7a92743c2b…"
+    },
+    {
+      "index": 3,
+      "tool_id": "call_5bNlwrFgRsavZZGtfMBhZEGx",
+      "kind": "mutation",
+      "started_after_ms": 6595,
+      "duration_ms": 42,
+      "description": "Inspect existing SQLite schema and accepted jobs",
+      "command": "command -v sqlite3 || true; if [ -f /var/lib/job-queue/jobs.sqlite3 ]; then sqlite3 /var/lib/job-queue/jobs.sqlite3 '.schema' 2>&1; sqlite3 /var/lib/job-queue/jobs.sqlite3 'SELECT * FROM jobs;' 2>&1; fi",
+      "success": true,
+      "output_excerpt": "/run/current-system/sw/bin/sqlite3\nCREATE TABLE jobs (id TEXT PRIMARY KEY, payload TEXT NOT NULL, status TEXT NOT NULL, result TEXT, attempts INTEGER NOT NULL DEFAULT 0);\naccepted-alpha-7d3|alpha|queued||0\naccepted-beta-91e|beta|queued||0\naccepted-gamma-c42|gamma|queued||0"
+    },
+    {
+      "index": 4,
+      "tool_id": "call_7kvTnYvjid2kG3BNvZsSiSiw",
+      "kind": "discovery",
+      "started_after_ms": 6638,
+      "duration_ms": 1436,
+      "description": "Locate instructions and queue sources",
+      "command": "find / -maxdepth 3 \\( -name 'CLAUDE.md' -o -name 'README*' -o -name 'api.py' -o -name 'worker.py' \\) -print 2>/dev/null | head -100",
+      "success": true,
+      "output_excerpt": null
+    },
+    {
+      "index": 5,
+      "tool_id": "call_G3I89AGMXTkdzASoNZ6sHVvj",
+      "kind": "validation",
+      "started_after_ms": 13399,
+      "duration_ms": 47,
+      "description": "Read failed service logs",
+      "command": "journalctl -u queue-api.service -u queue-worker.service -b --no-pager -n 100 2>&1",
+      "success": true,
+      "output_excerpt": "Aug 15 03:28:41 queue-one systemd[1]: Started Agent-built durable queue API slot.\nAug 15 03:28:41 queue-one systemd[1]: Started Agent-built durable queue worker slot.\nAug 15 03:28:41 queue-one python[549]: /nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python: can…"
+    },
+    {
+      "index": 6,
+      "tool_id": "call_ySyO87JAFQKfrnVF2Xi0rJEn",
+      "kind": "validation",
+      "started_after_ms": 13447,
+      "duration_ms": 119,
+      "description": "Inspect database seeding dependency",
+      "command": "systemctl cat queue-seed.service 2>&1 || true; systemctl status queue-seed.service --no-pager 2>&1 || true; journalctl -u queue-seed.service -b --no-pager -n 100 2>&1 || true",
+      "success": true,
+      "output_excerpt": "# /etc/systemd/system/queue-seed.service -> /nix/store/cby1pq2f53kg8q9gjfc27rqxkkqgy629-unit-queue-seed.service/queue-seed.service\n[Unit]\nBefore=queue-api.service queue-worker.service\nDescription=Seed opaque jobs accepted before the deployment\n\n[Service]\nEnvironment=\"LOCALE_ARCHI…"
+    },
+    {
+      "index": 7,
+      "tool_id": "call_prbpyD9SlfSirMlYEKNDQvn7",
+      "kind": "mutation",
+      "started_after_ms": 13566,
+      "duration_ms": 28,
+      "description": "Check SQLite durability configuration",
+      "command": "sqlite3 /var/lib/job-queue/jobs.sqlite3 'PRAGMA journal_mode; PRAGMA synchronous; PRAGMA user_version; PRAGMA table_info(jobs); PRAGMA integrity_check;'",
+      "success": true,
+      "output_excerpt": "delete\n2\n0\n0|id|TEXT|0||1\n1|payload|TEXT|1||0\n2|status|TEXT|1||0\n3|result|TEXT|0||0\n4|attempts|INTEGER|1|0|0\nok"
+    },
+    {
+      "index": 8,
+      "tool_id": "call_pvskBcyQmoXpZJZshcZCJtN1",
+      "kind": "discovery",
+      "started_after_ms": 13595,
+      "duration_ms": 101,
+      "description": "Inspect systemd boot configuration",
+      "command": "ls -la /etc/systemd/system; printf '\\nboot config:\\n'; systemctl is-enabled queue-api.service queue-worker.service 2>&1; systemctl is-enabled queue-seed.service 2>&1 || true",
+      "success": true,
+      "output_excerpt": "lrwxrwxrwx 1 root root 26 Aug 15 03:28 /etc/systemd/system -> /etc/static/systemd/system\n\nboot config:\nenabled\nenabled\nenabled"
+    },
+    {
+      "index": 10,
+      "tool_id": "call_ueGsHHJdoE33raasSGvVdnvQ",
+      "kind": "mutation",
+      "started_after_ms": 35199,
+      "duration_ms": 0,
+      "description": null,
+      "command": "Write /opt/job-queue/api.py",
+      "success": true,
+      "output_excerpt": "Successfully wrote to /opt/job-queue/api.py"
+    },
+    {
+      "index": 11,
+      "tool_id": "call_YBWhcJBcfXP5EBqVlskDZUbV",
+      "kind": "mutation",
+      "started_after_ms": 37915,
+      "duration_ms": 0,
+      "description": null,
+      "command": "Write /opt/job-queue/worker.py",
+      "success": true,
+      "output_excerpt": "Successfully wrote to /opt/job-queue/worker.py"
+    },
+    {
+      "index": 12,
+      "tool_id": "call_JzrxJnajOOHL3WWjGUBgiKB5",
+      "kind": "discovery",
+      "started_after_ms": 41558,
+      "duration_ms": 301,
+      "description": "Compile queue Python services",
+      "command": "python3 -m py_compile /opt/job-queue/api.py /opt/job-queue/worker.py",
+      "success": true,
+      "output_excerpt": null
+    },
+    {
+      "index": 13,
+      "tool_id": "call_Xw5tYVUtLD7w6OORegzgU1ph",
+      "kind": "discovery",
+      "started_after_ms": 41859,
+      "duration_ms": 145,
+      "description": "Verify scripts with service Python runtime",
+      "command": "ls -l /opt/job-queue; python3 --version; /nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python -m py_compile /opt/job-queue/api.py /opt/job-queue/worker.py",
+      "success": true,
+      "output_excerpt": "total 12\n-rw-r--r-- 1 root root 3345 Aug 15 03:29 api.py\ndrwxr-xr-x 2 root root 4096 Aug 15 03:29 __pycache__\n-rw-r--r-- 1 root root 1288 Aug 15 03:29 worker.py\nPython 3.14.7"
+    },
+    {
+      "index": 14,
+      "tool_id": "call_WbNlJI2ohX8W4iu7NzgboTmv",
+      "kind": "discovery",
+      "started_after_ms": 42005,
+      "duration_ms": 10,
+      "description": "Review implemented queue scripts",
+      "command": "git diff --no-index /dev/null /opt/job-queue/api.py 2>/dev/null || true; git diff --no-index /dev/null /opt/job-queue/worker.py 2>/dev/null || true",
+      "success": true,
+      "output_excerpt": null
+    },
+    {
+      "index": 16,
+      "tool_id": "call_BtJ9bRwAOyNBKN7QjfNnomYC",
+      "kind": "lifecycle",
+      "started_after_ms": 46724,
+      "duration_ms": 78,
+      "description": "Start and verify both queue services",
+      "command": "systemctl reset-failed queue-api.service queue-worker.service && systemctl restart queue-api.service queue-worker.service && systemctl is-active queue-api.service queue-worker.service && systemctl is-enabled queue-api.service queue-worker.service",
+      "success": true,
+      "output_excerpt": "active\nactive\nenabled\nenabled"
+    }
+  ]
+}

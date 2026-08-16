@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "analyzer": "aoe-controller/0.1.0",
+  "source_sha256": "9502d2d2119a6034551500e07d6caf94884b89938451488e9dbb89043d995757",
+  "agent": "deepseek-queue-builder",
+  "territory": "queue-three",
+  "model": "deepseek/deepseek-v4-flash-0731",
+  "outcome": "running",
+  "metrics": {
+    "tool_calls": 5,
+    "tool_errors": 0,
+    "discoveries": 1,
+    "mutations": 2,
+    "lifecycle_actions": 0,
+    "validations": 2,
+    "first_mutation_after_ms": 12506,
+    "last_observed_after_ms": 130213
+  },
+  "architecture": {
+    "technologies": [
+      "Python",
+      "SQLite",
+      "systemd"
+    ],
+    "service_units": [
+      "etc/systemd/system/queue-api.service",
+      "etc/systemd/system/queue-seed.service",
+      "etc/systemd/system/queue-worker.service",
+      "queue-seed.service"
+    ],
+    "persistent_paths": [
+      "/etc/systemd/system",
+      "/etc/systemd/system/queue-api.service",
+      "/etc/systemd/system/queue-seed.service",
+      "/etc/systemd/system/queue-worker.service",
+      "/opt",
+      "/opt/job-queue",
+      "/var/lib/job-queue",
+      "/var/lib/job-queue/jobs.sqlite3"
+    ]
+  },
+  "actions": [
+    {
+      "index": 1,
+      "tool_id": "call_5dfca9c630294f9baf28e19a",
+      "kind": "validation",
+      "started_after_ms": 12389,
+      "duration_ms": 116,
+      "description": "Explore existing state",
+      "command": "ls -la /opt/job-queue/ 2>/dev/null; echo \"---\"; ls -la /var/lib/job-queue/ 2>/dev/null; echo \"---\"; ls /etc/systemd/system/ | grep -i queue 2>/dev/null; echo \"---\"; systemctl status queue-api queue-worker 2>&1 | head -20",
+      "success": true,
+      "output_excerpt": "---\ntotal 20\ndrwxr-xr-x 2 root root  4096 Aug 15 05:25 .\ndrwxr-xr-x 9 root root  4096 Aug 15 05:25 ..\n-rw-r--r-- 1 root root 12288 Aug 15 05:25 jobs.sqlite3\n---\ndev-mqueue.mount\nqueue-api.service\nqueue-seed.service\nqueue-worker.service\n---\n× queue-api.service - Agent-built durabl…"
+    },
+    {
+      "index": 2,
+      "tool_id": "call_0e32aa2dae914dbfaf849349",
+      "kind": "mutation",
+      "started_after_ms": 12506,
+      "duration_ms": 48,
+      "description": "Check Python, sqlite3, systemd versions and DB schema",
+      "command": "which python3 sqlite3; python3 --version; echo \"---\"; systemctl --version | head -1; echo \"---\"; sqlite3 /var/lib/job-queue/jobs.sqlite3 \".tables\" 2>/dev/null; sqlite3 /var/lib/job-queue/jobs.sqlite3 \".schema\" 2>/dev/null",
+      "success": true,
+      "output_excerpt": "/run/current-system/sw/bin/python3\n/run/current-system/sw/bin/sqlite3\nPython 3.14.7\n---\nsystemd 261 (261.1)\n---\njobs\nCREATE TABLE jobs (id TEXT PRIMARY KEY, payload TEXT NOT NULL, status TEXT NOT NULL, result TEXT, attempts INTEGER NOT NULL DEFAULT 0);"
+    },
+    {
+      "index": 3,
+      "tool_id": "call_024e5769f84f4593892c43fa",
+      "kind": "discovery",
+      "started_after_ms": 25555,
+      "duration_ms": 30,
+      "description": "Inspect existing unit files",
+      "command": "ls -la /opt/ 2>/dev/null; echo \"---\"; cat /etc/systemd/system/queue-api.service; echo \"===\"; cat /etc/systemd/system/queue-worker.service; echo \"===\"; cat /etc/systemd/system/queue-seed.service",
+      "success": true,
+      "output_excerpt": "---\n[Unit]\nAfter=network.target queue-seed.service\nDescription=Agent-built durable queue API slot\nRequires=queue-seed.service\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE=/nix/store/c59mcax29xrwyfdqs308wkmn2srnmzkn-glibc-locales-2.42-67/lib/locale/locale-archive\"\nEnvironment=\"PATH=/nix…"
+    },
+    {
+      "index": 4,
+      "tool_id": "call_dcbb574402694f4599cdd694",
+      "kind": "mutation",
+      "started_after_ms": 25585,
+      "duration_ms": 10,
+      "description": "Inspect existing jobs in DB",
+      "command": "sqlite3 /var/lib/job-queue/jobs.sqlite3 \"SELECT count(*) FROM jobs; SELECT status, count(*) FROM jobs GROUP BY status; SELECT * FROM jobs LIMIT 10;\"",
+      "success": true,
+      "output_excerpt": "3\nqueued|3\naccepted-alpha-7d3|alpha|queued||0\naccepted-beta-91e|beta|queued||0\naccepted-gamma-c42|gamma|queued||0"
+    },
+    {
+      "index": 5,
+      "tool_id": "call_3d30ce0a1ab145dc9818eb3c",
+      "kind": "validation",
+      "started_after_ms": 130156,
+      "duration_ms": 57,
+      "description": "Inspect seed script and python path",
+      "command": "cat /nix/store/2dfn4ylvf2r7j47aqms6mn63pnk0nj5h-unit-script-queue-seed-start/bin/queue-seed-start 2>/dev/null; echo \"---STATUS---\"; systemctl status queue-seed.service 2>&1 | head -10; echo \"---PY---\"; ls -la /nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python",
+      "success": true,
+      "output_excerpt": "#!/nix/store/byi2zpy2bgcf3dr6y0l8m50rmjj8z7q1-bash-5.3p15/bin/bash\nset -e\n\ninstall -d -m 0755 /var/lib/job-queue\n/nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python - <<'PY'\nimport sqlite3\ndb = sqlite3.connect('/var/lib/job-queue/jobs.sqlite3')\ndb.execute('CREAT…"
+    }
+  ]
+}
