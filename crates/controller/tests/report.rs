@@ -183,6 +183,11 @@ fn generates_archive_and_match_artifacts() {
     assert!(match_page.contains("Service map"));
     assert!(match_page.contains("State Store"));
     assert!(match_page.contains("data-topology"));
+    assert!(match_page.contains("agent-terminal"));
+    assert!(match_page.contains("data-terminal-lines"));
+    assert!(match_page.contains("no observable tool activity"));
+    assert!(match_page.contains("\"activity\":"));
+    assert!(match_page.contains("Repair config"));
     assert!(match_page.contains("How they fought"));
     assert!(match_page.contains("First change"));
     assert!(match_page.contains("Python"));

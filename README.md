@@ -226,7 +226,10 @@ totals, the complete event timeline, downloadable source artifacts, and any
 agent transcripts captured before or during the post-match drain. An interactive
 replay plots each agent on a shared clock with milestone, state, usage, and
 terminal markers. It supports playback speeds, scrubbing, and raw event
-inspection without changing or reinterpreting the referee's result.
+inspection without changing or reinterpreting the referee's result. When tool
+activity is available, evidence-backed terminal panels beneath each service map
+replay what the agent was doing and make long periods without observable tool
+activity explicit rather than inventing private reasoning.
 
 When a harness emits a structured `tool_trace`, the report also generates a
 versioned `analysis.json` for each agent and a **How they fought** comparison.
