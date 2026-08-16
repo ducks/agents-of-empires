@@ -7,6 +7,7 @@ pub mod provenance;
 pub mod report;
 pub mod runner;
 pub mod series;
+pub mod trajectory;
 
 pub use analysis::{
     ANALYSIS_SCHEMA_VERSION, ActionKind, AnalysisError, AnalysisMetrics, ArchitectureEvidence,
@@ -28,4 +29,7 @@ pub use runner::{RunOptions, run_match};
 pub use series::{
     SeriesError, SeriesOptions, SeriesRound, SeriesStanding, SeriesSummary, render_series,
     run_series,
+};
+pub use trajectory::{
+    ATIF_VERSION, INFRA_EVAL_VERSION, TrajectoryError, TrajectoryExportSummary, export_trajectories,
 };

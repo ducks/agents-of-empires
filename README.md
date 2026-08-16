@@ -210,6 +210,22 @@ agents-of-empires replay matches/first-contact/events.jsonl --no-color
 agents-of-empires inspect matches/first-contact/events.jsonl 42 --json
 ```
 
+Export one match or a directory of matches as
+[ATIF v1.7](https://harborframework.com/docs/agent-trajectory-interchange-format/):
+
+```bash
+agents-of-empires trajectory matches --output trajectories
+```
+
+Each agent becomes one portable trajectory containing its initial prompt,
+exact observable tool calls and outputs, final response, usage, and timing.
+`final_metrics.extra.infrastructure_evaluation` adds the arena identity,
+adapter and model configuration, milestone results, durable outcome, winner,
+and immutable match provenance. Private assistant reasoning is intentionally
+excluded. Replaybook emits the same extension, so infrastructure-agent traces
+from both tools can feed one analysis or training pipeline without giving the
+agent harness control over the referee's result.
+
 Generate a self-contained static match archive from one match or every match in
 a directory:
 
