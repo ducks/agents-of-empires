@@ -1,4 +1,4 @@
-.PHONY: help version-bump release build test clippy fmt fmt-check validate lint clean install-hooks release-preflight
+.PHONY: help version-bump release build demo demo-check test clippy fmt fmt-check validate lint clean install-hooks release-preflight
 
 define get_next_version
 $(shell \
@@ -22,6 +22,8 @@ help:
 	@echo "  make release                       - Version, merge, tag, and push a release"
 	@echo "  make release VERSION=20260816.0.0  - Release a specific version"
 	@echo "  make build          - Build the release binaries"
+	@echo "  make demo           - Run a free oracle race and generate its report"
+	@echo "  make demo-check     - Check the demo launcher without running guests"
 	@echo "  make test           - Run the workspace test suite"
 	@echo "  make clippy         - Run Clippy across every target"
 	@echo "  make fmt            - Format the workspace"
@@ -57,6 +59,12 @@ release: version-bump
 build:
 	cargo build --release --workspace
 
+demo:
+	@./scripts/run-demo.sh
+
+demo-check:
+	bash -n scripts/run-demo.sh
+
 test:
 	cargo test --workspace
 
@@ -72,7 +80,7 @@ fmt-check:
 validate:
 	cargo run --quiet --bin agents-of-empires -- arena validate examples/hello-service-arena
 
-lint: fmt-check clippy test validate
+lint: fmt-check clippy test validate demo-check
 
 clean:
 	cargo clean

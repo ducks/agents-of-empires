@@ -33,6 +33,18 @@ make lint
 Run `make help` for the individual build, test, format, validation, cleanup,
 and pre-push hook targets.
 
+Run a complete deterministic match without an API key or model spend:
+
+```bash
+make demo
+```
+
+The demo races three oracle builders on disposable NixOS guests, verifies the
+winner through a host reboot, generates the static match report, and prints its
+exact local `file://` URL. Set `AOE_DEMO_BASE_PORT` when the default port block
+starting at `26000` is already in use. Demo artifacts are timestamped below the
+ignored `.agents-of-empires/demos/` directory.
+
 Maintainers can run `make release` from a clean `main` branch to create a
 date-versioned release branch, bump the workspace version, merge it with a
 merge commit, tag and push the release, and trigger downloadable Linux and
