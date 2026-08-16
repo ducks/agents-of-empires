@@ -223,7 +223,10 @@ agents-of-empires report benchmarks/infra-core \
 Open `site/index.html` locally or publish `site/` with GitHub Pages. Each match
 page includes the frozen outcome, territory and agent results, token and cost
 totals, the complete event timeline, downloadable source artifacts, and any
-agent transcripts captured before or during the post-match drain. An interactive
+agent transcripts captured before or during the post-match drain. Agent tables
+identify the exact model, harness adapter, and reasoning effort. A provenance
+panel records the engine version, source revision, arena schema, compatibility
+key, and immutable manifest, verifier, and adapter hashes. An interactive
 replay plots each agent on a shared clock with milestone, state, usage, and
 terminal markers. It supports playback speeds, scrubbing, and raw event
 inspection without changing or reinterpreting the referee's result. When tool

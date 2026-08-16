@@ -151,7 +151,13 @@ fn generates_archive_and_match_artifacts() {
     let manifest_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .join("arenas/first-build/arena.toml");
-    let manifest = ArenaManifest::load(manifest_path).expect("arena manifest");
+    let mut manifest = ArenaManifest::load(manifest_path).expect("arena manifest");
+    manifest.agents[0].id = "agent-a".into();
+    manifest.agents[0].territory = "territory-a".into();
+    manifest.agents[0].adapter = "test-harness".into();
+    manifest.agents[0].reasoning_effort = "xhigh".into();
+    manifest.agents[1].id = "agent-b".into();
+    manifest.agents[1].territory = "territory-b".into();
     fs::write(
         source.join("arena.json"),
         serde_json::to_vec_pretty(&manifest).expect("arena JSON"),
@@ -174,6 +180,10 @@ fn generates_archive_and_match_artifacts() {
     let match_page =
         fs::read_to_string(output.join("matches/build-race-001/index.html")).expect("match");
     assert!(match_page.contains("model/a"));
+    assert!(match_page.contains("<th>Harness</th>"));
+    assert!(match_page.contains("test-harness"));
+    assert!(match_page.contains("xhigh"));
+    assert!(match_page.contains("Exact provenance is unavailable"));
     assert!(match_page.contains("12,345"));
     assert!(match_page.contains("Match finished"));
     assert!(match_page.contains("Watch the race unfold"));
@@ -353,12 +363,12 @@ fn separates_current_compatibility_key_from_history() {
             serde_json::to_vec(&json!({
                 "schema_version": 1,
                 "controller_version": "0.1.0",
-                "source_revision": null,
+                "source_revision": "1234567890abcdef",
                 "arena_id": "build",
                 "arena_mode": "buildrace",
                 "manifest_sha256": key,
                 "verifier_sha256": key,
-                "adapter_sha256": {},
+                "adapter_sha256": {"claux": "abcdef1234567890"},
                 "compatibility_key": key
             }))
             .expect("provenance"),
@@ -382,6 +392,14 @@ fn separates_current_compatibility_key_from_history() {
     assert!(!archive.contains("race-003"));
     assert!(archive.contains("Superseded manifest or verifier"));
     assert!(archive.contains("href=\"../matches/race-001/\""));
+    let current_match =
+        fs::read_to_string(output.join("matches/race-002/index.html")).expect("current match");
+    assert!(current_match.contains("Match provenance"));
+    assert!(current_match.contains("Agents of Empires v0.1.0"));
+    assert!(current_match.contains("1234567890ab"));
+    assert!(current_match.contains("claux"));
+    assert!(current_match.contains("abcdef123456"));
+    assert!(current_match.contains("href=\"artifacts/match.json\""));
     fs::remove_dir_all(root).expect("cleanup");
 }
 
