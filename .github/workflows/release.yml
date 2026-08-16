@@ -1,0 +1,93 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  quality:
+    name: Test and lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy,rustfmt
+
+      - run: make lint
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: quality
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact: agents-of-empires-linux-x86_64
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact: agents-of-empires-linux-arm64
+            cross: true
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            artifact: agents-of-empires-macos-x86_64
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            artifact: agents-of-empires-macos-arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross
+        if: matrix.cross
+        run: cargo install cross --git https://github.com/cross-rs/cross --locked
+
+      - name: Build with cross
+        if: matrix.cross
+        run: cross build --release --locked --target ${{ matrix.target }} --bin agents-of-empires
+
+      - name: Build
+        if: "!matrix.cross"
+        run: cargo build --release --locked --target ${{ matrix.target }} --bin agents-of-empires
+
+      - name: Strip binary
+        if: "!matrix.cross"
+        run: strip target/${{ matrix.target }}/release/agents-of-empires
+
+      - name: Rename binary
+        run: cp target/${{ matrix.target }}/release/agents-of-empires ${{ matrix.artifact }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: sha256sum agents-of-empires-* > SHA256SUMS
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            agents-of-empires-*
+            SHA256SUMS
+          generate_release_notes: true
