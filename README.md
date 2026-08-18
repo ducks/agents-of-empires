@@ -361,6 +361,30 @@ cargo run --release --bin agents-of-empires -- run \
 After the oracle passes, use `agents-real.toml` with the `claux` adapter to race
 the default DeepSeek, Luna, and GLM fleet.
 
+## Traffic surge race
+
+The traffic surge arena begins with a healthy but serial stateful service and
+three historical priority records. Controller-owned load generators steadily
+add optional work while opaque priority writes arrive. Agents may introduce
+concurrency, caching, admission control, or deliberate load shedding, but every
+accepted priority write must remain responsive and recoverable through service
+restart under load plus host reboot. Test the arena with deterministic oracle
+agents first:
+
+```bash
+credentials="$(scripts/prepare-traffic-surge-credentials.sh)"
+cargo run --release --bin agents-of-empires -- run \
+  arenas/traffic-surge/arena.toml \
+  --adapter oracle-surge=adapters/oracle-surge.sh \
+  --credential surge-one="$credentials/surge-one.env" \
+  --credential surge-two="$credentials/surge-two.env" \
+  --credential surge-three="$credentials/surge-three.env" \
+  --output "matches/traffic-surge-oracle-$(date -u +%Y%m%d-%H%M%S)"
+```
+
+After the oracle passes, race the default DeepSeek, Luna, and GLM fleet using
+`arenas/traffic-surge/agents-real.toml` and the `claux` adapter.
+
 ## Stateful primary failover race
 
 The failover arena begins with a dead primary, a healthy read-only replica,

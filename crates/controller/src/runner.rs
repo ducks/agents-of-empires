@@ -993,19 +993,36 @@ async fn audit_fog_of_war(
                  if [ -n \"$match\" ]; then printf '%s\\n' \"$match\"; exit 42; fi",
                 shell_quote(forbidden)
             );
-            let output = password_ssh_output(assignment.ssh_port, &password, &command).await?;
-            if output.status.code() == Some(42) {
-                return Err(RunError::GuestLeak {
-                    territory: assignment.territory.clone(),
-                    forbidden: forbidden.clone(),
-                    path: String::from_utf8_lossy(&output.stdout).trim().to_owned(),
-                });
+            let mut last_failure = String::new();
+            let mut passed = false;
+            for attempt in 1..=5 {
+                match password_ssh_output(assignment.ssh_port, &password, &command).await {
+                    Ok(output) if output.status.code() == Some(42) => {
+                        return Err(RunError::GuestLeak {
+                            territory: assignment.territory.clone(),
+                            forbidden: forbidden.clone(),
+                            path: String::from_utf8_lossy(&output.stdout).trim().to_owned(),
+                        });
+                    }
+                    Ok(output) if output.status.success() => {
+                        passed = true;
+                        break;
+                    }
+                    Ok(output) => {
+                        String::from_utf8_lossy(&output.stderr)
+                            .trim()
+                            .clone_into(&mut last_failure);
+                    }
+                    Err(error) => last_failure = error.to_string(),
+                }
+                if attempt < 5 {
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                }
             }
-            if !output.status.success() {
+            if !passed {
                 return Err(RunError::Preflight(format!(
-                    "{}: fog-of-war leak audit failed: {}",
-                    assignment.territory,
-                    String::from_utf8_lossy(&output.stderr).trim()
+                    "{}: fog-of-war leak audit failed after 5 attempts: {}",
+                    assignment.territory, last_failure
                 )));
             }
         }
