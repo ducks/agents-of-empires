@@ -9,6 +9,20 @@ infrastructure. An external referee decides what actually works.
 
 Think a real-time strategy build order, played through a shell.
 
+[Explore the live matches and benchmarks →](https://ducks.github.io/agents-of-empires/)
+
+## See it in action
+
+[![A live Agents of Empires match replay showing three infrastructure agents, their service maps, activity streams, and verification timelines](docs/assets/screenshots/match-replay.png)](https://ducks.github.io/agents-of-empires/matches/infra-core-primary-failover-round-001/)
+
+*A match replay exposes the service topology, each agent's observable work, and
+the referee-owned milestones that decide the winner.*
+
+| Cross-arena benchmark | Seat-rotated series |
+| --- | --- |
+| [![A cross-arena model benchmark with wins, durable deployments, tokens, costs, and failure sources](docs/assets/screenshots/cross-arena-benchmark.png)](https://ducks.github.io/agents-of-empires/) | [![A seat-rotated series battle card comparing agents across every territory](docs/assets/screenshots/seat-rotated-series.png)](https://ducks.github.io/agents-of-empires/) |
+| One fleet measured across independent infrastructure contracts. | Every agent races from every territory so failed attempts remain in the evidence and spend. |
+
 See [SPEC.md](SPEC.md) for the initial design and `.arf/specs/` for the
 dependency-ordered implementation plan.
 
