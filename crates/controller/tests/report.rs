@@ -645,6 +645,7 @@ fn generates_benchmark_leaderboard_and_drill_down() {
         }],
         arenas: vec![BenchmarkArenaSummary {
             arena_id: "first-build-real".into(),
+            category: Some("service-delivery".into()),
             output: arena.clone(),
             rounds_requested: 1,
             rounds_completed: 1,
@@ -676,6 +677,11 @@ fn generates_benchmark_leaderboard_and_drill_down() {
     let page = fs::read_to_string(output.join("benchmarks/infra-core/index.html"))
         .expect("benchmark page");
     assert!(page.contains("Model leaderboard"));
+    assert!(page.contains("Infrastructure capabilities"));
+    assert!(page.contains("Share of spend"));
+    assert!(page.contains("data-benchmark-treemap"));
+    assert!(page.contains("service-delivery"));
+    assert!(page.contains("arena-rankings"));
     assert!(page.contains("deepseek/v4"));
     assert!(page.contains("claux · high"));
     assert!(page.contains("4/4"));

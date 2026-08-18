@@ -106,6 +106,22 @@ Each match records the exact manifest as `arena.json`. Report generation uses
 that snapshot, so external packages receive the same visualization support and
 historical matches without a snapshot continue to render without a map.
 
+## Optional reporting category
+
+An arena may opt into the benchmark capability map with a presentation-only
+category in its existing `[arena]` table:
+
+```toml
+[arena]
+id = "durable-job-queue"
+display_name = "Durable Job Queue"
+category = "stateful-recovery"
+```
+
+Changing this category does not change the evaluation compatibility key.
+Historical benchmark JSON without the field remains valid; known built-in
+arenas receive a reporting fallback and other arenas appear as Uncategorized.
+
 ## Schema versioning
 
 Every `arena.toml` begins with `schema_version = 1`. Unknown fields and unsupported schema versions fail validation. Future incompatible arena contracts will receive a new schema version instead of silently changing historical matches.

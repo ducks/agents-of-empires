@@ -87,6 +87,32 @@ fn parses_valid_manifest() {
     let manifest = ArenaManifest::parse(VALID).expect("manifest should be valid");
     assert_eq!(manifest.territories.len(), 2);
     assert_eq!(manifest.agents[1].reasoning_effort, "default");
+    assert_eq!(manifest.arena.category, None);
+}
+
+#[test]
+fn parses_optional_reporting_category() {
+    let source = VALID.replace(
+        "display_name = \"First Contact\"",
+        "display_name = \"First Contact\"\ncategory = \"adversarial-systems\"",
+    );
+    let manifest = ArenaManifest::parse(&source).expect("categorized manifest");
+    assert_eq!(
+        manifest.arena.category.as_deref(),
+        Some("adversarial-systems")
+    );
+}
+
+#[test]
+fn rejects_invalid_reporting_category() {
+    let source = VALID.replace(
+        "display_name = \"First Contact\"",
+        "display_name = \"First Contact\"\ncategory = \"Adversarial Systems\"",
+    );
+    let Err(ManifestError::Validation(errors)) = ArenaManifest::parse(&source) else {
+        panic!("expected validation errors");
+    };
+    assert!(errors.iter().any(|error| error.path == "arena.category"));
 }
 
 #[test]

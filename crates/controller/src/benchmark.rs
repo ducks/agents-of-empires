@@ -64,6 +64,9 @@ pub struct BenchmarkPlanEntry {
 #[serde(deny_unknown_fields)]
 pub struct BenchmarkArenaSummary {
     pub arena_id: String,
+    /// Presentation taxonomy copied from the arena manifest.
+    #[serde(default)]
+    pub category: Option<String>,
     pub output: PathBuf,
     pub rounds_requested: usize,
     pub rounds_completed: usize,
@@ -477,6 +480,7 @@ fn summarize_arena(
     sort_standings(&mut standings);
     Ok(BenchmarkArenaSummary {
         arena_id: entry.arena_id.clone(),
+        category: manifest.arena.category.clone(),
         output: entry.output.clone(),
         rounds_requested: series.rounds_requested,
         rounds_completed: series.rounds_completed,
@@ -758,6 +762,19 @@ mod tests {
         assert_eq!(summary.arenas_completed, 1);
     }
 
+    #[test]
+    fn historical_arena_summaries_default_to_no_category() {
+        let mut value = serde_json::to_value(arena("historical", 1, 1_000, 4, 4, Some(800)))
+            .expect("summary JSON");
+        value
+            .as_object_mut()
+            .expect("summary object")
+            .remove("category");
+        let decoded: BenchmarkArenaSummary =
+            serde_json::from_value(value).expect("historical summary");
+        assert_eq!(decoded.category, None);
+    }
+
     fn arena(
         id: &str,
         wins: usize,
@@ -768,6 +785,7 @@ mod tests {
     ) -> BenchmarkArenaSummary {
         BenchmarkArenaSummary {
             arena_id: id.into(),
+            category: None,
             output: id.into(),
             rounds_requested: 1,
             rounds_completed: 1,
