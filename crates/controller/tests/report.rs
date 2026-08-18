@@ -682,6 +682,8 @@ fn generates_benchmark_leaderboard_and_drill_down() {
     assert!(page.contains("data-benchmark-treemap"));
     assert!(page.contains("service-delivery"));
     assert!(page.contains("arena-rankings"));
+    assert!(page.contains("treemap-fleet"));
+    assert!(page.contains("full competing fleet"));
     assert!(page.contains("deepseek/v4"));
     assert!(page.contains("claux · high"));
     assert!(page.contains("4/4"));

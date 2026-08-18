@@ -1055,7 +1055,7 @@ fn render_benchmark_treemap(report: &BenchmarkReport) -> String {
         .replace('>', "\\u003e")
         .replace('&', "\\u0026");
     format!(
-        r#"<section class="benchmark-treemap" data-benchmark-treemap><div class="section-heading"><div><span class="eyebrow">Capability map</span><h2>Infrastructure capabilities</h2></div><label>Size by <select data-treemap-metric><option value="spend">Share of spend</option><option value="tokens">Token usage</option><option value="runs">Evaluation volume</option><option value="repairs">Durable repairs</option></select></label></div><p class="treemap-intro">Arenas are grouped by operational domain. Tile size reflects the selected metric; the badge names the current arena leader.</p><div class="treemap-canvas" data-treemap-canvas></div><div class="treemap-legend" data-treemap-legend></div><div class="arena-rankings" data-arena-rankings></div><script type="application/json" data-treemap-data>{data}</script>{TREEMAP_SCRIPT}</section>"#
+        r#"<section class="benchmark-treemap" data-benchmark-treemap><div class="section-heading"><div><span class="eyebrow">Capability map</span><h2>Infrastructure capabilities</h2></div><label>Size by <select data-treemap-metric><option value="spend">Share of spend</option><option value="tokens">Token usage</option><option value="runs">Evaluation volume</option><option value="repairs">Durable repairs</option></select></label></div><p class="treemap-intro">Arenas are grouped by operational domain. Tile size reflects the selected metric; every tile lists the full competing fleet.</p><div class="treemap-canvas" data-treemap-canvas></div><div class="treemap-legend" data-treemap-legend></div><div class="arena-rankings" data-arena-rankings></div><script type="application/json" data-treemap-data>{data}</script>{TREEMAP_SCRIPT}{TREEMAP_FLEET_SCRIPT}</section>"#
     )
 }
 
@@ -1767,7 +1767,7 @@ fn escape(value: &str) -> String {
 
 fn page(title: &str, content: &str) -> String {
     format!(
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"color-scheme\" content=\"dark\"><title>{}</title><style>{}{}{}{}{}{}{}</style></head><body>{}</body></html>",
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"color-scheme\" content=\"dark\"><title>{}</title><style>{}{}{}{}{}{}{}{}</style></head><body>{}</body></html>",
         escape(title),
         STYLE,
         REPLAY_STYLE,
@@ -1776,6 +1776,7 @@ fn page(title: &str, content: &str) -> String {
         ACTIVITY_STYLE,
         PROVENANCE_STYLE,
         TREEMAP_STYLE,
+        TREEMAP_FLEET_STYLE,
         content
     )
 }
@@ -1810,6 +1811,24 @@ const TREEMAP_STYLE: &str = r"
 
 const TREEMAP_SCRIPT: &str = r#"<script>
 (()=>{const root=document.currentScript.closest('[data-benchmark-treemap]');if(!root)return;const data=JSON.parse(root.querySelector('[data-treemap-data]').textContent),canvas=root.querySelector('[data-treemap-canvas]'),details=root.querySelector('[data-arena-rankings]'),select=root.querySelector('[data-treemap-metric]'),legend=root.querySelector('[data-treemap-legend]');const colors=['#39796a','#a65b4f','#966f35','#635d91','#3f7185','#8b536d'];const text=v=>{const span=document.createElement('span');span.textContent=v??'';return span.innerHTML};const label=v=>v.replaceAll('-',' ').replace(/\b\w/g,c=>c.toUpperCase());const money=v=>`$${(v/1e6).toFixed(4)}`;const compact=v=>Intl.NumberFormat('en',{notation:'compact',maximumFractionDigits:1}).format(v);function layout(items,x,y,w,h,value){if(!items.length)return[];if(items.length===1)return[{item:items[0],x,y,w,h}];const sorted=[...items].sort((a,b)=>value(b)-value(a)),total=sorted.reduce((sum,item)=>sum+Math.max(1,value(item)),0);let sum=0,cut=1;for(;cut<sorted.length;cut++){sum+=Math.max(1,value(sorted[cut-1]));if(sum>=total/2)break}const first=sorted.slice(0,cut),second=sorted.slice(cut),ratio=first.reduce((s,i)=>s+Math.max(1,value(i)),0)/total;if(w>=h)return[...layout(first,x,y,w*ratio,h,value),...layout(second,x+w*ratio,y,w*(1-ratio),h,value)];return[...layout(first,x,y,w,h*ratio,value),...layout(second,x,y+h*ratio,w,h*(1-ratio),value)]}function show(arena){details.dataset.selected=arena.id;details.innerHTML=`<header><span class="eyebrow">Arena standings</span><h2>${text(arena.label)}</h2><p>${text(label(arena.category))} · ${arena.runs} evaluations · ${arena.repairs} durable repairs</p></header>`+arena.standings.map((standing,index)=>`<div class="arena-ranking-row"><b>${index+1}</b><strong>${text(standing.model)}</strong><span>${standing.wins} wins</span><span>${standing.durable}/${standing.runs} durable</span><span>${standing.tokens==null?'tokens n/a':compact(standing.tokens)+' tokens'}</span><span>${standing.spend==null?'cost n/a':money(standing.spend)}</span></div>`).join('')}function render(){canvas.innerHTML='';const metric=select.value,grouped=new Map;for(const arena of data){if(!grouped.has(arena.category))grouped.set(arena.category,[]);grouped.get(arena.category).push(arena)}const groups=[...grouped.entries()].map(([category,items])=>({category,items,value:items.reduce((sum,item)=>sum+Math.max(1,item[metric]),0)}));const groupRects=layout(groups,0,0,100,100,item=>item.value);legend.innerHTML='';groupRects.forEach((rect,index)=>{const color=colors[index%colors.length],group=document.createElement('div');group.className='treemap-group';group.style=`left:${rect.x}%;top:${rect.y}%;width:${rect.w}%;height:${rect.h}%;--tile-color:${color}`;group.innerHTML=`<strong>${text(label(rect.item.category))}</strong>`;const inner=layout(rect.item.items,0,0,100,100,item=>item[metric]);inner.forEach(tile=>{const button=document.createElement('button');button.type='button';button.className='treemap-tile';button.style=`left:${tile.x}%;top:${tile.y}%;width:${tile.w}%;height:${tile.h}%;--tile-color:${color}`;button.innerHTML=`<strong>${text(tile.item.label)}</strong><span>★ ${text(tile.item.leader)}</span><small>${metric==='spend'?money(tile.item[metric]):compact(tile.item[metric])} ${metric==='runs'?'runs':metric==='repairs'?'repairs':metric==='tokens'?'tokens':''}</small>`;button.addEventListener('click',()=>{root.querySelectorAll('.treemap-tile').forEach(item=>item.classList.remove('selected'));button.classList.add('selected');show(tile.item)});group.append(button)});canvas.append(group);legend.insertAdjacentHTML('beforeend',`<span style="--legend-color:${color}"><i></i>${text(label(rect.item.category))}</span>`)});show(data.find(item=>item.id===details.dataset.selected)||data[0])}select.addEventListener('change',render);if(data.length)render();else canvas.innerHTML='<p class="empty">No completed arenas.</p>'})();
+</script>"#;
+
+const TREEMAP_FLEET_STYLE: &str = r"
+.treemap-group>strong{z-index:4;padding:.25rem .35rem;background:#10130fcc}.treemap-tile{justify-content:flex-start;gap:.55rem;padding-top:2rem}.treemap-tile>span{display:none}.treemap-fleet{display:grid;gap:.28rem;min-height:0;overflow:hidden}.treemap-agent{display:grid;grid-template-columns:1.25rem minmax(0,1fr) auto;gap:.35rem;align-items:center;padding:.28rem .35rem;border:1px solid #ffffff24;background:#0a0d0a2e;font:600 .64rem/1.15 ui-monospace,SFMono-Regular,Menlo,monospace}.treemap-agent:first-child{border-color:#ffffff70;background:#ffffff16}.treemap-agent b{color:#fff}.treemap-agent code{overflow:hidden;color:#fff;text-overflow:ellipsis;white-space:nowrap}.treemap-agent em{color:#ffffffc9;font-size:.58rem;font-style:normal;white-space:nowrap}.treemap-total{margin-top:auto;color:#f5f7f0cc;font-size:.62rem;white-space:nowrap}@media(max-width:720px){.treemap-agent{grid-template-columns:1.1rem minmax(0,1fr)}.treemap-agent em{display:none}}
+";
+
+const TREEMAP_FLEET_SCRIPT: &str = r#"<script>
+(()=>{
+const root=document.currentScript.closest('[data-benchmark-treemap]');if(!root)return;
+const data=JSON.parse(root.querySelector('[data-treemap-data]').textContent),canvas=root.querySelector('[data-treemap-canvas]'),metric=root.querySelector('[data-treemap-metric]');
+const escape=v=>{const span=document.createElement('span');span.textContent=v??'';return span.innerHTML};
+const compact=v=>Intl.NumberFormat('en',{notation:'compact',maximumFractionDigits:1}).format(v);
+const money=v=>`$${(v/1e6).toFixed(4)}`;
+const value=(standing,key)=>key==='repairs'?standing.durable:standing[key];
+const formatted=(standing,key)=>{const amount=value(standing,key);if(amount==null)return'n/a';if(key==='spend')return money(amount);if(key==='tokens')return compact(amount);return String(amount)};
+function enhance(){for(const tile of canvas.querySelectorAll('.treemap-tile')){if(tile.querySelector('.treemap-fleet'))continue;const title=tile.querySelector('strong')?.textContent,arena=data.find(item=>item.label===title);if(!arena)continue;const key=metric.value,fleet=document.createElement('div');fleet.className='treemap-fleet';fleet.innerHTML=arena.standings.map((standing,index)=>`<div class="treemap-agent" title="${escape(standing.model)}"><b>${index===0?'★':index+1}</b><code>${escape(standing.model)}</code><em>${formatted(standing,key)}</em></div>`).join('');tile.querySelector('small')?.remove();tile.append(fleet);const total=document.createElement('small');total.className='treemap-total';total.textContent=`Total ${key}: ${key==='spend'?money(arena[key]):compact(arena[key])}`;tile.append(total)}}
+new MutationObserver(enhance).observe(canvas,{childList:true,subtree:true});metric.addEventListener('change',()=>requestAnimationFrame(enhance));enhance();
+})();
 </script>"#;
 
 const REPLAY_SCRIPT: &str = r#"
