@@ -43,10 +43,11 @@ pub fn write_provenance(
     let manifest_source = fs::read(manifest_path)?;
     let verifier_sha256 = verifier_digest(manifest_path, manifest)?;
     let manifest_sha256 = digest(&manifest_source);
+    let evaluation_manifest_sha256 = evaluation_manifest_digest(&manifest_source);
     let player_brief_sha256 = player_brief_digest(manifest_path, manifest)?;
     let compatibility_key = compatibility_key(
         &manifest.arena.id,
-        &manifest_sha256,
+        &evaluation_manifest_sha256,
         player_brief_sha256.as_deref(),
         &verifier_sha256,
     );
@@ -79,7 +80,8 @@ pub fn arena_compatibility_key(
     manifest_path: &Path,
     manifest: &ArenaManifest,
 ) -> Result<String, std::io::Error> {
-    let manifest_sha256 = digest(&fs::read(manifest_path)?);
+    let manifest_source = fs::read(manifest_path)?;
+    let manifest_sha256 = evaluation_manifest_digest(&manifest_source);
     let verifier_sha256 = verifier_digest(manifest_path, manifest)?;
     let player_brief_sha256 = player_brief_digest(manifest_path, manifest)?;
     Ok(compatibility_key(
@@ -88,6 +90,26 @@ pub fn arena_compatibility_key(
         player_brief_sha256.as_deref(),
         &verifier_sha256,
     ))
+}
+
+fn evaluation_manifest_digest(source: &[u8]) -> String {
+    let source = String::from_utf8_lossy(source);
+    let mut section = "";
+    let mut evaluation = String::with_capacity(source.len());
+    for line in source.split_inclusive('\n') {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            section = trimmed;
+        }
+        if section == "[arena]" && trimmed.starts_with("category") {
+            let suffix = trimmed.strip_prefix("category").unwrap_or("");
+            if suffix.trim_start().starts_with('=') {
+                continue;
+            }
+        }
+        evaluation.push_str(line);
+    }
+    digest(evaluation.as_bytes())
 }
 
 fn compatibility_key(

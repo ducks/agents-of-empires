@@ -102,6 +102,9 @@ pub enum TopologyLinkKind {
 pub struct ArenaConfig {
     pub id: String,
     pub display_name: String,
+    /// Reporting taxonomy only; changing it does not change evaluation semantics.
+    #[serde(default)]
+    pub category: Option<String>,
     #[serde(default)]
     pub mode: MatchMode,
 }
@@ -296,6 +299,9 @@ impl ArenaManifest {
         validate_id(&mut errors, "arena.id", &self.arena.id);
         if self.arena.display_name.trim().is_empty() {
             push_error(&mut errors, "arena.display_name", "must not be empty");
+        }
+        if let Some(category) = &self.arena.category {
+            validate_id(&mut errors, "arena.category", category);
         }
         if self.network.allow_public_internet {
             push_error(

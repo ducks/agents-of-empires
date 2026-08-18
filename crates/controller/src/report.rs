@@ -90,6 +90,29 @@ struct BenchmarkRoundLink {
     has_analysis: bool,
 }
 
+#[derive(Serialize)]
+struct TreemapArena<'a> {
+    id: &'a str,
+    label: String,
+    category: String,
+    leader: &'a str,
+    runs: usize,
+    repairs: usize,
+    tokens: u64,
+    spend: u64,
+    standings: Vec<TreemapStanding<'a>>,
+}
+
+#[derive(Serialize)]
+struct TreemapStanding<'a> {
+    model: &'a str,
+    wins: usize,
+    durable: usize,
+    runs: usize,
+    tokens: Option<u64>,
+    spend: Option<u64>,
+}
+
 /// Generate a self-contained static report site from one match directory or a
 /// directory containing match directories.
 ///
@@ -957,11 +980,12 @@ fn render_benchmark_report(report: &BenchmarkReport) -> String {
         );
     }
 
+    let treemap = render_benchmark_treemap(report);
     let content = format!(
         "<nav><a href=\"../../\">← Archive</a><span>Agents of Empires · benchmark</span></nav>
         <header class=\"hero match-hero\"><span class=\"eyebrow\">Cross-arena benchmark</span><h1>{}</h1><p>One consistent model fleet measured across independent infrastructure contracts.</p>
         <div class=\"hero-stats\"><div><small>Leader</small><strong>{}</strong></div><div><small>Arenas</small><strong>{}/{}</strong></div><div><small>Rounds</small><strong>{}</strong></div><div><small>Recorded cost</small><strong>{}</strong></div></div></header>
-        <main><section><div class=\"section-heading\"><h2>Model leaderboard</h2><p>Aggregate results from the verified matches below. The leaderboard is the summary; individual rounds are the evidence.</p></div><div class=\"table-wrap\"><table><thead><tr><th>Model</th><th>Wins</th><th>Durable</th><th>Milestones</th><th>Median</th><th>Tokens</th><th>Cost</th><th>Cost / durable</th><th>Failures</th></tr></thead><tbody>{standings}</tbody></table></div></section>
+        <main>{treemap}<section><div class=\"section-heading\"><h2>Model leaderboard</h2><p>Aggregate results from the verified matches below. The leaderboard is the summary; individual rounds are the evidence.</p></div><div class=\"table-wrap\"><table><thead><tr><th>Model</th><th>Wins</th><th>Durable</th><th>Milestones</th><th>Median</th><th>Tokens</th><th>Cost</th><th>Cost / durable</th><th>Failures</th></tr></thead><tbody>{standings}</tbody></table></div></section>
         <section><div class=\"section-heading\"><h2>Arenas and match evidence</h2><p>Open a round directly for its replay, audit trail, and How they fought strategy analysis.</p></div><div class=\"match-list benchmark-arenas\">{arenas}</div></section>
         <footer><a href=\"artifacts/benchmark.json\">benchmark.json</a></footer></main>",
         escape(&report.name),
@@ -972,6 +996,79 @@ fn render_benchmark_report(report: &BenchmarkReport) -> String {
         total_cost.map_or_else(|| "n/a".to_owned(), money),
     );
     page(&format!("{} · Agents of Empires", report.name), &content)
+}
+
+fn render_benchmark_treemap(report: &BenchmarkReport) -> String {
+    let arenas: Vec<_> = report
+        .summary
+        .arenas
+        .iter()
+        .map(|arena| {
+            let leader = arena
+                .standings
+                .first()
+                .map_or("No leader", |value| value.model.as_str());
+            let standings = arena
+                .standings
+                .iter()
+                .map(|standing| TreemapStanding {
+                    model: &standing.model,
+                    wins: standing.wins,
+                    durable: standing.durable_deployments,
+                    runs: standing.appearances,
+                    tokens: standing
+                        .input_tokens
+                        .zip(standing.output_tokens)
+                        .map(|(input, output)| input.saturating_add(output)),
+                    spend: standing.cost_microusd,
+                })
+                .collect();
+            TreemapArena {
+                id: &arena.arena_id,
+                label: humanize(&arena.arena_id),
+                category: reporting_category(arena),
+                leader,
+                runs: arena.standings.iter().map(|value| value.appearances).sum(),
+                repairs: arena
+                    .standings
+                    .iter()
+                    .map(|value| value.durable_deployments)
+                    .sum(),
+                tokens: arena
+                    .standings
+                    .iter()
+                    .filter_map(|value| value.input_tokens.zip(value.output_tokens))
+                    .map(|(input, output)| input.saturating_add(output))
+                    .sum(),
+                spend: arena
+                    .standings
+                    .iter()
+                    .filter_map(|value| value.cost_microusd)
+                    .sum(),
+                standings,
+            }
+        })
+        .collect();
+    let data = serde_json::to_string(&arenas)
+        .unwrap_or_else(|_| "[]".to_owned())
+        .replace('<', "\\u003c")
+        .replace('>', "\\u003e")
+        .replace('&', "\\u0026");
+    format!(
+        r#"<section class="benchmark-treemap" data-benchmark-treemap><div class="section-heading"><div><span class="eyebrow">Capability map</span><h2>Infrastructure capabilities</h2></div><label>Size by <select data-treemap-metric><option value="spend">Share of spend</option><option value="tokens">Token usage</option><option value="runs">Evaluation volume</option><option value="repairs">Durable repairs</option></select></label></div><p class="treemap-intro">Arenas are grouped by operational domain. Tile size reflects the selected metric; the badge names the current arena leader.</p><div class="treemap-canvas" data-treemap-canvas></div><div class="treemap-legend" data-treemap-legend></div><div class="arena-rankings" data-arena-rankings></div><script type="application/json" data-treemap-data>{data}</script>{TREEMAP_SCRIPT}</section>"#
+    )
+}
+
+fn reporting_category(arena: &crate::benchmark::BenchmarkArenaSummary) -> String {
+    arena.category.clone().unwrap_or_else(|| {
+        match arena.arena_id.as_str() {
+            "first-build" | "first-build-real" | "zero-downtime-rollout" => "service-delivery",
+            "durable-job-queue" | "primary-failover" => "stateful-recovery",
+            "traffic-surge" => "traffic-and-saturation",
+            _ => "uncategorized",
+        }
+        .to_owned()
+    })
 }
 
 fn render_failures(standing: &BenchmarkStanding) -> String {
@@ -1652,7 +1749,7 @@ fn money(microusd: u64) -> String {
 }
 
 fn humanize(value: &str) -> String {
-    let mut result = value.replace('_', " ");
+    let mut result = value.replace(['_', '-'], " ");
     if let Some(first) = result.get_mut(0..1) {
         first.make_ascii_uppercase();
     }
@@ -1670,7 +1767,7 @@ fn escape(value: &str) -> String {
 
 fn page(title: &str, content: &str) -> String {
     format!(
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"color-scheme\" content=\"dark\"><title>{}</title><style>{}{}{}{}{}{}</style></head><body>{}</body></html>",
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"color-scheme\" content=\"dark\"><title>{}</title><style>{}{}{}{}{}{}{}</style></head><body>{}</body></html>",
         escape(title),
         STYLE,
         REPLAY_STYLE,
@@ -1678,6 +1775,7 @@ fn page(title: &str, content: &str) -> String {
         ANALYSIS_STYLE,
         ACTIVITY_STYLE,
         PROVENANCE_STYLE,
+        TREEMAP_STYLE,
         content
     )
 }
@@ -1705,6 +1803,14 @@ const ACTIVITY_STYLE: &str = r"
 const PROVENANCE_STYLE: &str = r"
 .provenance-adapters{grid-column:1/-1}
 ";
+
+const TREEMAP_STYLE: &str = r"
+.benchmark-treemap{margin-top:0}.benchmark-treemap .section-heading label{color:var(--muted);font-size:.8rem;text-transform:uppercase;letter-spacing:.08em}.benchmark-treemap select{display:block;margin-top:.35rem;padding:.55rem .75rem;border:1px solid var(--line);background:#0c0f0b;color:var(--text)}.treemap-intro{color:var(--muted);max-width:760px}.treemap-canvas{position:relative;height:430px;border:1px solid var(--line);background:#090b09;overflow:hidden}.treemap-group{position:absolute;border:1px solid #10130f;padding:1.65rem .25rem .25rem}.treemap-group>strong{position:absolute;top:.3rem;left:.55rem;right:.4rem;overflow:hidden;color:#f4f6ef;font:700 .72rem/1 ui-monospace,SFMono-Regular,Menlo,monospace;text-transform:uppercase;letter-spacing:.07em;white-space:nowrap}.treemap-tile{position:absolute;display:flex;flex-direction:column;justify-content:space-between;min-width:0;padding:.6rem;border:1px solid #10130f;background:color-mix(in srgb,var(--tile-color) 82%,#151915);color:white;text-align:left;cursor:pointer;overflow:hidden}.treemap-tile:hover,.treemap-tile.selected{z-index:2;outline:2px solid white;outline-offset:-3px}.treemap-tile strong,.treemap-tile span,.treemap-tile small{display:block;overflow:hidden;text-overflow:ellipsis}.treemap-tile strong{font:700 .85rem/1.15 Georgia,serif}.treemap-tile span{font-size:.68rem;white-space:nowrap}.treemap-tile small{color:#f5f7f0cc;font-size:.62rem;white-space:nowrap}.treemap-legend{display:flex;gap:.75rem;flex-wrap:wrap;margin:.8rem 0}.treemap-legend span{font-size:.72rem;color:var(--muted)}.treemap-legend i{display:inline-block;width:.65rem;height:.65rem;margin-right:.3rem;background:var(--legend-color)}.arena-rankings{border:1px solid var(--line);background:var(--panel)}.arena-rankings header{padding:1rem;border-bottom:1px solid var(--line)}.arena-rankings header p{margin:.25rem 0 0;color:var(--muted)}.arena-ranking-row{display:grid;grid-template-columns:2rem minmax(12rem,1fr) repeat(4,auto);gap:1rem;padding:.75rem 1rem;border-bottom:1px solid var(--line);align-items:center}.arena-ranking-row:last-child{border-bottom:0}.arena-ranking-row span{color:var(--muted);font-size:.78rem}.arena-ranking-row strong{overflow:hidden;text-overflow:ellipsis}@media(max-width:720px){.treemap-canvas{height:560px}.benchmark-treemap .section-heading label{margin-top:1rem}.arena-ranking-row{grid-template-columns:2rem 1fr}.arena-ranking-row span{grid-column:2}}
+";
+
+const TREEMAP_SCRIPT: &str = r#"<script>
+(()=>{const root=document.currentScript.closest('[data-benchmark-treemap]');if(!root)return;const data=JSON.parse(root.querySelector('[data-treemap-data]').textContent),canvas=root.querySelector('[data-treemap-canvas]'),details=root.querySelector('[data-arena-rankings]'),select=root.querySelector('[data-treemap-metric]'),legend=root.querySelector('[data-treemap-legend]');const colors=['#39796a','#a65b4f','#966f35','#635d91','#3f7185','#8b536d'];const text=v=>{const span=document.createElement('span');span.textContent=v??'';return span.innerHTML};const label=v=>v.replaceAll('-',' ').replace(/\b\w/g,c=>c.toUpperCase());const money=v=>`$${(v/1e6).toFixed(4)}`;const compact=v=>Intl.NumberFormat('en',{notation:'compact',maximumFractionDigits:1}).format(v);function layout(items,x,y,w,h,value){if(!items.length)return[];if(items.length===1)return[{item:items[0],x,y,w,h}];const sorted=[...items].sort((a,b)=>value(b)-value(a)),total=sorted.reduce((sum,item)=>sum+Math.max(1,value(item)),0);let sum=0,cut=1;for(;cut<sorted.length;cut++){sum+=Math.max(1,value(sorted[cut-1]));if(sum>=total/2)break}const first=sorted.slice(0,cut),second=sorted.slice(cut),ratio=first.reduce((s,i)=>s+Math.max(1,value(i)),0)/total;if(w>=h)return[...layout(first,x,y,w*ratio,h,value),...layout(second,x+w*ratio,y,w*(1-ratio),h,value)];return[...layout(first,x,y,w,h*ratio,value),...layout(second,x,y+h*ratio,w,h*(1-ratio),value)]}function show(arena){details.dataset.selected=arena.id;details.innerHTML=`<header><span class="eyebrow">Arena standings</span><h2>${text(arena.label)}</h2><p>${text(label(arena.category))} · ${arena.runs} evaluations · ${arena.repairs} durable repairs</p></header>`+arena.standings.map((standing,index)=>`<div class="arena-ranking-row"><b>${index+1}</b><strong>${text(standing.model)}</strong><span>${standing.wins} wins</span><span>${standing.durable}/${standing.runs} durable</span><span>${standing.tokens==null?'tokens n/a':compact(standing.tokens)+' tokens'}</span><span>${standing.spend==null?'cost n/a':money(standing.spend)}</span></div>`).join('')}function render(){canvas.innerHTML='';const metric=select.value,grouped=new Map;for(const arena of data){if(!grouped.has(arena.category))grouped.set(arena.category,[]);grouped.get(arena.category).push(arena)}const groups=[...grouped.entries()].map(([category,items])=>({category,items,value:items.reduce((sum,item)=>sum+Math.max(1,item[metric]),0)}));const groupRects=layout(groups,0,0,100,100,item=>item.value);legend.innerHTML='';groupRects.forEach((rect,index)=>{const color=colors[index%colors.length],group=document.createElement('div');group.className='treemap-group';group.style=`left:${rect.x}%;top:${rect.y}%;width:${rect.w}%;height:${rect.h}%;--tile-color:${color}`;group.innerHTML=`<strong>${text(label(rect.item.category))}</strong>`;const inner=layout(rect.item.items,0,0,100,100,item=>item[metric]);inner.forEach(tile=>{const button=document.createElement('button');button.type='button';button.className='treemap-tile';button.style=`left:${tile.x}%;top:${tile.y}%;width:${tile.w}%;height:${tile.h}%;--tile-color:${color}`;button.innerHTML=`<strong>${text(tile.item.label)}</strong><span>★ ${text(tile.item.leader)}</span><small>${metric==='spend'?money(tile.item[metric]):compact(tile.item[metric])} ${metric==='runs'?'runs':metric==='repairs'?'repairs':metric==='tokens'?'tokens':''}</small>`;button.addEventListener('click',()=>{root.querySelectorAll('.treemap-tile').forEach(item=>item.classList.remove('selected'));button.classList.add('selected');show(tile.item)});group.append(button)});canvas.append(group);legend.insertAdjacentHTML('beforeend',`<span style="--legend-color:${color}"><i></i>${text(label(rect.item.category))}</span>`)});show(data.find(item=>item.id===details.dataset.selected)||data[0])}select.addEventListener('change',render);if(data.length)render();else canvas.innerHTML='<p class="empty">No completed arenas.</p>'})();
+</script>"#;
 
 const REPLAY_SCRIPT: &str = r#"
 (()=>{
