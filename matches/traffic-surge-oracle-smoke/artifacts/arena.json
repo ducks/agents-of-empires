@@ -1,0 +1,309 @@
+{
+  "schema_version": 1,
+  "arena": {
+    "id": "traffic-surge",
+    "display_name": "Traffic Surge",
+    "mode": "build_race"
+  },
+  "network": {
+    "cidr": "10.82.0.0/24",
+    "allow_public_internet": false
+  },
+  "rules": {
+    "duration_seconds": 900,
+    "tick_ms": 2000,
+    "healthy_resources_per_tick": 0,
+    "minimum_territories": 3
+  },
+  "build": {
+    "stop_on_first_durable": true,
+    "completion_milestone": "host-reboot",
+    "milestones": [
+      {
+        "id": "baseline-ready",
+        "display_name": "Baseline Ready",
+        "depends_on": [],
+        "verifier": "verify/baseline-ready.sh",
+        "operation": "observe",
+        "timeout_seconds": 5,
+        "points": 5,
+        "required": true
+      },
+      {
+        "id": "priority-first-surge",
+        "display_name": "Priority Writes Under Surge",
+        "depends_on": [
+          "baseline-ready"
+        ],
+        "verifier": "verify/priority-first-surge.sh",
+        "operation": "observe",
+        "timeout_seconds": 15,
+        "points": 20,
+        "required": true
+      },
+      {
+        "id": "bounded-optional",
+        "display_name": "Optional Load Bounded",
+        "depends_on": [
+          "priority-first-surge"
+        ],
+        "verifier": "verify/bounded-optional.sh",
+        "operation": "observe",
+        "timeout_seconds": 15,
+        "points": 15,
+        "required": true
+      },
+      {
+        "id": "recover-peak",
+        "display_name": "Peak Writes Recoverable",
+        "depends_on": [
+          "bounded-optional"
+        ],
+        "verifier": "verify/recover-peak.sh",
+        "operation": "observe",
+        "timeout_seconds": 20,
+        "points": 25,
+        "required": true
+      },
+      {
+        "id": "restart-under-load",
+        "display_name": "Restart Under Load",
+        "depends_on": [
+          "recover-peak"
+        ],
+        "verifier": "verify/restart-under-load.sh",
+        "operation": "observe",
+        "timeout_seconds": 25,
+        "points": 15,
+        "required": true
+      },
+      {
+        "id": "host-reboot",
+        "display_name": "Host Reboot",
+        "depends_on": [
+          "restart-under-load"
+        ],
+        "verifier": "verify/host-reboot.sh",
+        "operation": "host_reboot",
+        "timeout_seconds": 40,
+        "points": 20,
+        "required": true
+      }
+    ]
+  },
+  "visualization": {
+    "nodes": [
+      {
+        "id": "priority",
+        "display_name": "Priority Traffic",
+        "kind": "client",
+        "milestone": null,
+        "x": 7,
+        "y": 22
+      },
+      {
+        "id": "optional",
+        "display_name": "Optional Surge",
+        "kind": "client",
+        "milestone": "bounded-optional",
+        "x": 7,
+        "y": 76
+      },
+      {
+        "id": "service",
+        "display_name": "Surge Service",
+        "kind": "service",
+        "milestone": "baseline-ready",
+        "x": 39,
+        "y": 48
+      },
+      {
+        "id": "admission",
+        "display_name": "Load Boundary",
+        "kind": "proxy",
+        "milestone": "priority-first-surge",
+        "x": 66,
+        "y": 22
+      },
+      {
+        "id": "ledger",
+        "display_name": "Priority Ledger",
+        "kind": "database",
+        "milestone": "recover-peak",
+        "x": 91,
+        "y": 48
+      },
+      {
+        "id": "supervisor",
+        "display_name": "Service Unit",
+        "kind": "service",
+        "milestone": "restart-under-load",
+        "x": 65,
+        "y": 76
+      },
+      {
+        "id": "host",
+        "display_name": "NixOS Host",
+        "kind": "host",
+        "milestone": "host-reboot",
+        "x": 91,
+        "y": 76
+      }
+    ],
+    "links": [
+      {
+        "from": "priority",
+        "to": "service",
+        "kind": "traffic",
+        "label": "writes"
+      },
+      {
+        "from": "optional",
+        "to": "service",
+        "kind": "traffic",
+        "label": "surge"
+      },
+      {
+        "from": "service",
+        "to": "admission",
+        "kind": "traffic",
+        "label": "prioritize"
+      },
+      {
+        "from": "admission",
+        "to": "ledger",
+        "kind": "traffic",
+        "label": "durable"
+      },
+      {
+        "from": "supervisor",
+        "to": "service",
+        "kind": "lifecycle",
+        "label": null
+      },
+      {
+        "from": "host",
+        "to": "supervisor",
+        "kind": "lifecycle",
+        "label": null
+      }
+    ]
+  },
+  "fog_of_war": {
+    "player_brief": "brief.md",
+    "hide_topology_until_observed": true,
+    "guest_leak_audit": {
+      "scan_paths": [
+        "/etc",
+        "/opt",
+        "/root",
+        "/var/lib"
+      ],
+      "forbidden_strings": [
+        "priority-first-surge.sh",
+        "bounded-optional.sh",
+        "recover-peak.sh",
+        "controller-owned load generator",
+        "Traffic surge oracle"
+      ]
+    }
+  },
+  "classes": [
+    {
+      "id": "surge-engineer",
+      "display_name": "Surge Engineer",
+      "strengths": [],
+      "weaknesses": [],
+      "resources": {
+        "vcpus": 1,
+        "memory_mib": 768,
+        "disk_mib": 2048
+      }
+    }
+  ],
+  "territories": [
+    {
+      "id": "surge-one",
+      "class": "surge-engineer",
+      "nixos_config": ".#nixosConfigurations.surge-one.config.system.build.vm",
+      "service": {
+        "port": 8080,
+        "path": "/health",
+        "expected_status": 200,
+        "expected_body": "ready",
+        "health": {
+          "poll_interval_ms": 1000,
+          "consecutive_failures": 3,
+          "recovery_window_seconds": 60
+        }
+      }
+    },
+    {
+      "id": "surge-two",
+      "class": "surge-engineer",
+      "nixos_config": ".#nixosConfigurations.surge-two.config.system.build.vm",
+      "service": {
+        "port": 8080,
+        "path": "/health",
+        "expected_status": 200,
+        "expected_body": "ready",
+        "health": {
+          "poll_interval_ms": 1000,
+          "consecutive_failures": 3,
+          "recovery_window_seconds": 60
+        }
+      }
+    },
+    {
+      "id": "surge-three",
+      "class": "surge-engineer",
+      "nixos_config": ".#nixosConfigurations.surge-three.config.system.build.vm",
+      "service": {
+        "port": 8080,
+        "path": "/health",
+        "expected_status": 200,
+        "expected_body": "ready",
+        "health": {
+          "poll_interval_ms": 1000,
+          "consecutive_failures": 3,
+          "recovery_window_seconds": 60
+        }
+      }
+    }
+  ],
+  "agents": [
+    {
+      "id": "surge-one-agent",
+      "territory": "surge-one",
+      "adapter": "oracle-surge",
+      "model": "oracle",
+      "reasoning_effort": "default",
+      "budget": {
+        "resource_units": 1,
+        "max_cost_microusd": null
+      }
+    },
+    {
+      "id": "surge-two-agent",
+      "territory": "surge-two",
+      "adapter": "oracle-surge",
+      "model": "oracle",
+      "reasoning_effort": "default",
+      "budget": {
+        "resource_units": 1,
+        "max_cost_microusd": null
+      }
+    },
+    {
+      "id": "surge-three-agent",
+      "territory": "surge-three",
+      "adapter": "oracle-surge",
+      "model": "oracle",
+      "reasoning_effort": "default",
+      "budget": {
+        "resource_units": 1,
+        "max_cost_microusd": null
+      }
+    }
+  ]
+}
