@@ -89,7 +89,7 @@ fn real_fleet_changes_only_agents() {
         vec![
             "deepseek/deepseek-v4-flash-0731",
             "openai/gpt-5.6-luna",
-            "z-ai/glm-5.2"
+            "z-ai/glm-5.3"
         ]
     );
 }
