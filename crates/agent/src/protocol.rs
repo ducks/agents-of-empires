@@ -10,6 +10,7 @@ pub struct AgentInvocation {
     pub territory_host: String,
     pub ssh_port: u16,
     pub instruction: String,
+    pub player_artifacts: Vec<PathBuf>,
     pub credential_file: Option<PathBuf>,
 }
 

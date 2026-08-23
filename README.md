@@ -340,6 +340,15 @@ cargo run --release --bin agents-of-empires -- run \
 After the oracle passes, race the default DeepSeek, Luna, and GLM fleet using
 `arenas/durable-job-queue/agents-real.toml` and the `claux` adapter.
 
+## Blueprint build race
+
+Blueprint Build gives each agent the same architecture diagram and a blank
+NixOS territory. The image defines an asynchronous edge, API, queue, worker,
+and result-store contract while leaving every implementation choice open. The
+referee stops the worker to prove durable acceptance, recovers opaque payloads,
+then restarts each service and reboots the host. See
+`arenas/blueprint-build/README.md` for oracle and real-fleet commands.
+
 ## Zero-downtime rollout race
 
 The rollout arena begins with a live stateful v1 deployment. Agents must build

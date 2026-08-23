@@ -36,6 +36,7 @@ fn exports_observable_agent_trace_with_referee_outcome() {
         arena_mode: "buildrace".into(),
         manifest_sha256: "manifest-hash".into(),
         player_brief_sha256: None,
+        player_artifacts_sha256: std::collections::BTreeMap::new(),
         verifier_sha256: "verifier-hash".into(),
         adapter_sha256: BTreeMap::from([("claux".into(), "adapter-hash".into())]),
         compatibility_key: "compatibility-key".into(),

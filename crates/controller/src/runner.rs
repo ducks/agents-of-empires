@@ -1117,6 +1117,16 @@ fn invocations(
             })
         })
         .transpose()?;
+    let player_artifacts = manifest
+        .fog_of_war
+        .as_ref()
+        .map(|fog| {
+            fog.player_artifacts
+                .iter()
+                .map(|artifact| arena_root.join(artifact))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     let build_contract = if manifest.arena.mode == MatchMode::BuildRace && player_brief.is_none() {
         let path = arena_root.join("CONTRACT.md");
         Some(
@@ -1168,6 +1178,7 @@ fn invocations(
                 territory_host: "127.0.0.1".into(),
                 ssh_port: assignment.ssh_port,
                 instruction,
+                player_artifacts: player_artifacts.clone(),
                 credential_file: options.credentials.get(&agent.territory).cloned(),
             })
         })
@@ -1571,6 +1582,31 @@ mod tests {
             assert!(!invocation.instruction.contains("accepted-alpha-7d3"));
             assert!(!invocation.instruction.contains("recover-accepted.sh"));
             assert!(!invocation.instruction.contains("queue-api.service"));
+        }
+    }
+
+    #[test]
+    fn fog_invocations_include_declared_player_artifacts() {
+        let manifest_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../arenas/blueprint-build/agents-real.toml");
+        let manifest = ArenaManifest::load(&manifest_path).expect("blueprint manifest");
+        let plan =
+            aoe_runtime::NetworkPlan::from_manifest(&manifest, 26000, 23977).expect("network plan");
+        let options = RunOptions {
+            manifest: manifest_path,
+            output: std::path::PathBuf::from("matches/test"),
+            adapters: std::collections::HashMap::new(),
+            credentials: std::collections::HashMap::new(),
+            base_port: 26000,
+            multicast_port: 23977,
+            color: false,
+        };
+        let invocations = invocations(&manifest, &plan, &options).expect("invocations");
+        for invocation in invocations {
+            assert_eq!(invocation.player_artifacts.len(), 1);
+            assert!(invocation.player_artifacts[0].ends_with("blueprint.png"));
+            assert!(invocation.instruction.contains("authoritative service"));
+            assert!(!invocation.instruction.contains("accept-under-stop.sh"));
         }
     }
 

@@ -21,6 +21,8 @@ pub struct MatchProvenance {
     pub manifest_sha256: String,
     #[serde(default)]
     pub player_brief_sha256: Option<String>,
+    #[serde(default)]
+    pub player_artifacts_sha256: BTreeMap<String, String>,
     pub verifier_sha256: String,
     pub adapter_sha256: BTreeMap<String, String>,
     pub compatibility_key: String,
@@ -45,10 +47,12 @@ pub fn write_provenance(
     let manifest_sha256 = digest(&manifest_source);
     let evaluation_manifest_sha256 = evaluation_manifest_digest(&manifest_source);
     let player_brief_sha256 = player_brief_digest(manifest_path, manifest)?;
+    let player_artifacts_sha256 = player_artifact_digests(manifest_path, manifest)?;
     let compatibility_key = compatibility_key(
         &manifest.arena.id,
         &evaluation_manifest_sha256,
         player_brief_sha256.as_deref(),
+        &player_artifacts_sha256,
         &verifier_sha256,
     );
     let provenance = MatchProvenance {
@@ -59,6 +63,7 @@ pub fn write_provenance(
         arena_mode: format!("{:?}", manifest.arena.mode).to_lowercase(),
         manifest_sha256,
         player_brief_sha256,
+        player_artifacts_sha256,
         verifier_sha256,
         adapter_sha256: adapter_digests(adapters)?,
         compatibility_key,
@@ -84,10 +89,12 @@ pub fn arena_compatibility_key(
     let manifest_sha256 = evaluation_manifest_digest(&manifest_source);
     let verifier_sha256 = verifier_digest(manifest_path, manifest)?;
     let player_brief_sha256 = player_brief_digest(manifest_path, manifest)?;
+    let player_artifacts_sha256 = player_artifact_digests(manifest_path, manifest)?;
     Ok(compatibility_key(
         &manifest.arena.id,
         &manifest_sha256,
         player_brief_sha256.as_deref(),
+        &player_artifacts_sha256,
         &verifier_sha256,
     ))
 }
@@ -116,15 +123,44 @@ fn compatibility_key(
     arena_id: &str,
     manifest_sha256: &str,
     player_brief_sha256: Option<&str>,
+    player_artifacts_sha256: &BTreeMap<String, String>,
     verifier_sha256: &str,
 ) -> String {
+    if player_artifacts_sha256.is_empty() {
+        return digest(
+            format!(
+                "{MATCH_ARTIFACT_VERSION}\n{arena_id}\n{manifest_sha256}\n{}\n{verifier_sha256}",
+                player_brief_sha256.unwrap_or("")
+            )
+            .as_bytes(),
+        );
+    }
+    let artifacts = player_artifacts_sha256
+        .iter()
+        .map(|(path, digest)| format!("{path}\0{digest}"))
+        .collect::<Vec<_>>()
+        .join("\0");
     digest(
         format!(
-            "{MATCH_ARTIFACT_VERSION}\n{arena_id}\n{manifest_sha256}\n{}\n{verifier_sha256}",
+            "{MATCH_ARTIFACT_VERSION}\n{arena_id}\n{manifest_sha256}\n{}\n{artifacts}\n{verifier_sha256}",
             player_brief_sha256.unwrap_or("")
         )
         .as_bytes(),
     )
+}
+
+fn player_artifact_digests(
+    manifest_path: &Path,
+    manifest: &ArenaManifest,
+) -> Result<BTreeMap<String, String>, std::io::Error> {
+    let Some(fog) = &manifest.fog_of_war else {
+        return Ok(BTreeMap::new());
+    };
+    let root = manifest_path.parent().unwrap_or_else(|| Path::new("."));
+    fog.player_artifacts
+        .iter()
+        .map(|artifact| Ok((artifact.clone(), digest(&fs::read(root.join(artifact))?))))
+        .collect()
 }
 
 fn player_brief_digest(
