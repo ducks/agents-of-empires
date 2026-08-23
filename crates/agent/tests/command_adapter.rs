@@ -99,10 +99,65 @@ sleep 5
     fs::set_permissions(&script, permissions).expect("permissions");
     let adapter = CommandAdapter::new(&script, root.join("runs"));
     let result = adapter
-        .run(invocation(), Duration::from_millis(50))
+        .run(invocation(), Duration::from_millis(250))
         .await
         .expect("partial result");
     assert_eq!(result.status, AgentStatus::TimedOut);
     assert_eq!(result.usage.rounds, Some(4));
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn cancelling_adapter_kills_its_process_group() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = temp_root();
+    fs::create_dir_all(&root).expect("temp root");
+    let script = root.join("adapter.sh");
+    let child_pid_path = root.join("child.pid");
+    fs::write(
+        &script,
+        format!(
+            r#"#!/bin/sh
+set -eu
+sleep 30 &
+printf '%s' "$!" > '{}'
+wait
+"#,
+            child_pid_path.display()
+        ),
+    )
+    .expect("script");
+    let mut permissions = fs::metadata(&script).expect("metadata").permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&script, permissions).expect("permissions");
+
+    let adapter = CommandAdapter::new(&script, root.join("runs"));
+    let task =
+        tokio::spawn(async move { adapter.run(invocation(), Duration::from_secs(30)).await });
+    for _ in 0..100 {
+        if child_pid_path.exists() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    let child_pid: u32 = fs::read_to_string(&child_pid_path)
+        .expect("child pid")
+        .parse()
+        .expect("numeric child pid");
+
+    task.abort();
+    let _ = task.await;
+    for _ in 0..100 {
+        if !std::path::Path::new(&format!("/proc/{child_pid}")).exists() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(
+        !std::path::Path::new(&format!("/proc/{child_pid}")).exists(),
+        "adapter child {child_pid} survived cancellation"
+    );
     fs::remove_dir_all(root).expect("cleanup");
 }
