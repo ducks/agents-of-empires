@@ -7,6 +7,25 @@ use tokio::process::Command;
 
 use crate::{AgentAdapter, AgentControllerError, AgentInvocation, AgentResult, AgentStatus};
 
+#[cfg(unix)]
+struct ProcessGroupGuard(Option<rustix::process::Pid>);
+
+#[cfg(unix)]
+impl ProcessGroupGuard {
+    fn new(pid: Option<u32>) -> Self {
+        Self(pid.and_then(|pid| rustix::process::Pid::from_raw(pid.try_into().ok()?)))
+    }
+}
+
+#[cfg(unix)]
+impl Drop for ProcessGroupGuard {
+    fn drop(&mut self) {
+        if let Some(pid) = self.0 {
+            let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::KILL);
+        }
+    }
+}
+
 /// Adapter for an executable implementing the environment-variable protocol.
 pub struct CommandAdapter {
     executable: PathBuf,
@@ -89,12 +108,16 @@ impl AgentAdapter for CommandAdapter {
             .stdout(Stdio::from(stdout))
             .stderr(Stdio::from(stderr))
             .kill_on_drop(true);
+        #[cfg(unix)]
+        command.process_group(0);
         if let Some(credentials) = &invocation.credential_file {
             command.env("AOE_CREDENTIAL_FILE", credentials);
         }
         let mut child = command
             .spawn()
             .map_err(|error| AgentControllerError::Adapter(error.to_string()))?;
+        #[cfg(unix)]
+        let _process_group = ProcessGroupGuard::new(child.id());
 
         let completed = tokio::time::timeout(timeout, child.wait()).await;
         match completed {
