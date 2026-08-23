@@ -41,6 +41,24 @@ fn real_fleet_changes_only_agents() {
 }
 
 #[test]
+fn real_fleet_uses_models_verified_with_image_input() {
+    let real = ArenaManifest::load(root().join("agents-real.toml")).expect("real manifest");
+    let models: Vec<_> = real
+        .agents
+        .iter()
+        .map(|agent| agent.model.as_str())
+        .collect();
+    assert_eq!(
+        models,
+        [
+            "stealth/ox-alpha",
+            "openai/gpt-5.6-luna",
+            "moonshotai/kimi-k3",
+        ]
+    );
+}
+
+#[test]
 fn referee_stops_worker_before_testing_acceptance() {
     let source = std::fs::read_to_string(root().join("verify/accept-under-stop.sh"))
         .expect("accept verifier");
