@@ -42,7 +42,7 @@ if [[ "${TEST_FAIL_SETUP_SCP_ONCE:-}" == 1 && "$source_path" != *:* && ! -e "${T
   touch "${TEST_STATE_ROOT}/setup-scp-failed"
   exit 255
 fi
-if [[ "$source_path" == *:*/transcript.json ]]; then
+if [[ "$source_path" == *:*/transcript.json && "${TEST_NO_TRANSCRIPT:-}" != 1 ]]; then
   printf '%s' '{"schema_version":2,"usage":{"input_tokens":120,"output_tokens":8,"cost_usd":0.0012}}' >"$destination"
 elif [[ "$source_path" == *:*/result.json && "${TEST_NO_NATIVE_RESULT:-}" != 1 ]]; then
   printf '%s' '{"result":"held the line","usage":{"input_tokens":120,"output_tokens":8,"cost_usd":0.0012}}' >"$destination"
@@ -102,6 +102,7 @@ set +e
 PATH="$root/bin:$PATH" \
 TEST_REMOTE_EXIT_255=1 \
 TEST_NO_NATIVE_RESULT=1 \
+TEST_NO_TRANSCRIPT=1 \
 AOE_AGENT_ID=test-agent \
 AOE_TERRITORY_ID=test-territory \
 AOE_TERRITORY_HOST=127.0.0.1 \
@@ -123,7 +124,10 @@ if rg -q 'controller-only-secret' "$root/run"; then
   exit 1
 fi
 
-jq -e '.status == "failed"' "$root/run/result.json" >/dev/null
+jq -e '
+  .status == "harness_error"
+  and .summary == "Claux harness exited with status 255 before producing a transcript"
+' "$root/run/result.json" >/dev/null
 
 rm -f "$root/run/result.json" "$root/run/claux-result.json" "$root/run/transcript.json"
 printf 'host-reboot\n' >"$root/run/referee-reboot"
@@ -131,6 +135,7 @@ set +e
 PATH="$root/bin:$PATH" \
 TEST_REMOTE_EXIT_255=1 \
 TEST_NO_NATIVE_RESULT=1 \
+TEST_NO_TRANSCRIPT=1 \
 AOE_AGENT_ID=test-agent \
 AOE_TERRITORY_ID=test-territory \
 AOE_TERRITORY_HOST=127.0.0.1 \

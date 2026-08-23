@@ -22,8 +22,37 @@ set +a
 : "${AOE_SSH_PASSWORD:?credential file must set AOE_SSH_PASSWORD}"
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-claux="${AOE_CLAUX_BINARY:-${HOME}/.cache/replaybook/claux/v20260810.0.1/claux-linux-x86_64}"
+claux_version="20260823.0.1"
+claux_sha256="ec0b5877ecd4f4277b3c09ffcd99a356345125a96ea20150dff21140cdb15f8d"
+default_claux="${HOME}/.cache/agents-of-empires/claux/v${claux_version}/claux-linux-x86_64"
+claux="${AOE_CLAUX_BINARY:-$default_claux}"
 proxy="${AOE_OPENROUTER_PROXY:-${repo_root}/../replaybook/integrations/host/openrouter_proxy.py}"
+
+if [[ -z "${AOE_CLAUX_BINARY:-}" ]]; then
+  actual_sha256=""
+  if [[ -f "$claux" ]]; then
+    actual_sha256="$(sha256sum "$claux" | cut -d' ' -f1)"
+  fi
+  if [[ "$actual_sha256" != "$claux_sha256" ]]; then
+    mkdir -p "$(dirname "$claux")"
+    download="${claux}.download.$$"
+    if ! curl -fsSL \
+      "https://github.com/ducks/claux/releases/download/v${claux_version}/claux-linux-x86_64" \
+      -o "$download"; then
+      rm -f -- "$download"
+      echo "could not download pinned Claux v${claux_version}" >&2
+      exit 2
+    fi
+    actual_sha256="$(sha256sum "$download" | cut -d' ' -f1)"
+    if [[ "$actual_sha256" != "$claux_sha256" ]]; then
+      rm -f -- "$download"
+      echo "checksum mismatch for pinned Claux v${claux_version}" >&2
+      exit 2
+    fi
+    chmod 0700 "$download"
+    mv -f -- "$download" "$claux"
+  fi
+fi
 [[ -x "$claux" ]] || {
   echo "Claux binary is not executable: ${claux}" >&2
   exit 2
@@ -263,6 +292,9 @@ else
   if [[ "$referee_interrupted" == true ]]; then
     normalized_status="interrupted"
     summary="agent session was interrupted by the referee's host reboot"
+  elif [[ ! -s "$transcript" ]]; then
+    normalized_status="harness_error"
+    summary="Claux harness exited with status ${status} before producing a transcript"
   fi
   jq -n \
     --arg agent "$AOE_AGENT_ID" \
