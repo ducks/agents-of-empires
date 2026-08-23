@@ -50,6 +50,7 @@ fn invocation(id: &str, territory: &str, budget: u64) -> AgentInvocation {
         territory_host: "127.0.0.1".into(),
         ssh_port: 22000,
         instruction: "survive".into(),
+        player_artifacts: Vec::new(),
         credential_file: None,
     }
 }

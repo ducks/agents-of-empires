@@ -32,6 +32,7 @@ fn invocation() -> AgentInvocation {
         territory_host: "127.0.0.1".into(),
         ssh_port: 22000,
         instruction: "hold the line".into(),
+        player_artifacts: Vec::new(),
         credential_file: None,
     }
 }
@@ -46,6 +47,7 @@ async fn command_adapter_reads_normalized_result() {
         r#"#!/bin/sh
 set -eu
 printf '%s' '{"schema_version":1,"agent":"test-agent","territory":"test-territory","status":"completed","summary":"held","usage":{"resource_units":3},"transcript":null}' > "$AOE_RESULT_FILE"
+printf '%s' "$AOE_PLAYER_ARTIFACTS_JSON" > "$(dirname "$AOE_RESULT_FILE")/artifacts.json"
 "#,
     )
     .expect("script");
@@ -66,6 +68,10 @@ printf '%s' '{"schema_version":1,"agent":"test-agent","territory":"test-territor
     assert_eq!(
         fs::read_to_string(root.join("runs/test-agent/instruction.md")).expect("instruction"),
         "hold the line"
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("runs/test-agent/artifacts.json")).expect("artifacts"),
+        "[]"
     );
     fs::remove_dir_all(root).expect("cleanup");
 }

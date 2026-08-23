@@ -31,6 +31,9 @@ pub struct ArenaManifest {
 pub struct FogOfWarConfig {
     /// Package-relative brief supplied to every player instead of referee internals.
     pub player_brief: String,
+    /// Package-relative artifacts supplied alongside the brief by capable adapters.
+    #[serde(default)]
+    pub player_artifacts: Vec<String>,
     #[serde(default = "default_true")]
     pub hide_topology_until_observed: bool,
     #[serde(default)]
@@ -364,6 +367,15 @@ fn validate_fog_of_war(errors: &mut Vec<ValidationError>, fog: Option<&FogOfWarC
     };
     if fog.player_brief.trim().is_empty() {
         push_error(errors, "fog_of_war.player_brief", "must not be empty");
+    }
+    for (index, artifact) in fog.player_artifacts.iter().enumerate() {
+        if artifact.trim().is_empty() {
+            push_error(
+                errors,
+                format!("fog_of_war.player_artifacts[{index}]"),
+                "must not be empty",
+            );
+        }
     }
     if let Some(audit) = &fog.guest_leak_audit {
         if audit.scan_paths.is_empty() {

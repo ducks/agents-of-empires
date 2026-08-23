@@ -191,6 +191,15 @@ pub fn validate_arena_package(path: &Path) -> Result<ArenaPackageReport, ArenaPa
             false,
             &mut report.errors,
         );
+        for artifact in &fog.player_artifacts {
+            validate_package_path(
+                &root,
+                artifact,
+                "fog-of-war player artifact",
+                false,
+                &mut report.errors,
+            );
+        }
     } else if manifest.arena.mode == MatchMode::BuildRace {
         require_file(&root, "CONTRACT.md", &mut report.errors);
     }

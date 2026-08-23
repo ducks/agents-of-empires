@@ -34,6 +34,7 @@ Discovery-first arenas can replace the contract and seat-specific instructions w
 ```toml
 [fog_of_war]
 player_brief = "brief.md"
+player_artifacts = ["blueprint.png"]
 hide_topology_until_observed = true
 
 [fog_of_war.guest_leak_audit]
@@ -43,7 +44,13 @@ forbidden_strings = ["private verifier name", "oracle-only clue"]
 
 The brief contains the objective, observable symptoms or public service contract, deadline, and operational constraints. It does not expose the implementation, root cause, verifier scripts, evidence, future events, or other territories. The controller keeps those parts of the arena package outside the guest and scans the configured guest paths before launching agents. A match aborts if a forbidden referee or oracle clue crossed that boundary.
 
-Fog mode also records the player brief digest in `match.json`, so changing what players were told creates a new compatibility key. In static replays, topology nodes and links remain unknown until their associated milestones are first observed. This visual concealment is presentation; guest isolation and the pre-launch audit are the security boundary.
+Capable adapters receive each player artifact alongside the brief. For example,
+the bundled Claux adapter attaches supported images to the one-shot prompt. The
+engine only transports package-relative files; it does not contain model- or
+media-specific behavior, and adapters that do not support an artifact may
+ignore it.
+
+Fog mode records digests for the player brief and artifacts in `match.json`, so changing what players were told creates a new compatibility key. In static replays, topology nodes and links remain unknown until their associated milestones are first observed. This visual concealment is presentation; guest isolation and the pre-launch audit are the security boundary.
 
 ## Validation contract
 

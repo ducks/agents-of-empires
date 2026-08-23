@@ -80,6 +80,11 @@ impl AgentAdapter for CommandAdapter {
             .env("AOE_USAGE_FILE", &usage_path)
             .env("AOE_STDOUT_FILE", &stdout_path)
             .env("AOE_STDERR_FILE", &stderr_path)
+            .env(
+                "AOE_PLAYER_ARTIFACTS_JSON",
+                serde_json::to_string(&invocation.player_artifacts)
+                    .map_err(|error| AgentControllerError::Adapter(error.to_string()))?,
+            )
             .stdin(Stdio::null())
             .stdout(Stdio::from(stdout))
             .stderr(Stdio::from(stderr))

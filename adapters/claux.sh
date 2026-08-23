@@ -137,6 +137,24 @@ kill -0 "$tunnel_pid"
 "${scp_command[@]}" "$claux" "root@${AOE_TERRITORY_HOST}:${remote_root}/claux"
 "${scp_command[@]}" "$AOE_INSTRUCTION_FILE" "root@${AOE_TERRITORY_HOST}:${remote_root}/instruction.md"
 
+remote_image_args=""
+mapfile -t player_artifacts < <(jq -r '.[]' <<<"${AOE_PLAYER_ARTIFACTS_JSON:-[]}")
+for index in "${!player_artifacts[@]}"; do
+  artifact="${player_artifacts[$index]}"
+  [[ -f "$artifact" ]] || {
+    echo "player artifact does not exist: ${artifact}" >&2
+    exit 2
+  }
+  extension="${artifact##*.}"
+  case "$extension" in
+    png|jpg|jpeg|gif|webp) ;;
+    *) extension="bin" ;;
+  esac
+  remote_artifact="${remote_root}/player-artifact-${index}.${extension}"
+  "${scp_command[@]}" "$artifact" "root@${AOE_TERRITORY_HOST}:${remote_artifact}"
+  remote_image_args+=" --image '${remote_artifact}'"
+done
+
 checkpoint_usage &
 checkpoint_pid=$!
 
@@ -151,7 +169,7 @@ set +e
    profile=\$(sed -n 's/^default_profile = \"\([^\"]*\)\"/\1/p' /root/.config/claux/config.toml) && \
    awk -v section=\"[model_profiles.\${profile}]\" -v effort='${AOE_REASONING_EFFORT}' '{ print; if (\$0 == section) print \"reasoning_effort = \\\"\" effort \"\\\"\" }' /root/.config/claux/config.toml > /root/.config/claux/config.toml.partial && \
    mv /root/.config/claux/config.toml.partial /root/.config/claux/config.toml && \
-   OPENROUTER_API_KEY=arena-proxy-placeholder '${remote_root}/claux' --print \"\$(cat '${remote_root}/instruction.md')\" --permission-mode bypass --output-format json --transcript '${remote_root}/transcript.json' > '${remote_root}/result.json'"
+   OPENROUTER_API_KEY=arena-proxy-placeholder '${remote_root}/claux' --print \"\$(cat '${remote_root}/instruction.md')\"${remote_image_args} --permission-mode bypass --output-format json --transcript '${remote_root}/transcript.json' > '${remote_root}/result.json'"
 status=$?
 set -e
 
