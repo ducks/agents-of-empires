@@ -148,6 +148,9 @@ fn build_race_renders_milestone_progress() {
         },
     );
     assert!(rendered.contains("builder-one"));
+    assert!(rendered.contains("model"));
+    assert!(rendered.contains("oracle"));
+    assert!(!rendered.contains("class"));
     assert!(rendered.contains("verifying"));
     assert!(rendered.contains("1/1"));
     assert!(rendered.contains("10"));

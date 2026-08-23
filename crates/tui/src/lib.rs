@@ -73,9 +73,14 @@ fn render_compact_territories(output: &mut String, state: &WorldState, color: bo
                 .values()
                 .filter(|milestone| milestone.passed)
                 .count();
+            let model = territory
+                .agent
+                .as_ref()
+                .and_then(|agent| state.agents.get(agent))
+                .map_or("starting", |agent| short_model(&agent.model));
             let _ = writeln!(
                 output,
-                "{} {id} [{}]: milestones={passed}, points={}",
+                "{} {id} [{}]: model={model}, milestones={passed}, points={}",
                 competitor_marker(competitor, color),
                 competitor_label(competitor),
                 territory.milestone_points,
@@ -135,8 +140,8 @@ fn render_territory_table(output: &mut String, state: &WorldState, color: bool) 
 fn render_build_table(output: &mut String, state: &WorldState, color: bool) {
     let _ = writeln!(
         output,
-        "{:<3} {:<16} {:<12} {:<12} {:>10} {:>8} {:>12} {:>10}",
-        "", "territory", "class", "state", "milestones", "points", "tokens", "cost"
+        "{:<3} {:<16} {:<25} {:<12} {:>10} {:>6} {:>10} {:>9}",
+        "", "territory", "model", "state", "milestones", "points", "tokens", "cost"
     );
     for (id, territory) in &state.territories {
         let competitor = territory
@@ -152,6 +157,10 @@ fn render_build_table(output: &mut String, state: &WorldState, color: bool) {
             .agent
             .as_ref()
             .and_then(|agent| state.agents.get(agent));
+        let model = usage.map_or_else(
+            || "starting".to_owned(),
+            |agent| truncate(short_model(&agent.model), 25),
+        );
         let tokens = usage.map_or(0, |agent| {
             agent.input_tokens.saturating_add(agent.output_tokens)
         });
@@ -161,9 +170,8 @@ fn render_build_table(output: &mut String, state: &WorldState, color: bool) {
         );
         let _ = writeln!(
             output,
-            "{:<3} {id:<16} {:<12} {:<12} {:>5}/{:<4} {:>8} {:>12} {:>10}",
+            "{:<3} {id:<16} {model:<25} {:<12} {:>5}/{:<4} {:>6} {:>10} {:>9}",
             competitor_marker(competitor, color),
-            territory.class.as_deref().unwrap_or("unknown"),
             competitor_label(competitor),
             passed,
             total,
@@ -171,6 +179,20 @@ fn render_build_table(output: &mut String, state: &WorldState, color: bool) {
             tokens,
             cost,
         );
+    }
+}
+
+fn short_model(model: &str) -> &str {
+    model.rsplit('/').next().unwrap_or(model)
+}
+
+fn truncate(value: &str, width: usize) -> String {
+    let mut chars = value.chars();
+    let prefix: String = chars.by_ref().take(width.saturating_sub(1)).collect();
+    if chars.next().is_some() {
+        format!("{prefix}…")
+    } else {
+        value.to_owned()
     }
 }
 
