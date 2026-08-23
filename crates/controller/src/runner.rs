@@ -339,6 +339,34 @@ async fn run_booted_build_match(
             }
             () = tokio::time::sleep(tick) => {}
         }
+        let mut completed = Vec::new();
+        while let Ok(result) = agent_results.try_recv() {
+            completed.push(result);
+        }
+        if !completed.is_empty() {
+            record_build_agent_results(
+                &mut referee,
+                &mut log,
+                &mut world,
+                &mut events,
+                completed,
+                &mut usage_seen,
+                elapsed_ms(started),
+            )?;
+        }
+        if all_agents_failed_in_harness(&world) {
+            append(
+                &mut log,
+                &mut world,
+                &mut events,
+                referee.abort(
+                    "no contest: all agents failed in the harness",
+                    elapsed_ms(started),
+                )?,
+            )?;
+            render_live(&world, &events, options.color);
+            break;
+        }
         for milestone in &build.milestones {
             if referee.outcome().is_some() {
                 break;
@@ -810,6 +838,14 @@ fn record_build_agent_results(
         }
     }
     Ok(())
+}
+
+fn all_agents_failed_in_harness(world: &WorldState) -> bool {
+    !world.agents.is_empty()
+        && world
+            .agents
+            .values()
+            .all(|agent| !agent.running && agent.failure_source == Some(FailureSource::Harness))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1299,18 +1335,54 @@ fn elapsed_ms(started: Instant) -> u64 {
 #[cfg(test)]
 mod tests {
     use aoe_agent::{AgentResult, AgentStatus, AgentUsage, AgentUsageCheckpoint};
-    use aoe_domain::{ArenaManifest, Event, MatchState};
+    use aoe_domain::{ArenaManifest, Event, FailureSource, MatchState};
     use aoe_referee::{BuildReferee, Referee};
-    use aoe_replay::{EventLog, WorldState};
+    use aoe_replay::{AgentView, EventLog, WorldState};
     use std::collections::HashMap;
     use tokio::sync::mpsc;
 
     use super::{
-        RunOptions, append, drain_build_agents, invocations, record_agent_results,
-        record_build_usage_checkpoints, resolve_nixos_configs, shell_quote, usage_delta,
+        RunOptions, all_agents_failed_in_harness, append, drain_build_agents, invocations,
+        record_agent_results, record_build_usage_checkpoints, resolve_nixos_configs, shell_quote,
+        usage_delta,
     };
 
     const MANIFEST: &str = include_str!("../../runtime/tests/fixture.toml");
+
+    #[test]
+    fn no_contest_requires_every_agent_to_fail_in_the_harness() {
+        let mut world = WorldState::default();
+        world.agents.insert(
+            "agent-a".into(),
+            AgentView {
+                running: false,
+                failure_source: Some(FailureSource::Harness),
+                ..AgentView::default()
+            },
+        );
+        world.agents.insert(
+            "agent-b".into(),
+            AgentView {
+                running: true,
+                ..AgentView::default()
+            },
+        );
+        assert!(!all_agents_failed_in_harness(&world));
+
+        {
+            let agent = world.agents.get_mut("agent-b").expect("agent-b");
+            agent.running = false;
+            agent.failure_source = Some(FailureSource::Harness);
+        }
+        assert!(all_agents_failed_in_harness(&world));
+
+        world
+            .agents
+            .get_mut("agent-b")
+            .expect("agent-b")
+            .failure_source = Some(FailureSource::Player);
+        assert!(!all_agents_failed_in_harness(&world));
+    }
 
     #[test]
     fn package_relative_flake_references_become_absolute() {
