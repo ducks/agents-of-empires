@@ -101,6 +101,47 @@ ssh_options=(
 ssh_command=(env SSH_ASKPASS="$askpass" SSH_ASKPASS_REQUIRE=force DISPLAY=:0 ssh "${ssh_options[@]}" "root@${AOE_TERRITORY_HOST}")
 scp_command=(env SSH_ASKPASS="$askpass" SSH_ASKPASS_REQUIRE=force DISPLAY=:0 scp -q -P "$AOE_SSH_PORT" "${ssh_options[@]:2}" )
 
+retry_setup() {
+  local attempt=1
+  local status=0
+  while true; do
+    if "$@"; then
+      return 0
+    else
+      status=$?
+    fi
+    if (( attempt >= 3 )); then
+      return "$status"
+    fi
+    echo "setup transport failed (attempt ${attempt}/3); retrying" >&2
+    sleep "$attempt"
+    (( attempt += 1 ))
+  done
+}
+
+start_tunnel() {
+  local attempt=1
+  while true; do
+    "${ssh_command[@]}" -N \
+      -o ExitOnForwardFailure=yes \
+      -R "127.0.0.1:${remote_port}:127.0.0.1:${proxy_port}" &
+    tunnel_pid=$!
+    sleep 1
+    if kill -0 "$tunnel_pid" 2>/dev/null; then
+      return 0
+    fi
+    wait "$tunnel_pid" 2>/dev/null || true
+    tunnel_pid=""
+    if (( attempt >= 3 )); then
+      echo "credential tunnel failed after 3 attempts" >&2
+      return 1
+    fi
+    echo "credential tunnel failed (attempt ${attempt}/3); retrying" >&2
+    sleep "$attempt"
+    (( attempt += 1 ))
+  done
+}
+
 deadline=$((SECONDS + 120))
 until "${ssh_command[@]}" true 2>/dev/null; do
   (( SECONDS < deadline )) || {
@@ -126,16 +167,11 @@ until [[ -s "$ready_file" ]]; do
 done
 proxy_port="$(<"$ready_file")"
 
-"${ssh_command[@]}" -N \
-  -o ExitOnForwardFailure=yes \
-  -R "127.0.0.1:${remote_port}:127.0.0.1:${proxy_port}" &
-tunnel_pid=$!
-sleep 1
-kill -0 "$tunnel_pid"
+start_tunnel
 
-"${ssh_command[@]}" "install -d -m 0700 '${remote_root}'"
-"${scp_command[@]}" "$claux" "root@${AOE_TERRITORY_HOST}:${remote_root}/claux"
-"${scp_command[@]}" "$AOE_INSTRUCTION_FILE" "root@${AOE_TERRITORY_HOST}:${remote_root}/instruction.md"
+retry_setup "${ssh_command[@]}" "install -d -m 0700 '${remote_root}'"
+retry_setup "${scp_command[@]}" "$claux" "root@${AOE_TERRITORY_HOST}:${remote_root}/claux"
+retry_setup "${scp_command[@]}" "$AOE_INSTRUCTION_FILE" "root@${AOE_TERRITORY_HOST}:${remote_root}/instruction.md"
 
 remote_image_args=""
 mapfile -t player_artifacts < <(jq -r '.[]' <<<"${AOE_PLAYER_ARTIFACTS_JSON:-[]}")
@@ -151,7 +187,7 @@ for index in "${!player_artifacts[@]}"; do
     *) extension="bin" ;;
   esac
   remote_artifact="${remote_root}/player-artifact-${index}.${extension}"
-  "${scp_command[@]}" "$artifact" "root@${AOE_TERRITORY_HOST}:${remote_artifact}"
+  retry_setup "${scp_command[@]}" "$artifact" "root@${AOE_TERRITORY_HOST}:${remote_artifact}"
   remote_image_args+=" --image '${remote_artifact}'"
 done
 

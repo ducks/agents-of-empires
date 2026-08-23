@@ -38,6 +38,10 @@ cat >"$root/bin/scp" <<'EOF'
 set -euo pipefail
 source_path="${@: -2:1}"
 destination="${@: -1}"
+if [[ "${TEST_FAIL_SETUP_SCP_ONCE:-}" == 1 && "$source_path" != *:* && ! -e "${TEST_STATE_ROOT}/setup-scp-failed" ]]; then
+  touch "${TEST_STATE_ROOT}/setup-scp-failed"
+  exit 255
+fi
 if [[ "$source_path" == *:*/transcript.json ]]; then
   printf '%s' '{"schema_version":2,"usage":{"input_tokens":120,"output_tokens":8,"cost_usd":0.0012}}' >"$destination"
 elif [[ "$source_path" == *:*/result.json && "${TEST_NO_NATIVE_RESULT:-}" != 1 ]]; then
@@ -56,6 +60,8 @@ chmod 0700 "$root/bin/python" "$root/bin/ssh" "$root/bin/scp" "$root/claux"
 chmod 0600 "$root/credential.env"
 
 PATH="$root/bin:$PATH" \
+TEST_FAIL_SETUP_SCP_ONCE=1 \
+TEST_STATE_ROOT="$root" \
 AOE_AGENT_ID=test-agent \
 AOE_TERRITORY_ID=test-territory \
 AOE_TERRITORY_HOST=127.0.0.1 \
@@ -69,6 +75,8 @@ AOE_CREDENTIAL_FILE="$root/credential.env" \
 AOE_CLAUX_BINARY="$root/claux" \
 AOE_OPENROUTER_PROXY="$root/fake-proxy.py" \
   "$adapter"
+
+[[ -e "$root/setup-scp-failed" ]]
 
 jq -e '
   .schema_version == 1
