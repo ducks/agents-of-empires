@@ -71,8 +71,36 @@ struct SeriesReport {
     summary: SeriesSummary,
     report_dir: PathBuf,
     round_slugs: Vec<String>,
+    comparison: SeriesComparison,
     provenance: Option<MatchProvenance>,
     current: bool,
+}
+
+#[derive(Serialize)]
+struct SeriesComparison {
+    rounds: Vec<ComparisonRound>,
+}
+
+#[derive(Serialize)]
+struct ComparisonRound {
+    round: usize,
+    duration_ms: u64,
+    winner_agent: Option<String>,
+    lanes: Vec<ComparisonLane>,
+}
+
+#[derive(Serialize)]
+struct ComparisonLane {
+    agent: String,
+    model: String,
+    events: Vec<ComparisonEvent>,
+}
+
+#[derive(Serialize)]
+struct ComparisonEvent {
+    elapsed_ms: u64,
+    kind: String,
+    detail: String,
 }
 
 struct BenchmarkReport {
@@ -329,6 +357,7 @@ fn append_series_report(
         )?);
         round_slugs.push(round_slug);
     }
+    let comparison = build_series_comparison(&summary, &round_slugs, reports);
     let report_dir = output.join("series").join(&slug);
     fs::create_dir_all(report_dir.join("artifacts"))?;
     fs::copy(
@@ -349,10 +378,92 @@ fn append_series_report(
         summary,
         report_dir,
         round_slugs,
+        comparison,
         provenance,
         current: false,
     });
     Ok(())
+}
+
+fn build_series_comparison(
+    summary: &SeriesSummary,
+    round_slugs: &[String],
+    reports: &[MatchReport],
+) -> SeriesComparison {
+    let rounds = summary
+        .rounds
+        .iter()
+        .zip(round_slugs)
+        .map(|(round, slug)| {
+            let report = reports.iter().find(|report| report.slug == *slug);
+            let lanes = report
+                .map(|report| {
+                    let mut lanes: BTreeMap<String, ComparisonLane> = report
+                        .state
+                        .agents
+                        .iter()
+                        .map(|(id, agent)| {
+                            (
+                                id.clone(),
+                                ComparisonLane {
+                                    agent: id.clone(),
+                                    model: agent.model.clone(),
+                                    events: Vec::new(),
+                                },
+                            )
+                        })
+                        .collect();
+                    for event in &report.events {
+                        let kind = event
+                            .value
+                            .get("kind")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or("event");
+                        let territory = event
+                            .value
+                            .get("territory")
+                            .and_then(serde_json::Value::as_str);
+                        let actor = event
+                            .value
+                            .get("agent")
+                            .and_then(serde_json::Value::as_str)
+                            .or_else(|| {
+                                territory.and_then(|territory| {
+                                    report
+                                        .state
+                                        .territories
+                                        .get(territory)
+                                        .and_then(|value| value.agent.as_deref())
+                                })
+                            });
+                        let Some(actor) = actor else { continue };
+                        let Some(lane) = lanes.get_mut(actor) else {
+                            continue;
+                        };
+                        let detail = ["milestone", "detail", "reason", "component"]
+                            .iter()
+                            .find_map(|field| {
+                                event.value.get(*field).and_then(serde_json::Value::as_str)
+                            })
+                            .unwrap_or("");
+                        lane.events.push(ComparisonEvent {
+                            elapsed_ms: event.elapsed_ms,
+                            kind: humanize(kind),
+                            detail: detail.to_owned(),
+                        });
+                    }
+                    lanes.into_values().collect()
+                })
+                .unwrap_or_default();
+            ComparisonRound {
+                round: round.round,
+                duration_ms: round.duration_ms,
+                winner_agent: round.winner_agent.clone(),
+                lanes,
+            }
+        })
+        .collect();
+    SeriesComparison { rounds }
 }
 
 fn load_match_report(
@@ -1083,6 +1194,62 @@ fn render_failures(standing: &BenchmarkStanding) -> String {
         .join("<br>")
 }
 
+fn render_series_comparison(report: &SeriesReport) -> String {
+    let mut rounds = String::new();
+    for round in &report.comparison.rounds {
+        let duration_ms = round.duration_ms.max(1);
+        let mut lanes = String::new();
+        for lane in &round.lanes {
+            let markers = lane
+                .events
+                .iter()
+                .map(|event| {
+                    let position = (event.elapsed_ms.min(duration_ms) as f64
+                        / duration_ms as f64)
+                        * 100.0;
+                    let detail = if event.detail.is_empty() {
+                        event.kind.clone()
+                    } else {
+                        format!("{} · {}", event.kind, event.detail)
+                    };
+                    let class = if event.kind.contains("Failed") || event.kind.contains("Error")
+                    {
+                        "comparison-marker failure"
+                    } else {
+                        "comparison-marker"
+                    };
+                    format!(
+                        "<span class=\"{class}\" style=\"left:{position:.2}%\" title=\"{}\"></span>",
+                        escape(&detail)
+                    )
+                })
+                .collect::<String>();
+            let _ = write!(
+                lanes,
+                "<div class=\"comparison-lane\"><div class=\"comparison-label\"><strong>{}</strong><small>{}</small></div><div class=\"comparison-track\"><span class=\"comparison-progress\"></span>{markers}</div></div>",
+                escape(&lane.agent),
+                escape(&lane.model),
+            );
+        }
+        let winner = round.winner_agent.as_deref().map_or_else(
+            || "no durable deployment".to_owned(),
+            |agent| format!("winner: {agent}"),
+        );
+        let _ = write!(
+            rounds,
+            "<article class=\"comparison-round\"><header><div><span class=\"eyebrow\">Round {}</span><strong>{}</strong></div><span>{}</span></header><div class=\"comparison-axis\"><span>0:00</span><span>{}</span></div>{}</article>",
+            round.round,
+            escape(&winner),
+            duration(round.duration_ms),
+            duration(round.duration_ms),
+            lanes,
+        );
+    }
+    format!(
+        "<section class=\"series-comparison\"><div class=\"section-heading\"><div><span class=\"eyebrow\">Decision trace</span><h2>How each agent fought</h2></div><p>Aligned observable events across seat-rotated rounds. Marker positions share each round's elapsed clock.</p></div><div class=\"comparison-rounds\">{rounds}</div></section>"
+    )
+}
+
 fn render_series(report: &SeriesReport) -> String {
     let leader = report.summary.standings.first();
     let leader_name = leader.map_or("No leader", |standing| standing.agent.as_str());
@@ -1216,11 +1383,13 @@ fn render_series(report: &SeriesReport) -> String {
             )
         },
     );
+    let comparison = render_series_comparison(report);
     let content = format!(
         "<nav><a href=\"../../\">← Current season</a><span>Agents of Empires · {}</span></nav>
         <header class=\"hero match-hero\"><span class=\"eyebrow\">Seat-rotated series · {}</span><h1>{}</h1><p>Every agent races the same verifier from every territory. Failed attempts remain in total spend.</p>
         <div class=\"hero-stats\"><div><small>Leader</small><strong>{}</strong></div><div><small>Rounds</small><strong>{}/{}</strong></div><div><small>Recorded cost</small><strong>{}</strong></div><div><small>Tokens</small><strong>{}</strong></div></div></header>
         <main><section><div class=\"section-heading\"><h2>Battle card</h2><p>Ranked by wins, then durable deployments, time, and total cost.</p></div><div class=\"table-wrap\"><table><thead><tr><th>Agent</th><th>Wins</th><th>Durable</th><th>Median</th><th>Tokens</th><th>Cost</th><th>Cost / durable</th><th>Usage</th></tr></thead><tbody>{standings}</tbody></table></div></section>
+        {comparison}
         <section><div class=\"section-heading\"><h2>Seat rotation</h2><p>The highlighted cell won that round. Open any round for its replay and immutable event log.</p></div><div class=\"table-wrap\"><table class=\"seat-matrix\"><thead><tr><th>Round</th>{territory_headers}<th>Winner</th></tr></thead><tbody>{rounds}</tbody></table></div></section>
         <footer><a href=\"artifacts/series.json\">series.json</a></footer></main>",
         escape(&provenance),
@@ -1767,7 +1936,7 @@ fn escape(value: &str) -> String {
 
 fn page(title: &str, content: &str) -> String {
     format!(
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"color-scheme\" content=\"dark\"><title>{}</title><style>{}{}{}{}{}{}{}{}</style></head><body>{}</body></html>",
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"color-scheme\" content=\"dark\"><title>{}</title><style>{}{}{}{}{}{}{}{}{}</style></head><body>{}</body></html>",
         escape(title),
         STYLE,
         REPLAY_STYLE,
@@ -1775,6 +1944,7 @@ fn page(title: &str, content: &str) -> String {
         ANALYSIS_STYLE,
         ACTIVITY_STYLE,
         PROVENANCE_STYLE,
+        COMPARISON_STYLE,
         TREEMAP_STYLE,
         TREEMAP_FLEET_STYLE,
         content
@@ -1803,6 +1973,10 @@ const ACTIVITY_STYLE: &str = r"
 
 const PROVENANCE_STYLE: &str = r"
 .provenance-adapters{grid-column:1/-1}
+";
+
+const COMPARISON_STYLE: &str = r"
+.comparison-rounds{display:grid;gap:1rem}.comparison-round{border:1px solid var(--line);background:var(--panel);padding:1rem}.comparison-round>header{display:flex;justify-content:space-between;gap:1rem;align-items:end;border-bottom:1px solid var(--line);padding-bottom:.75rem;margin-bottom:.75rem}.comparison-round>header strong{display:block;margin-top:.2rem}.comparison-round>header>span{color:var(--muted);font-size:.8rem}.comparison-axis{display:flex;justify-content:space-between;color:var(--muted);font-size:.7rem;margin-left:13rem;margin-bottom:.3rem}.comparison-lane{display:grid;grid-template-columns:12rem 1fr;gap:1rem;align-items:center;padding:.7rem 0;border-top:1px solid var(--line)}.comparison-label strong,.comparison-label small{display:block;overflow:hidden;text-overflow:ellipsis}.comparison-label small{color:var(--muted);font-size:.72rem}.comparison-track{height:1.8rem;position:relative;background:#0b0e0b;border:1px solid #293126}.comparison-progress{position:absolute;inset:0 0 0 0;background:linear-gradient(90deg,#39452e44,#68603322)}.comparison-marker{position:absolute;top:50%;translate:-50% -50%;width:.72rem;height:.72rem;border:2px solid var(--panel);border-radius:50%;background:var(--green);box-shadow:0 0 0 1px #85d68b66}.comparison-marker.failure{background:var(--red);box-shadow:0 0 0 1px #ef857c66}.comparison-marker:hover{scale:1.5;z-index:2}@media(max-width:720px){.comparison-axis{margin-left:0}.comparison-lane{grid-template-columns:1fr;gap:.4rem}}
 ";
 
 const TREEMAP_STYLE: &str = r"
