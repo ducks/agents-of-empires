@@ -227,6 +227,19 @@ fn generates_archive_and_match_artifacts() {
             .expect("analysis artifact");
     assert!(analysis.contains("first_mutation_after_ms"));
     assert!(!analysis.contains("private reasoning"));
+    let match_report: serde_json::Value = serde_json::from_slice(
+        &fs::read(output.join("matches/build-race-001/artifacts/match-report.json"))
+            .expect("match report artifact"),
+    )
+    .expect("match report JSON");
+    assert_eq!(
+        match_report["artifact_type"],
+        serde_json::Value::String("agents-of-empires.match".into())
+    );
+    assert_eq!(match_report["match"]["slug"], "build-race-001");
+    assert_eq!(match_report["world"]["winner"], "territory-a");
+    assert_eq!(match_report["events"].as_array().map(Vec::len), Some(2));
+    assert!(match_page.contains("match-report.json"));
 
     fs::remove_dir_all(root).expect("cleanup");
 }

@@ -41,6 +41,8 @@ pub enum ReportError {
     Benchmark { path: PathBuf, detail: String },
     #[error("could not analyze transcript {path}: {detail}")]
     Analysis { path: PathBuf, detail: String },
+    #[error("report JSON encoding failed: {0}")]
+    Json(#[from] serde_json::Error),
     #[error("no completed match artifacts found below {0}")]
     NoMatches(PathBuf),
     #[error("no completed series artifacts found below {0}")]
@@ -729,6 +731,27 @@ fn copy_public_artifacts(report: &MatchReport) -> Result<(), ReportError> {
             )?;
         }
     }
+    let events: Vec<&serde_json::Value> = report.events.iter().map(|event| &event.value).collect();
+    let artifact = serde_json::json!({
+        "artifact_type": "agents-of-empires.match",
+        "schema_version": 1,
+        "match": {
+            "name": report.name,
+            "slug": report.slug,
+            "listed": report.listed,
+            "fog_of_war": report.fog_of_war,
+        },
+        "provenance": report.provenance.as_ref(),
+        "arena": report.arena.as_ref(),
+        "visualization": report.visualization.as_ref(),
+        "world": &report.state,
+        "events": events,
+        "analyses": &report.analyses,
+    });
+    fs::write(
+        raw.join("match-report.json"),
+        serde_json::to_vec_pretty(&artifact)?,
+    )?;
     Ok(())
 }
 
@@ -1498,7 +1521,7 @@ fn render_match(report: &MatchReport) -> String {
     } else {
         ""
     };
-    let match_artifact = if report.source.join("match.json").is_file() {
+    let match_provenance_artifact = if report.source.join("match.json").is_file() {
         "<a href=\"artifacts/match.json\">match.json</a>"
     } else {
         ""
@@ -1529,7 +1552,7 @@ fn render_match(report: &MatchReport) -> String {
         <section><div class=\"section-heading\"><h2>Agents</h2><p>Exact model, harness, reasoning configuration, and cumulative usage recorded for this match.</p></div><div class=\"table-wrap\"><table><thead><tr><th>Agent</th><th>Model</th><th>Harness</th><th>Reasoning</th><th>Outcome</th><th>Input</th><th>Output</th><th>Cost</th><th>Artifact</th></tr></thead><tbody>{agents}</tbody></table></div></section>
         {match_provenance}
         <section><div class=\"section-heading\"><h2>Event timeline</h2><p>{} immutable events. The match clock remains frozen during post-match collection.</p></div><ol class=\"timeline\">{timeline}</ol></section>
-        <footer><a href=\"artifacts/events.jsonl\">events.jsonl</a><a href=\"artifacts/world.json\">world.json</a>{match_artifact}{arena_artifact}</footer></main>",
+        <footer><a href=\"artifacts/match-report.json\">match-report.json</a><a href=\"artifacts/events.jsonl\">events.jsonl</a><a href=\"artifacts/world.json\">world.json</a>{match_provenance_artifact}{arena_artifact}</footer></main>",
         state.match_state,
         escape(state.finish_reason.as_deref().unwrap_or("unfinished")),
         escape(&report.name),
