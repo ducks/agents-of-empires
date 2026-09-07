@@ -264,45 +264,122 @@ fi
 "${scp_command[@]}" "root@${AOE_TERRITORY_HOST}:${remote_root}/result.json" "$native_result" 2>/dev/null || true
 normalize_usage "$transcript"
 
+# Claux exit codes 10-18 encode the failure kind (see the claux README);
+# they never collide with SSH's 255 or the shell's 126-128+signal range.
+failure_kind_for_exit() {
+  case "$1" in
+    10) printf cancelled ;;
+    11) printf unavailable ;;
+    12) printf authentication ;;
+    13) printf context_exceeded ;;
+    14) printf policy_rejection ;;
+    15) printf protocol_error ;;
+    16) printf model_not_found ;;
+    17) printf network ;;
+    18) printf output_limit_exceeded ;;
+    *) printf '' ;;
+  esac
+}
+
+# Prefer the classified failure claux wrote into its JSON outputs; fall back
+# to the exit code for releases that only encode the kind there.
+read_failure_kind() {
+  local file kind
+  for file in "$native_result" "$transcript"; do
+    [[ -s "$file" ]] || continue
+    kind="$(jq -r 'if type == "object" then (.outcome.failure.kind // "") else "" end' "$file" 2>/dev/null || true)"
+    if [[ -n "$kind" ]]; then
+      printf '%s' "$kind"
+      return 0
+    fi
+  done
+  failure_kind_for_exit "$status"
+}
+
+# Map a claux failure kind onto the normalized agent status. Provider and
+# transport failures are not evidence about the player; running out of
+# context or budget, or being refused on policy grounds, is.
+status_for_failure_kind() {
+  case "$1" in
+    cancelled) printf interrupted ;;
+    rate_limited|unavailable|network|authentication|model_not_found|protocol_error) printf unavailable ;;
+    *) printf failed ;;
+  esac
+}
+
+native_outcome_status=""
+native_outcome_message=""
 if [[ -s "$native_result" ]]; then
-  jq \
-    --arg agent "$AOE_AGENT_ID" \
-    --arg territory "$AOE_TERRITORY_ID" \
-    --arg transcript "$transcript" \
-    '{
-      schema_version: 1,
-      agent: $agent,
-      territory: $territory,
-      status: "completed",
-      summary: (.result // "agent completed"),
-      usage: {
-        rounds: null,
-        tool_calls: null,
-        input_tokens: (.usage.input_tokens // null),
-        output_tokens: (.usage.output_tokens // null),
-        cost_microusd: (if .usage.cost_usd == null then null else (.usage.cost_usd * 1000000 | round) end),
-        resource_units: 1
-      },
-      transcript: $transcript
-    }' "$native_result" >"${AOE_RESULT_FILE}.partial"
+  native_outcome_status="$(jq -r 'if type == "object" then (.outcome.status // "") else "" end' "$native_result" 2>/dev/null || true)"
+  native_outcome_message="$(jq -r 'if type == "object" then (.outcome.message // "") else "" end' "$native_result" 2>/dev/null | head -c 300 || true)"
+  if [[ -z "$native_outcome_status" ]]; then
+    # Releases before outcome reporting only wrote result.json on success.
+    native_outcome_status="completed"
+  fi
+fi
+
+write_usage_result() {
+  local normalized_status="$1" summary="$2" source="$3"
+  if [[ -s "$source" ]]; then
+    jq \
+      --arg agent "$AOE_AGENT_ID" \
+      --arg territory "$AOE_TERRITORY_ID" \
+      --arg status "$normalized_status" \
+      --arg summary "$summary" \
+      --arg transcript "$transcript" \
+      '{
+        schema_version: 1,
+        agent: $agent,
+        territory: $territory,
+        status: $status,
+        summary: $summary,
+        usage: {
+          rounds: null,
+          tool_calls: null,
+          input_tokens: (.usage.input_tokens // null),
+          output_tokens: (.usage.output_tokens // null),
+          cost_microusd: (if .usage.cost_usd == null then null else (.usage.cost_usd * 1000000 | round) end),
+          resource_units: 1
+        },
+        transcript: $transcript
+      }' "$source" >"${AOE_RESULT_FILE}.partial"
+  else
+    jq -n \
+      --arg agent "$AOE_AGENT_ID" \
+      --arg territory "$AOE_TERRITORY_ID" \
+      --arg status "$normalized_status" \
+      --arg summary "$summary" \
+      --arg transcript "$transcript" \
+      '{schema_version:1, agent:$agent, territory:$territory, status:$status, summary:$summary, usage:{resource_units:1}, transcript:$transcript}' \
+      >"${AOE_RESULT_FILE}.partial"
+  fi
   mv "${AOE_RESULT_FILE}.partial" "$AOE_RESULT_FILE"
+}
+
+if [[ "$native_outcome_status" == "completed" ]]; then
+  summary="$(jq -r '.result // "agent completed"' "$native_result")"
+  write_usage_result completed "$summary" "$native_result"
+elif [[ "$referee_interrupted" == true ]]; then
+  write_usage_result interrupted "agent session was interrupted by the referee's host reboot" "$native_result"
 else
-  normalized_status="failed"
-  summary="Claux exited with status ${status}"
-  if [[ "$referee_interrupted" == true ]]; then
-    normalized_status="interrupted"
-    summary="agent session was interrupted by the referee's host reboot"
+  failure_kind="$(read_failure_kind)"
+  if [[ -n "$failure_kind" ]]; then
+    normalized_status="$(status_for_failure_kind "$failure_kind")"
+    summary="Claux reported ${failure_kind} (exit status ${status})"
+    if [[ -n "$native_outcome_message" ]]; then
+      summary+=": ${native_outcome_message}"
+    fi
   elif [[ ! -s "$transcript" ]]; then
+    # No classification and no evidence: the harness never got going.
     normalized_status="harness_error"
     summary="Claux harness exited with status ${status} before producing a transcript"
+  else
+    normalized_status="failed"
+    summary="Claux exited with status ${status}"
+    if [[ -n "$native_outcome_message" ]]; then
+      summary+=": ${native_outcome_message}"
+    fi
   fi
-  jq -n \
-    --arg agent "$AOE_AGENT_ID" \
-    --arg territory "$AOE_TERRITORY_ID" \
-    --arg status "$normalized_status" \
-    --arg summary "$summary" \
-    --arg transcript "$transcript" \
-    '{schema_version:1, agent:$agent, territory:$territory, status:$status, summary:$summary, usage:{resource_units:1}, transcript:$transcript}' \
-    >"$AOE_RESULT_FILE"
+  write_usage_result "$normalized_status" "$summary" "$native_result"
 fi
 exit "$status"
