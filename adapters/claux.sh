@@ -22,8 +22,8 @@ set +a
 : "${AOE_SSH_PASSWORD:?credential file must set AOE_SSH_PASSWORD}"
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-claux_version="20260823.0.1"
-claux_sha256="ec0b5877ecd4f4277b3c09ffcd99a356345125a96ea20150dff21140cdb15f8d"
+claux_version="20260908.0.0"
+claux_sha256="8e386c95dc489f3388c7c8dfb6fdf79d774d706125fa02af79b4d0f4116de33e"
 default_claux="${HOME}/.cache/agents-of-empires/claux/v${claux_version}/claux-linux-x86_64"
 claux="${AOE_CLAUX_BINARY:-$default_claux}"
 proxy="${AOE_OPENROUTER_PROXY:-${repo_root}/../replaybook/integrations/host/openrouter_proxy.py}"
