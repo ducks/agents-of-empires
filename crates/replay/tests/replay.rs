@@ -229,6 +229,23 @@ fn interrupted_and_terminated_agents_are_terminal_without_becoming_losses() {
                 reason: "drain expired".into(),
             },
         ),
+        event(
+            4,
+            10,
+            Event::AgentStarted {
+                agent: "runner-up".into(),
+                territory: "three".into(),
+                model: "model-c".into(),
+            },
+        ),
+        event(
+            5,
+            10,
+            Event::AgentOutraced {
+                agent: "runner-up".into(),
+                reason: "winner reached durable first".into(),
+            },
+        ),
     ];
     let state = replay(&events);
     assert_eq!(
@@ -239,6 +256,15 @@ fn interrupted_and_terminated_agents_are_terminal_without_becoming_losses() {
     assert_eq!(
         state.agents["loser"].terminal_state,
         Some(AgentTerminalState::Terminated)
+    );
+    assert_eq!(
+        state.agents["runner-up"].terminal_state,
+        Some(AgentTerminalState::Incomplete)
+    );
+    assert_eq!(state.agents["runner-up"].successful, Some(false));
+    assert_eq!(
+        state.agents["runner-up"].failure_source,
+        Some(aoe_domain::FailureSource::Player)
     );
     assert!(state.agents.values().all(|agent| !agent.running));
 }

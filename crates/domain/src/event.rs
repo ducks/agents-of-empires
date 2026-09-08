@@ -60,6 +60,13 @@ pub enum Event {
         agent: String,
         reason: String,
     },
+    /// The match ended while this agent was still building: a rival reached
+    /// `durable` first, or the deadline passed with no winner. This is a
+    /// player outcome, ranked by verified milestones, not a controller fault.
+    AgentOutraced {
+        agent: String,
+        reason: String,
+    },
     UsageCharged {
         agent: String,
         resource_units: u64,

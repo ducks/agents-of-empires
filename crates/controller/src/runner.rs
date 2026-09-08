@@ -518,6 +518,14 @@ async fn run_booted_build_match(
     Ok(world)
 }
 
+/// Why an unfinished agent's build ended: a named winner, or the deadline.
+fn outraced_reason(winner: Option<&str>) -> String {
+    match winner {
+        Some(winner) => format!("{winner} reached durable first; build ended at the frozen clock"),
+        None => "match deadline reached before a durable deployment".to_string(),
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn drain_build_agents(
     agent_task: &mut tokio::task::JoinHandle<()>,
@@ -588,22 +596,28 @@ async fn drain_build_agents(
         events,
         frozen_elapsed_ms,
     )?;
-    let terminated: Vec<_> = world
+    // Anyone still building when the drain expires did not lose to the
+    // controller; they lost the race. Record a player outcome so standings
+    // rank them by verified milestones instead of counting a controller
+    // failure. The process itself is still ended by the guest teardown.
+    let outraced: Vec<_> = world
         .agents
         .iter()
         .filter(|(_, agent)| agent.running)
         .map(|(agent, _)| agent.clone())
         .collect();
-    for agent in &terminated {
+    let reason = outraced_reason(world.winner.as_deref());
+    for agent in &outraced {
         let event = referee.record(
-            Event::AgentTerminated {
+            Event::AgentOutraced {
                 agent: agent.clone(),
-                reason: "post-match drain deadline expired".into(),
+                reason: reason.clone(),
             },
             frozen_elapsed_ms,
         )?;
         append(log, world, events, [event])?;
     }
+    let terminated = outraced;
     let finished = referee.record(
         Event::PostMatchDrainFinished {
             captured_agents,
@@ -1780,6 +1794,18 @@ mod tests {
         std::fs::remove_file(path).expect("cleanup");
     }
 
+    #[test]
+    fn outraced_reason_names_the_winner_or_the_deadline() {
+        assert_eq!(
+            super::outraced_reason(Some("builder-two")),
+            "builder-two reached durable first; build ended at the frozen clock"
+        );
+        assert_eq!(
+            super::outraced_reason(None),
+            "match deadline reached before a durable deployment"
+        );
+    }
+
     #[tokio::test]
     async fn post_match_drain_terminates_agents_at_the_deadline() {
         let manifest_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -1825,6 +1851,9 @@ mod tests {
             referee.finish("test winner", 40_000).expect("finish"),
         )
         .expect("append finish");
+        // The referee only names a winner when a territory reached durable;
+        // simulate that so the drain records the outraced wording.
+        world.winner = Some("builder-one".into());
         let (sender, mut receiver) = mpsc::channel(1);
         let mut task = tokio::spawn(async move {
             let _sender = sender;
@@ -1853,14 +1882,30 @@ mod tests {
                 terminated_agents: 3,
             }
         )));
-        assert_eq!(
-            events
+        let outraced: Vec<_> = events
+            .iter()
+            .filter_map(|event| match &event.event {
+                Event::AgentOutraced { reason, .. } => Some(reason.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(outraced.len(), 3);
+        assert!(
+            outraced.iter().all(|reason| reason
+                == "builder-one reached durable first; build ended at the frozen clock"),
+            "{outraced:?}"
+        );
+        assert!(
+            !events
                 .iter()
-                .filter(|event| matches!(event.event, Event::AgentTerminated { .. }))
-                .count(),
-            3
+                .any(|event| matches!(event.event, Event::AgentTerminated { .. }))
         );
         assert!(world.agents.values().all(|agent| !agent.running));
+        assert!(world.agents.values().all(|agent| {
+            agent.terminal_state == Some(aoe_domain::AgentTerminalState::Incomplete)
+                && agent.failure_source == Some(aoe_domain::FailureSource::Player)
+                && agent.successful == Some(false)
+        }));
         std::fs::remove_file(path).expect("cleanup");
     }
 }

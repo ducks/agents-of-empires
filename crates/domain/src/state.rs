@@ -41,4 +41,6 @@ pub enum AgentTerminalState {
     Failed,
     Interrupted,
     Terminated,
+    /// Still building when the race ended; scored by milestones reached.
+    Incomplete,
 }

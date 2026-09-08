@@ -192,6 +192,14 @@ pub fn reduce(state: &mut WorldState, envelope: &EventEnvelope) {
             view.terminal_state = Some(AgentTerminalState::Terminated);
             view.terminal_detail = Some(reason.clone());
         }
+        Event::AgentOutraced { agent, reason } => {
+            let view = state.agents.entry(agent.clone()).or_default();
+            view.running = false;
+            view.successful = Some(false);
+            view.failure_source = Some(FailureSource::Player);
+            view.terminal_state = Some(AgentTerminalState::Incomplete);
+            view.terminal_detail = Some(reason.clone());
+        }
         Event::UsageCharged {
             agent,
             resource_units,
