@@ -712,3 +712,191 @@ fn generates_benchmark_leaderboard_and_drill_down() {
     );
     fs::remove_dir_all(root).expect("cleanup");
 }
+
+#[test]
+fn generates_season_bracket_and_week_pages() {
+    use aoe_controller::season::{
+        DRAW_SCHEMA_VERSION, DrawArena, FleetEntry, HeatDraw, HeatResult, RoundDraw, RoundResult,
+        SeasonRules, SeatOutcome, SeatResult, WEEK_SCHEMA_VERSION, WeekDraw, WeekStanding,
+        WeekSummary, bracket_shape,
+    };
+    use std::collections::BTreeMap;
+
+    let root = temp_dir("season-site");
+    let _ = fs::remove_dir_all(&root);
+    let week_dir = root.join("seasons/infra-weekly/2026-W37");
+    let heat_dir = week_dir.join("round-01/heat-01");
+    let replay_dir = week_dir.join("round-01/heat-01.replay-1");
+    for dir in [&heat_dir, &replay_dir] {
+        fs::create_dir_all(dir).expect("heat dir");
+        fs::write(
+            dir.join("world.json"),
+            serde_json::to_vec(&WorldState::default()).expect("world"),
+        )
+        .expect("world file");
+        fs::write(dir.join("events.jsonl"), "").expect("events");
+    }
+    let fleet: Vec<FleetEntry> = ["alpha", "beta", "gamma"]
+        .iter()
+        .map(|id| FleetEntry {
+            id: (*id).into(),
+            model: format!("vendor/{id}"),
+            adapter: "claux".into(),
+            reasoning_effort: "high".into(),
+        })
+        .collect();
+    let seats: BTreeMap<String, String> = [
+        ("one".to_owned(), "alpha".to_owned()),
+        ("two".to_owned(), "beta".to_owned()),
+        ("three".to_owned(), "gamma".to_owned()),
+    ]
+    .into_iter()
+    .collect();
+    let draw = WeekDraw {
+        schema_version: DRAW_SCHEMA_VERSION,
+        season_id: "infra-weekly".into(),
+        season_manifest: "suites/weekly-season.toml".into(),
+        week: "2026-W37".into(),
+        draw_seed: "infra-weekly/2026-W37".into(),
+        variation_seed_commitment: "abc".into(),
+        heat_size: 3,
+        rules: SeasonRules::default(),
+        fleet: fleet.clone(),
+        arenas: vec![DrawArena {
+            arena_id: "first-build-real".into(),
+            manifest: "arenas/first-build/agents-real.toml".into(),
+            compatibility_key: "key".into(),
+            territories: vec!["one".into(), "two".into(), "three".into()],
+        }],
+        shape: bracket_shape(3, 3).expect("shape"),
+        round_arenas: vec![0],
+        first_round: RoundDraw {
+            round: 1,
+            heats: vec![HeatDraw {
+                heat: 1,
+                seats: seats.clone(),
+            }],
+            byes: vec![],
+        },
+    };
+    let seat = |id: &str, territory: &str, outcome, points, durable: Option<u64>| SeatResult {
+        fleet_id: id.into(),
+        territory: territory.into(),
+        outcome,
+        milestone_points: points,
+        durable_at_ms: durable,
+        cost_microusd: 1_500,
+        failure_source: None,
+        detail: None,
+    };
+    let summary = WeekSummary {
+        schema_version: WEEK_SCHEMA_VERSION,
+        season_id: "infra-weekly".into(),
+        week: "2026-W37".into(),
+        draw_seed: draw.draw_seed.clone(),
+        variation_seed_commitment: "abc".into(),
+        variation_seed: Some("revealed-seed".into()),
+        completed: true,
+        rounds: vec![RoundResult {
+            round: 1,
+            arena_id: "first-build-real".into(),
+            heats: vec![HeatResult {
+                heat: 1,
+                output: replay_dir.clone(),
+                attempts: 2,
+                seats,
+                winner: Some("alpha".into()),
+                standings: vec![
+                    seat("alpha", "one", SeatOutcome::Durable, 100, Some(61_000)),
+                    seat("beta", "two", SeatOutcome::Incomplete, 30, None),
+                    seat("gamma", "three", SeatOutcome::Forfeit, 0, None),
+                ],
+                aborted: false,
+            }],
+            byes: vec![],
+            wildcards: vec![],
+        }],
+        champion: Some("alpha".into()),
+        standings: vec![
+            WeekStanding {
+                fleet_id: "alpha".into(),
+                model: "vendor/alpha".into(),
+                reached_round: 2,
+                heats: 1,
+                wins: 1,
+                durable_deployments: 1,
+                milestone_points: 100,
+                forfeits: 0,
+                cost_microusd: 1_500,
+            },
+            WeekStanding {
+                fleet_id: "beta".into(),
+                model: "vendor/beta".into(),
+                reached_round: 1,
+                heats: 1,
+                wins: 0,
+                durable_deployments: 0,
+                milestone_points: 30,
+                forfeits: 0,
+                cost_microusd: 1_500,
+            },
+            WeekStanding {
+                fleet_id: "gamma".into(),
+                model: "vendor/gamma".into(),
+                reached_round: 1,
+                heats: 1,
+                wins: 0,
+                durable_deployments: 0,
+                milestone_points: 0,
+                forfeits: 1,
+                cost_microusd: 1_500,
+            },
+        ],
+    };
+    fs::write(
+        week_dir.join("draw.json"),
+        serde_json::to_vec(&draw).expect("draw"),
+    )
+    .expect("draw file");
+    fs::write(
+        week_dir.join("week.json"),
+        serde_json::to_vec(&summary).expect("week"),
+    )
+    .expect("week file");
+
+    let output = root.join("site");
+    let report = aoe_controller::generate_reports_with_seasons(
+        &root.join("seasons"),
+        &[],
+        &[],
+        &[root.join("seasons/infra-weekly")],
+        &output,
+    )
+    .expect("report");
+    assert_eq!(report.seasons, 1);
+    assert_eq!(report.matches, 2, "both heat attempts become match pages");
+
+    let index = fs::read_to_string(output.join("index.html")).expect("index");
+    assert!(index.contains("seasons/infra-weekly/"));
+    assert!(index.contains("Champion: alpha"));
+
+    let season_page =
+        fs::read_to_string(output.join("seasons/infra-weekly/index.html")).expect("season page");
+    assert!(season_page.contains("2026-W37"));
+    assert!(season_page.contains("67%"), "two of three seats evaluated");
+
+    let week_page = fs::read_to_string(output.join("seasons/infra-weekly/2026-W37/index.html"))
+        .expect("week page");
+    assert!(week_page.contains("Champion: alpha"));
+    assert!(week_page.contains("pill good\">durable"));
+    assert!(week_page.contains("pill warn\">outraced"));
+    assert!(week_page.contains("pill muted\">forfeit"));
+    assert!(week_page.contains("season-infra-weekly-2026-W37-r1-h1-a2"));
+    assert!(week_page.contains("Attempt 2 · Replay (final)"));
+    assert!(week_page.contains("revealed-seed"));
+    assert!(
+        output
+            .join("seasons/infra-weekly/2026-W37/artifacts/week.json")
+            .is_file()
+    );
+}

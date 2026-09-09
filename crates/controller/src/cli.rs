@@ -60,6 +60,7 @@ pub enum Command {
         output: PathBuf,
         series: Vec<String>,
         benchmarks: Vec<String>,
+        seasons: Vec<String>,
     },
     Trajectory {
         input: PathBuf,
@@ -231,12 +232,14 @@ fn parse_report(mut args: Vec<String>) -> Result<Command, ParseError> {
     };
     let series = repeated_flag(&mut args, "--series")?;
     let benchmarks = repeated_flag(&mut args, "--benchmark")?;
+    let seasons = repeated_flag(&mut args, "--season")?;
     reject_remaining(args)?;
     Ok(Command::Report {
         input,
         output,
         series,
         benchmarks,
+        seasons,
     })
 }
 

@@ -11,6 +11,7 @@ use thiserror::Error;
 use crate::analysis::{TranscriptAnalysis, analyze_transcript};
 use crate::benchmark::{BenchmarkStanding, BenchmarkSummary};
 use crate::provenance::{MatchProvenance, read_provenance};
+use crate::season::{SeatOutcome, WeekDraw, WeekSummary};
 use crate::series::SeriesSummary;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,6 +19,7 @@ pub struct ReportSummary {
     pub matches: usize,
     pub series: usize,
     pub benchmarks: usize,
+    pub seasons: usize,
     pub index: PathBuf,
 }
 
@@ -39,6 +41,10 @@ pub enum ReportError {
     Series { path: PathBuf, detail: String },
     #[error("invalid benchmark summary in {path}: {detail}")]
     Benchmark { path: PathBuf, detail: String },
+    #[error("invalid season artifact in {path}: {detail}")]
+    Season { path: PathBuf, detail: String },
+    #[error("no season draws found below {0}")]
+    NoSeasons(PathBuf),
     #[error("could not analyze transcript {path}: {detail}")]
     Analysis { path: PathBuf, detail: String },
     #[error("report JSON encoding failed: {0}")]
@@ -120,6 +126,22 @@ struct BenchmarkRoundLink {
     has_analysis: bool,
 }
 
+struct SeasonReport {
+    id: String,
+    slug: String,
+    report_dir: PathBuf,
+    weeks: Vec<WeekReport>,
+}
+
+struct WeekReport {
+    week: String,
+    slug: String,
+    draw: WeekDraw,
+    summary: Option<WeekSummary>,
+    /// Match report slugs for every heat attempt, keyed by round and heat.
+    heat_links: BTreeMap<(usize, usize), Vec<String>>,
+}
+
 #[derive(Serialize)]
 struct TreemapArena<'a> {
     id: &'a str,
@@ -180,10 +202,31 @@ pub fn generate_reports_with_benchmarks(
     benchmark_inputs: &[PathBuf],
     output: &Path,
 ) -> Result<ReportSummary, ReportError> {
+    generate_reports_with_seasons(input, series_inputs, benchmark_inputs, &[], output)
+}
+
+/// Generate the archive with series, benchmark, and season inputs. A season
+/// input is a season directory of week directories, or one week directory
+/// holding `draw.json`; each heat's match artifacts are imported as ordinary
+/// match pages the bracket links to.
+///
+/// # Errors
+///
+/// Returns an error when any input is missing or malformed, or when the
+/// site cannot be written.
+pub fn generate_reports_with_seasons(
+    input: &Path,
+    series_inputs: &[PathBuf],
+    benchmark_inputs: &[PathBuf],
+    season_inputs: &[PathBuf],
+    output: &Path,
+) -> Result<ReportSummary, ReportError> {
     let match_dirs = match discover_matches(input) {
         Ok(matches) => matches,
         Err(ReportError::NoMatches(_))
-            if !series_inputs.is_empty() || !benchmark_inputs.is_empty() =>
+            if !series_inputs.is_empty()
+                || !benchmark_inputs.is_empty()
+                || !season_inputs.is_empty() =>
         {
             Vec::new()
         }
@@ -192,6 +235,7 @@ pub fn generate_reports_with_benchmarks(
     fs::create_dir_all(output.join("matches"))?;
     fs::create_dir_all(output.join("series"))?;
     fs::create_dir_all(output.join("benchmarks"))?;
+    fs::create_dir_all(output.join("seasons"))?;
     fs::create_dir_all(output.join("archive"))?;
     let mut reports = Vec::with_capacity(match_dirs.len());
     for source in match_dirs {
@@ -231,6 +275,8 @@ pub fn generate_reports_with_benchmarks(
         &mut series_reports,
         &mut benchmark_reports,
     )?;
+    let mut season_reports = Vec::new();
+    append_season_reports(season_inputs, output, &mut reports, &mut season_reports)?;
     reports.sort_by(|left, right| right.name.cmp(&left.name));
     series_reports.sort_by(|left, right| right.name.cmp(&left.name));
     benchmark_reports.sort_by(|left, right| right.name.cmp(&left.name));
@@ -248,10 +294,23 @@ pub fn generate_reports_with_benchmarks(
             render_benchmark_report(report),
         )?;
     }
+    for report in &season_reports {
+        fs::write(report.report_dir.join("index.html"), render_season(report))?;
+        for week in &report.weeks {
+            let dir = report.report_dir.join(&week.slug);
+            fs::create_dir_all(&dir)?;
+            fs::write(dir.join("index.html"), render_week_page(report, week))?;
+        }
+    }
     let index = output.join("index.html");
     fs::write(
         &index,
-        render_index(&reports, &series_reports, &benchmark_reports),
+        render_index(
+            &reports,
+            &series_reports,
+            &benchmark_reports,
+            &season_reports,
+        ),
     )?;
     fs::write(
         output.join("archive").join("index.html"),
@@ -261,8 +320,126 @@ pub fn generate_reports_with_benchmarks(
         matches: reports.len(),
         series: series_reports.len(),
         benchmarks: benchmark_reports.len(),
+        seasons: season_reports.len(),
         index,
     })
+}
+
+fn discover_season_weeks(input: &Path) -> Result<Vec<PathBuf>, ReportError> {
+    if input.join("draw.json").is_file() {
+        return Ok(vec![input.to_owned()]);
+    }
+    let mut weeks = Vec::new();
+    for entry in fs::read_dir(input)? {
+        let path = entry?.path();
+        if path.join("draw.json").is_file() {
+            weeks.push(path);
+        }
+    }
+    weeks.sort();
+    if weeks.is_empty() {
+        Err(ReportError::NoSeasons(input.to_owned()))
+    } else {
+        Ok(weeks)
+    }
+}
+
+fn read_season_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, ReportError> {
+    let source = fs::read(path)?;
+    serde_json::from_slice(&source).map_err(|error| ReportError::Season {
+        path: path.to_owned(),
+        detail: error.to_string(),
+    })
+}
+
+fn append_season_reports(
+    inputs: &[PathBuf],
+    output: &Path,
+    reports: &mut Vec<MatchReport>,
+    season_reports: &mut Vec<SeasonReport>,
+) -> Result<(), ReportError> {
+    let mut by_season: BTreeMap<String, SeasonReport> = BTreeMap::new();
+    for input in inputs {
+        for week_dir in discover_season_weeks(input)? {
+            let draw: WeekDraw = read_season_json(&week_dir.join("draw.json"))?;
+            let summary_path = week_dir.join("week.json");
+            let summary: Option<WeekSummary> = if summary_path.is_file() {
+                Some(read_season_json(&summary_path)?)
+            } else {
+                None
+            };
+            let season_slug = safe_name(&draw.season_id);
+            let week_slug = safe_name(&draw.week);
+            let mut heat_links = BTreeMap::new();
+            if let Some(summary) = &summary {
+                for round in &summary.rounds {
+                    for heat in &round.heats {
+                        let mut slugs = Vec::with_capacity(heat.attempts);
+                        for attempt in 1..=heat.attempts {
+                            let dir_name = if attempt == 1 {
+                                format!("heat-{:02}", heat.heat)
+                            } else {
+                                format!("heat-{:02}.replay-{}", heat.heat, attempt - 1)
+                            };
+                            let source = week_dir
+                                .join(format!("round-{:02}", round.round))
+                                .join(dir_name);
+                            if !is_match_dir(&source) {
+                                continue;
+                            }
+                            let slug = format!(
+                                "season-{season_slug}-{week_slug}-r{}-h{}-a{attempt}",
+                                round.round, heat.heat
+                            );
+                            let name = format!(
+                                "{} · {} · round {} heat {} · attempt {attempt}",
+                                draw.season_id, draw.week, round.round, heat.heat
+                            );
+                            reports.push(load_match_report(
+                                source,
+                                name,
+                                slug.clone(),
+                                false,
+                                output,
+                            )?);
+                            slugs.push(slug);
+                        }
+                        heat_links.insert((round.round, heat.heat), slugs);
+                    }
+                }
+            }
+            let report_dir = output.join("seasons").join(&season_slug);
+            let week_report_dir = report_dir.join(&week_slug).join("artifacts");
+            fs::create_dir_all(&week_report_dir)?;
+            fs::copy(
+                week_dir.join("draw.json"),
+                week_report_dir.join("draw.json"),
+            )?;
+            if summary_path.is_file() {
+                fs::copy(&summary_path, week_report_dir.join("week.json"))?;
+            }
+            let season = by_season
+                .entry(draw.season_id.clone())
+                .or_insert_with(|| SeasonReport {
+                    id: draw.season_id.clone(),
+                    slug: season_slug.clone(),
+                    report_dir: report_dir.clone(),
+                    weeks: Vec::new(),
+                });
+            season.weeks.push(WeekReport {
+                week: draw.week.clone(),
+                slug: week_slug,
+                draw,
+                summary,
+                heat_links,
+            });
+        }
+    }
+    for (_, mut season) in by_season {
+        season.weeks.sort_by(|a, b| b.week.cmp(&a.week));
+        season_reports.push(season);
+    }
+    Ok(())
 }
 
 fn append_benchmark_reports(
@@ -759,7 +936,16 @@ fn render_index(
     reports: &[MatchReport],
     series: &[SeriesReport],
     benchmarks: &[BenchmarkReport],
+    seasons: &[SeasonReport],
 ) -> String {
+    let season_cards = render_season_cards(seasons);
+    let season_section = if season_cards.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "<section><div class=\"section-heading\"><h2>Seasons</h2><p>Weekly brackets drawn from a published seed. Winners advance; the race stops at the first durable deployment.</p></div><div class=\"match-list season-list\">{season_cards}</div></section>"
+        )
+    };
     let benchmark_cards = render_benchmark_cards(benchmarks);
     let benchmark_section = if benchmark_cards.is_empty() {
         String::new()
@@ -793,7 +979,7 @@ fn render_index(
     page(
         "Agents of Empires · Current Season",
         &format!(
-            "<header class=\"hero\"><span class=\"eyebrow\">Current season</span><h1>Agents of Empires</h1><p>Build races decided by durable deployments, not confident answers.</p></header><main><section class=\"about\"><span class=\"eyebrow\">About the arena</span><h2>What am I looking at?</h2><p>Agents of Empires drops AI infrastructure agents into identical disposable NixOS machines and gives them the same service contract. A referee checks recovered state, fresh work, service restarts, and host reboots. The first agent to produce a durable deployment wins.</p><p><a href=\"https://github.com/ducks/agents-of-empires\">Read how the arena works and view the source →</a></p></section>{benchmark_section}<section><div class=\"section-heading\"><h2>Series</h2><p>Seat-rotated races that separate agent performance from territory advantage.</p></div><div class=\"match-list series-list\">{current_series}</div></section><section><div class=\"section-heading\"><h2>Current matches</h2><p>Matches sharing the newest manifest and verifier compatibility key for each arena.</p></div><div class=\"match-list\">{current}</div></section><section class=\"archive-callout\"><div><span class=\"eyebrow\">Audit trail</span><h2>Archive</h2><p>Superseded and provenance-free runs remain available without being mixed into current results.</p></div><a class=\"archive-link\" href=\"archive/\">Browse {archive_total} archived run{archive_suffix} →</a></section></main>",
+            "<header class=\"hero\"><span class=\"eyebrow\">Current season</span><h1>Agents of Empires</h1><p>Build races decided by durable deployments, not confident answers.</p></header><main><section class=\"about\"><span class=\"eyebrow\">About the arena</span><h2>What am I looking at?</h2><p>Agents of Empires drops AI infrastructure agents into identical disposable NixOS machines and gives them the same service contract. A referee checks recovered state, fresh work, service restarts, and host reboots. The first agent to produce a durable deployment wins.</p><p><a href=\"https://github.com/ducks/agents-of-empires\">Read how the arena works and view the source →</a></p></section>{season_section}{benchmark_section}<section><div class=\"section-heading\"><h2>Series</h2><p>Seat-rotated races that separate agent performance from territory advantage.</p></div><div class=\"match-list series-list\">{current_series}</div></section><section><div class=\"section-heading\"><h2>Current matches</h2><p>Matches sharing the newest manifest and verifier compatibility key for each arena.</p></div><div class=\"match-list\">{current}</div></section><section class=\"archive-callout\"><div><span class=\"eyebrow\">Audit trail</span><h2>Archive</h2><p>Superseded and provenance-free runs remain available without being mixed into current results.</p></div><a class=\"archive-link\" href=\"archive/\">Browse {archive_total} archived run{archive_suffix} →</a></section></main>",
             archive_suffix = if archive_total == 1 { "" } else { "s" },
         ),
     )
@@ -1206,15 +1392,29 @@ fn reporting_category(arena: &crate::benchmark::BenchmarkArenaSummary) -> String
 }
 
 fn render_failures(standing: &BenchmarkStanding) -> String {
-    if standing.failures.is_empty() {
-        return "—".into();
-    }
-    standing
+    // Player outcomes (including being outraced) are evaluated results;
+    // provider, harness, arena, and controller failures are not evidence
+    // about the model and are shown separately.
+    let non_player: usize = standing
         .failures
         .iter()
-        .map(|(source, count)| format!("{} {count}", escape(source)))
-        .collect::<Vec<_>>()
-        .join("<br>")
+        .filter(|(source, _)| source.as_str() != "player")
+        .map(|(_, count)| count)
+        .sum();
+    let evaluated = standing.appearances.saturating_sub(non_player);
+    let mut lines = vec![format!(
+        "<span class=\"pill {}\">{evaluated}/{} evaluated</span>",
+        if non_player == 0 { "good" } else { "warn" },
+        standing.appearances
+    )];
+    lines.extend(
+        standing
+            .failures
+            .iter()
+            .filter(|(source, _)| source.as_str() != "player")
+            .map(|(source, count)| format!("{} {count}", escape(source))),
+    );
+    lines.join("<br>")
 }
 
 fn render_series_comparison(report: &SeriesReport) -> String {
@@ -1959,7 +2159,7 @@ fn escape(value: &str) -> String {
 
 fn page(title: &str, content: &str) -> String {
     format!(
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"color-scheme\" content=\"dark\"><title>{}</title><style>{}{}{}{}{}{}{}{}{}</style></head><body>{}</body></html>",
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"color-scheme\" content=\"dark\"><title>{}</title><style>{}{}{}{}{}{}{}{}{}{}</style></head><body>{}</body></html>",
         escape(title),
         STYLE,
         REPLAY_STYLE,
@@ -1970,9 +2170,483 @@ fn page(title: &str, content: &str) -> String {
         COMPARISON_STYLE,
         TREEMAP_STYLE,
         TREEMAP_FLEET_STYLE,
+        SEASON_STYLE,
         content
     )
 }
+
+// ---------------------------------------------------------------------------
+// Seasons
+// ---------------------------------------------------------------------------
+
+struct SeasonStanding {
+    fleet_id: String,
+    model: String,
+    titles: usize,
+    finals: usize,
+    heats: usize,
+    wins: usize,
+    durable: usize,
+    milestone_points: u64,
+    forfeits: usize,
+    cost_microusd: u64,
+}
+
+struct WeekAccounting {
+    seats: usize,
+    durable: usize,
+    incomplete: usize,
+    failed: usize,
+    forfeit: usize,
+    replays: usize,
+}
+
+impl WeekAccounting {
+    fn of(summary: &WeekSummary) -> Self {
+        let mut acc = Self {
+            seats: 0,
+            durable: 0,
+            incomplete: 0,
+            failed: 0,
+            forfeit: 0,
+            replays: 0,
+        };
+        for round in &summary.rounds {
+            for heat in &round.heats {
+                acc.replays += heat.attempts.saturating_sub(1);
+                for seat in &heat.standings {
+                    acc.seats += 1;
+                    match seat.outcome {
+                        SeatOutcome::Durable => acc.durable += 1,
+                        SeatOutcome::Incomplete => acc.incomplete += 1,
+                        SeatOutcome::Failed => acc.failed += 1,
+                        SeatOutcome::Forfeit => acc.forfeit += 1,
+                    }
+                }
+            }
+        }
+        acc
+    }
+
+    fn evaluated(&self) -> usize {
+        self.seats - self.forfeit
+    }
+
+    fn evaluated_pct(&self) -> String {
+        if self.seats == 0 {
+            "n/a".to_owned()
+        } else {
+            format!(
+                "{}%",
+                (self.evaluated() * 100 + self.seats / 2) / self.seats
+            )
+        }
+    }
+}
+
+fn season_standings(report: &SeasonReport) -> Vec<SeasonStanding> {
+    let mut table: BTreeMap<String, SeasonStanding> = BTreeMap::new();
+    for week in &report.weeks {
+        for entry in &week.draw.fleet {
+            table
+                .entry(entry.id.clone())
+                .or_insert_with(|| SeasonStanding {
+                    fleet_id: entry.id.clone(),
+                    model: entry.model.clone(),
+                    titles: 0,
+                    finals: 0,
+                    heats: 0,
+                    wins: 0,
+                    durable: 0,
+                    milestone_points: 0,
+                    forfeits: 0,
+                    cost_microusd: 0,
+                });
+        }
+        let Some(summary) = &week.summary else {
+            continue;
+        };
+        let last_round = week.draw.shape.len();
+        for standing in &summary.standings {
+            let Some(row) = table.get_mut(&standing.fleet_id) else {
+                continue;
+            };
+            row.heats += standing.heats;
+            row.wins += standing.wins;
+            row.durable += standing.durable_deployments;
+            row.milestone_points += standing.milestone_points;
+            row.forfeits += standing.forfeits;
+            row.cost_microusd += standing.cost_microusd;
+            if standing.reached_round >= last_round && standing.heats > 0 {
+                row.finals += 1;
+            }
+            if summary.champion.as_deref() == Some(standing.fleet_id.as_str()) {
+                row.titles += 1;
+            }
+        }
+    }
+    let mut rows: Vec<SeasonStanding> = table.into_values().collect();
+    rows.sort_by(|a, b| {
+        b.titles
+            .cmp(&a.titles)
+            .then_with(|| b.finals.cmp(&a.finals))
+            .then_with(|| b.wins.cmp(&a.wins))
+            .then_with(|| b.durable.cmp(&a.durable))
+            .then_with(|| b.milestone_points.cmp(&a.milestone_points))
+            .then_with(|| a.cost_microusd.cmp(&b.cost_microusd))
+            .then_with(|| a.fleet_id.cmp(&b.fleet_id))
+    });
+    rows
+}
+
+fn render_season_cards(reports: &[SeasonReport]) -> String {
+    let mut body = String::new();
+    for report in reports {
+        let latest = report.weeks.first();
+        let (eyebrow, headline) = latest.map_or_else(
+            || ("No weeks drawn".to_owned(), "No champion yet".to_owned()),
+            |week| {
+                let headline = week
+                    .summary
+                    .as_ref()
+                    .and_then(|summary| summary.champion.clone())
+                    .map_or_else(
+                        || {
+                            if week.summary.is_some() {
+                                "Week in progress".to_owned()
+                            } else {
+                                "Drawn, not yet run".to_owned()
+                            }
+                        },
+                        |champion| format!("Champion: {champion}"),
+                    );
+                (format!("Week {}", week.week), headline)
+            },
+        );
+        let run_weeks = report
+            .weeks
+            .iter()
+            .filter(|week| {
+                week.summary
+                    .as_ref()
+                    .is_some_and(|summary| summary.completed)
+            })
+            .count();
+        let _ = write!(
+            body,
+            "<a class=\"match-card season-card\" href=\"seasons/{}/\"><div><span class=\"eyebrow\">{}</span><h2>{}</h2><p>Weekly bracket season</p></div><div class=\"metrics\"><strong>{}</strong><span>{} week{} completed</span></div></a>",
+            escape(&report.slug),
+            escape(&eyebrow),
+            escape(&report.id),
+            escape(&headline),
+            run_weeks,
+            if run_weeks == 1 { "" } else { "s" },
+        );
+    }
+    body
+}
+
+fn seat_pill(outcome: SeatOutcome) -> (&'static str, &'static str) {
+    match outcome {
+        SeatOutcome::Durable => ("good", "durable"),
+        SeatOutcome::Incomplete => ("warn", "outraced"),
+        SeatOutcome::Failed => ("bad", "failed"),
+        SeatOutcome::Forfeit => ("muted", "forfeit"),
+    }
+}
+
+fn render_season(report: &SeasonReport) -> String {
+    let mut weeks = String::new();
+    for week in &report.weeks {
+        let (status, champion, evaluated, cost) = match &week.summary {
+            Some(summary) => {
+                let acc = WeekAccounting::of(summary);
+                let cost: u64 = summary.standings.iter().map(|row| row.cost_microusd).sum();
+                (
+                    if summary.completed {
+                        "complete"
+                    } else {
+                        "in progress"
+                    },
+                    summary.champion.clone().unwrap_or_else(|| "—".to_owned()),
+                    acc.evaluated_pct(),
+                    money(cost),
+                )
+            }
+            None => ("drawn", "—".to_owned(), "n/a".to_owned(), "n/a".to_owned()),
+        };
+        let arenas: Vec<String> = week
+            .draw
+            .round_arenas
+            .iter()
+            .map(|index| week.draw.arenas[*index].arena_id.clone())
+            .collect();
+        let _ = write!(
+            weeks,
+            "<tr><td><a href=\"{}/\">{}</a><br><small>{}</small></td><td>{}</td><td><strong>{}</strong></td><td>{}</td><td>{}</td><td>{}</td></tr>",
+            escape(&week.slug),
+            escape(&week.week),
+            escape(&arenas.join(" → ")),
+            status,
+            escape(&champion),
+            week.draw.fleet.len(),
+            evaluated,
+            cost,
+        );
+    }
+    let mut standings = String::new();
+    for (index, row) in season_standings(report).iter().enumerate() {
+        let _ = write!(
+            standings,
+            "<tr class=\"{}\"><td><strong>{}</strong><br><small>{}</small></td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+            if index == 0 && row.titles > 0 {
+                "winner-row"
+            } else {
+                ""
+            },
+            escape(&row.fleet_id),
+            escape(&row.model),
+            row.titles,
+            row.finals,
+            row.heats,
+            row.wins,
+            row.durable,
+            row.milestone_points,
+            row.forfeits,
+            money(row.cost_microusd),
+        );
+    }
+    page(
+        &format!("{} · Season · Agents of Empires", report.id),
+        &format!(
+            "<nav><a href=\"../../\">← Current season</a><span>Agents of Empires</span></nav><header class=\"hero match-hero\"><span class=\"eyebrow\">Weekly season</span><h1>{}</h1><p>Each week is a bracket of three-seat heats drawn from a published seed. Winners advance, byes and milestone-ranked wildcards fill the rounds, and the race stops at the first durable deployment. Weeks draw arenas independently and are not comparable to each other as benchmarks.</p></header><main><section><div class=\"section-heading\"><h2>Weeks</h2><p>Newest first. Evaluated counts every seat that was not forfeited to a provider or harness failure.</p></div><div class=\"table-wrap\"><table><thead><tr><th>Week</th><th>Status</th><th>Champion</th><th>Fleet</th><th>Evaluated</th><th>Spend</th></tr></thead><tbody>{}</tbody></table></div></section><section><div class=\"section-heading\"><h2>Season standings</h2><p>Titles first, then finals reached, heat wins, durable deployments, milestone points, and spend.</p></div><div class=\"table-wrap\"><table><thead><tr><th>Fleet</th><th>Titles</th><th>Finals</th><th>Heats</th><th>Wins</th><th>Durable</th><th>Points</th><th>Forfeits</th><th>Spend</th></tr></thead><tbody>{}</tbody></table></div></section></main>",
+            escape(&report.id),
+            weeks,
+            standings,
+        ),
+    )
+}
+
+fn render_week_page(season: &SeasonReport, week: &WeekReport) -> String {
+    let draw = &week.draw;
+    let arenas_by_round: Vec<&str> = draw
+        .round_arenas
+        .iter()
+        .map(|index| draw.arenas[*index].arena_id.as_str())
+        .collect();
+
+    let (hero_status, accounting, revealed) = match &week.summary {
+        Some(summary) => {
+            let acc = WeekAccounting::of(summary);
+            let strip = format!(
+                "<div class=\"hero-stats accounting\"><div><small>Seats</small><strong>{}</strong></div><div><small>Evaluated</small><strong>{} ({})</strong></div><div><small>Durable · outraced · failed</small><strong>{} · {} · {}</strong></div><div><small>Forfeits · replays</small><strong>{} · {}</strong></div></div>",
+                acc.seats,
+                acc.evaluated(),
+                acc.evaluated_pct(),
+                acc.durable,
+                acc.incomplete,
+                acc.failed,
+                acc.forfeit,
+                acc.replays
+            );
+            let status = summary.champion.clone().map_or_else(
+                || {
+                    if summary.completed {
+                        "Complete, no champion".to_owned()
+                    } else {
+                        "In progress".to_owned()
+                    }
+                },
+                |champion| format!("Champion: {champion}"),
+            );
+            let revealed = summary.variation_seed.as_ref().map_or_else(
+                || "<span>sealed until the week completes</span>".to_owned(),
+                |seed| format!("<code>{}</code>", escape(seed)),
+            );
+            (status, strip, revealed)
+        }
+        None => (
+            "Drawn, not yet run".to_owned(),
+            String::new(),
+            "<span>sealed until the week completes</span>".to_owned(),
+        ),
+    };
+
+    let mut bracket = String::new();
+    for shape in &draw.shape {
+        let round_index = shape.round - 1;
+        let result = week.summary.as_ref().and_then(|summary| {
+            summary
+                .rounds
+                .iter()
+                .find(|round| round.round == shape.round)
+        });
+        let mut heats = String::new();
+        match result {
+            Some(round) => {
+                for heat in &round.heats {
+                    let mut seats = String::new();
+                    for seat in &heat.standings {
+                        let (class, label) = seat_pill(seat.outcome);
+                        let winner = heat.winner.as_deref() == Some(seat.fleet_id.as_str());
+                        let _ = write!(
+                            seats,
+                            "<li class=\"seat-row{}\"><span class=\"seat-name\"><strong>{}</strong><small>{}</small></span><span class=\"pill {}\">{}</span><span class=\"seat-points\">{} pts</span><span class=\"seat-time\">{}</span><span class=\"seat-cost\">{}</span></li>",
+                            if winner { " seat-winner" } else { "" },
+                            escape(&seat.fleet_id),
+                            escape(&seat.territory),
+                            class,
+                            label,
+                            seat.milestone_points,
+                            seat.durable_at_ms.map_or_else(|| "—".to_owned(), duration),
+                            money(seat.cost_microusd),
+                        );
+                    }
+                    let links = week
+                        .heat_links
+                        .get(&(round.round, heat.heat))
+                        .map_or_else(String::new, |slugs| {
+                            slugs
+                                .iter()
+                                .enumerate()
+                                .map(|(index, slug)| {
+                                    format!(
+                                        "<a class=\"round-analysis-link\" href=\"../../../matches/{}/\">{}</a>",
+                                        escape(slug),
+                                        if slugs.len() == 1 {
+                                            "Replay".to_owned()
+                                        } else if index + 1 == slugs.len() {
+                                            format!("Attempt {} · Replay (final)", index + 1)
+                                        } else {
+                                            format!("Attempt {} · Replay (replayed)", index + 1)
+                                        }
+                                    )
+                                })
+                                .collect()
+                        });
+                    let _ = write!(
+                        heats,
+                        "<article class=\"heat-card{}\"><header><span class=\"eyebrow\">Heat {}{}</span><strong>{}</strong></header><ul class=\"seat-list\">{}</ul><div class=\"round-analysis-links\">{}</div></article>",
+                        if heat.aborted { " aborted" } else { "" },
+                        heat.heat,
+                        if heat.attempts > 1 {
+                            format!(" · {} attempts", heat.attempts)
+                        } else {
+                            String::new()
+                        },
+                        heat.winner.as_deref().map_or_else(
+                            || "No winner".to_owned(),
+                            |winner| format!("Winner: {winner}")
+                        ),
+                        seats,
+                        links,
+                    );
+                }
+                if !round.byes.is_empty() {
+                    let _ = write!(
+                        heats,
+                        "<p class=\"bracket-note\">Byes: {}</p>",
+                        escape(&round.byes.join(", "))
+                    );
+                }
+                if !round.wildcards.is_empty() {
+                    let _ = write!(
+                        heats,
+                        "<p class=\"bracket-note\">Wildcards: {}</p>",
+                        escape(&round.wildcards.join(", "))
+                    );
+                }
+            }
+            None if shape.round == 1 => {
+                for heat in &draw.first_round.heats {
+                    let mut seats = String::new();
+                    for (territory, fleet_id) in &heat.seats {
+                        let _ = write!(
+                            seats,
+                            "<li class=\"seat-row\"><span class=\"seat-name\"><strong>{}</strong><small>{}</small></span><span class=\"pill\">drawn</span></li>",
+                            escape(fleet_id),
+                            escape(territory)
+                        );
+                    }
+                    let _ = write!(
+                        heats,
+                        "<article class=\"heat-card\"><header><span class=\"eyebrow\">Heat {}</span><strong>Not yet run</strong></header><ul class=\"seat-list\">{}</ul></article>",
+                        heat.heat, seats
+                    );
+                }
+                if !draw.first_round.byes.is_empty() {
+                    let _ = write!(
+                        heats,
+                        "<p class=\"bracket-note\">Byes: {}</p>",
+                        escape(&draw.first_round.byes.join(", "))
+                    );
+                }
+            }
+            None => {
+                let _ = write!(
+                    heats,
+                    "<p class=\"bracket-note\">Composition follows the previous round's results.</p>"
+                );
+            }
+        }
+        let _ = write!(
+            bracket,
+            "<div class=\"bracket-round\"><h3>{}</h3><p class=\"bracket-arena\">{} · {} heat{}{}{}</p>{}</div>",
+            if shape.round == draw.shape.len() {
+                "Final".to_owned()
+            } else {
+                format!("Round {}", shape.round)
+            },
+            escape(arenas_by_round[round_index]),
+            shape.heats,
+            if shape.heats == 1 { "" } else { "s" },
+            if shape.byes > 0 {
+                format!(
+                    " · {} bye{}",
+                    shape.byes,
+                    if shape.byes == 1 { "" } else { "s" }
+                )
+            } else {
+                String::new()
+            },
+            if shape.wildcards > 0 {
+                format!(
+                    " · {} wildcard{}",
+                    shape.wildcards,
+                    if shape.wildcards == 1 { "" } else { "s" }
+                )
+            } else {
+                String::new()
+            },
+            heats,
+        );
+    }
+
+    page(
+        &format!("{} · {} · Agents of Empires", week.week, season.id),
+        &format!(
+            "<nav><a href=\"../\">← {}</a><span>Agents of Empires</span></nav><header class=\"hero match-hero\"><span class=\"eyebrow\">{} · week {}</span><h1>{}</h1><p>Heats stop at the first durable deployment. A seat forfeited to a provider or harness failure is never counted as a loss; an outraced seat is ranked by the milestones it verified.</p>{}</header><main><section class=\"bracket\">{}</section><section><div class=\"section-heading\"><h2>Draw provenance</h2><p>Re-derive the bracket from the seed; check the revealed variation seed against its commitment.</p></div><div class=\"provenance-grid\"><div><small>Draw seed</small><code>{}</code></div><div><small>Variation seed commitment</small><code>{}</code></div><div><small>Variation seed</small>{}</div></div><p class=\"bracket-note\"><a href=\"artifacts/draw.json\">draw.json</a>{}</p></section></main>",
+            escape(&season.id),
+            escape(&season.id),
+            escape(&week.week),
+            escape(&hero_status),
+            accounting,
+            bracket,
+            escape(&draw.draw_seed),
+            escape(&draw.variation_seed_commitment),
+            revealed,
+            if week.summary.is_some() {
+                " · <a href=\"artifacts/week.json\">week.json</a>"
+            } else {
+                ""
+            },
+        ),
+    )
+}
+
+const SEASON_STYLE: &str = r#"
+.pill.muted{color:var(--muted);border-style:dashed}.accounting{margin-top:2rem}.bracket{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1.5rem;align-items:start}.bracket-round h3{font-family:Georgia,serif;font-size:1.5rem;margin:0 0 .25rem}.bracket-arena{color:var(--muted);margin:0 0 1rem;font-size:.85rem}.heat-card{border:1px solid var(--line);background:var(--panel);margin-bottom:1rem}.heat-card.aborted{border-color:var(--red)}.heat-card>header{display:flex;justify-content:space-between;align-items:baseline;gap:1rem;padding:.9rem 1rem;border-bottom:1px solid var(--line)}.seat-list{list-style:none;margin:0;padding:0}.seat-row{display:grid;grid-template-columns:1fr auto auto auto auto;gap:.75rem;align-items:center;padding:.75rem 1rem;border-bottom:1px solid var(--line);font-size:.85rem}.seat-row:last-child{border-bottom:0}.seat-name strong,.seat-name small{display:block}.seat-name small{color:var(--muted)}.seat-points,.seat-time,.seat-cost{color:var(--muted);white-space:nowrap}.heat-card .round-analysis-links{padding:.6rem 1rem;display:flex;flex-wrap:wrap;gap:.5rem}.bracket-note{color:var(--muted);font-size:.85rem}@media(max-width:720px){.seat-row{grid-template-columns:1fr auto;row-gap:.25rem}.seat-points,.seat-time,.seat-cost{display:none}}
+"#;
 
 const STYLE: &str = r#"
 :root{--bg:#10130f;--panel:#191e18;--line:#333d31;--text:#edf4e9;--muted:#9ca997;--gold:#e7bb55;--green:#85d68b;--red:#ef857c;--orange:#e5a65f}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 75% 0,#253120 0,transparent 32rem),var(--bg);color:var(--text);font:16px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}a{color:var(--gold)}nav,main,.hero{width:min(1120px,calc(100% - 2rem));margin:auto}nav{display:flex;justify-content:space-between;padding:1.25rem 0;color:var(--muted)}nav a{text-decoration:none}.hero{padding:6rem 0 3rem}.match-hero{padding-top:3.5rem}.eyebrow{color:var(--gold);font-size:.75rem;letter-spacing:.14em;text-transform:uppercase}h1{font-family:Georgia,serif;font-size:clamp(2.7rem,8vw,6.8rem);line-height:.9;margin:.35rem 0 1.2rem;max-width:900px}h2{font-family:Georgia,serif;font-size:2rem;margin:0}.hero>p,.section-heading p{color:var(--muted);max-width:680px}.about{border:1px solid var(--line);background:linear-gradient(135deg,#20271e,var(--panel));padding:2rem}.about h2{margin:.35rem 0 1rem}.about p{color:var(--muted);max-width:850px}.about p:last-child{margin-bottom:0}.about a{text-decoration:none}.hero-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;margin-top:3rem;background:var(--line);border:1px solid var(--line)}.hero-stats div{background:var(--panel);padding:1.25rem}.hero-stats small,td small{display:block;color:var(--muted);margin-bottom:.35rem}.hero-stats strong{font-size:1.25rem}section{margin:1rem 0 4rem}.section-heading{display:flex;align-items:end;justify-content:space-between;gap:2rem;margin-bottom:1rem}.section-heading p{margin:0}.table-wrap{overflow:auto;border:1px solid var(--line)}table{border-collapse:collapse;width:100%;background:var(--panel)}th,td{padding:1rem;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.08em}.winner-row,.seat-winner{background:#252b19}.seat-winner{box-shadow:inset 0 0 0 1px var(--gold)}.pill{display:inline-block;border:1px solid var(--line);border-radius:99px;padding:.15rem .55rem;font-size:.8rem}.pill.good{color:var(--green)}.pill.warn{color:var(--orange)}.pill.bad{color:var(--red)}.provenance-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;border:1px solid var(--line);background:var(--line)}.provenance-grid>div{min-width:0;background:var(--panel);padding:1rem}.provenance-grid small,.provenance-grid strong,.provenance-grid code{display:block}.provenance-grid small{color:var(--muted);margin-bottom:.35rem}.provenance-grid code{color:var(--green);overflow-wrap:anywhere}.provenance-adapters span{display:flex;gap:.75rem;justify-content:space-between}.provenance-adapters span+span{margin-top:.35rem}.timeline{list-style:none;padding:0;border-top:1px solid var(--line)}.timeline li{display:grid;grid-template-columns:6rem 1fr;gap:1rem;padding:1rem 0;border-bottom:1px solid var(--line)}.timeline time{color:var(--gold)}.timeline span{color:var(--muted);margin-left:.75rem}.timeline details{margin-top:.4rem;color:var(--muted)}pre{white-space:pre-wrap;word-break:break-word;background:#090b09;padding:1rem;overflow:auto}.match-list{display:grid;gap:1rem}.match-card{display:flex;justify-content:space-between;gap:2rem;padding:1.5rem;border:1px solid var(--line);background:var(--panel);text-decoration:none;color:var(--text)}.match-card:hover{border-color:var(--gold)}.match-card h2{font-size:1.5rem}.match-card p{color:var(--muted);margin:.25rem 0 0}.metrics{text-align:right}.metrics strong,.metrics span{display:block}.metrics span{color:var(--muted)}.archive-callout{display:flex;align-items:center;justify-content:space-between;gap:2rem;border:1px solid var(--line);background:linear-gradient(135deg,#20271e,var(--panel));padding:2rem}.archive-callout p{color:var(--muted);margin:.35rem 0 0;max-width:680px}.archive-link{white-space:nowrap;text-decoration:none;border:1px solid var(--gold);padding:.75rem 1rem}.archive-reason{display:block;color:var(--orange);margin-top:.75rem}footer{display:flex;gap:1rem;padding:2rem 0 5rem;border-top:1px solid var(--line)}@media(max-width:720px){.hero{padding-top:3rem}.hero-stats{grid-template-columns:1fr 1fr}.section-heading{display:block}.provenance-grid{grid-template-columns:1fr}.timeline li{grid-template-columns:4rem 1fr}.match-card,.archive-callout{display:block}.archive-link{display:inline-block;margin-top:1rem}.metrics{text-align:left;margin-top:1rem}th,td{padding:.75rem}}
