@@ -24,7 +24,7 @@ pub use commands::{DoctorReport, ValidationReport, doctor, inspect, replay_log, 
 pub use provenance::{MatchProvenance, read_provenance, write_provenance};
 pub use report::{
     ReportError, ReportSummary, generate_reports, generate_reports_with_benchmarks,
-    generate_reports_with_series,
+    generate_reports_with_seasons, generate_reports_with_series,
 };
 pub use runner::{RunOptions, run_match};
 pub use season::{

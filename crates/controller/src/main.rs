@@ -6,9 +6,9 @@ use std::path::PathBuf;
 use aoe_controller::cli::SeasonCommand;
 use aoe_controller::{
     ArenaCommand, BenchmarkOptions, Cli, Command, DrawOptions, RunOptions, SeriesOptions,
-    WeekOptions, doctor, draw_week, export_trajectories, generate_reports_with_benchmarks,
-    init_arena, inspect, render_benchmark, render_draw, render_series, render_week, replay_log,
-    run_benchmark, run_match, run_series, run_week, validate, validate_arena_package,
+    WeekOptions, doctor, draw_week, export_trajectories, generate_reports_with_seasons, init_arena,
+    inspect, render_benchmark, render_draw, render_series, render_week, replay_log, run_benchmark,
+    run_match, run_series, run_week, validate, validate_arena_package,
 };
 use aoe_tui::RenderOptions;
 
@@ -27,7 +27,7 @@ Usage:
   agents-of-empires replay EVENT_LOG [--json] [--no-color] [--width COLUMNS]
   agents-of-empires inspect EVENT_LOG SEQUENCE [--json]
   agents-of-empires report MATCH_OR_MATCHES_DIR [--series SERIES_OR_SERIES_DIR]
-      [--benchmark BENCHMARK_OR_BENCHMARKS_DIR] [--output DIR]
+      [--benchmark BENCHMARK_OR_BENCHMARKS_DIR] [--season SEASON_OR_WEEK_DIR] [--output DIR]
   agents-of-empires trajectory MATCH_OR_MATCHES_DIR [--output DIR]
   agents-of-empires season draw SEASON --week LABEL [--salt TEXT] [--output DIR]
   agents-of-empires season run WEEK_DIR --adapter NAME=PATH [--credential TERRITORY=PATH]
@@ -233,18 +233,23 @@ async fn execute() -> Result<(), Box<dyn std::error::Error>> {
             output,
             series,
             benchmarks,
+            seasons,
         } => {
             let series: Vec<_> = series.into_iter().map(PathBuf::from).collect();
             let benchmarks: Vec<_> = benchmarks.into_iter().map(PathBuf::from).collect();
-            let report = generate_reports_with_benchmarks(&input, &series, &benchmarks, &output)?;
+            let seasons: Vec<_> = seasons.into_iter().map(PathBuf::from).collect();
+            let report =
+                generate_reports_with_seasons(&input, &series, &benchmarks, &seasons, &output)?;
             println!(
-                "generated {} match report{}, {} series report{}, and {} benchmark report{} at {}",
+                "generated {} match report{}, {} series report{}, {} benchmark report{}, and {} season report{} at {}",
                 report.matches,
                 if report.matches == 1 { "" } else { "s" },
                 report.series,
                 if report.series == 1 { "" } else { "s" },
                 report.benchmarks,
                 if report.benchmarks == 1 { "" } else { "s" },
+                report.seasons,
+                if report.seasons == 1 { "" } else { "s" },
                 report.index.display()
             );
         }

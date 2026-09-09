@@ -269,7 +269,19 @@ agents-of-empires report matches --output site
 agents-of-empires report matches --series series --output site
 agents-of-empires report benchmarks/infra-core \
   --benchmark benchmarks/infra-core --output site
+agents-of-empires report seasons/infra-weekly \
+  --season seasons/infra-weekly --output site
 ```
+
+Pass one or more `--season` inputs (a season directory of week directories,
+or a single week directory holding `draw.json`) to add a season page with
+week-by-week champions and cumulative standings, and a bracket page per week.
+Each heat card lists every seat's outcome (durable, outraced, failed, or
+forfeit), milestone points, durable time, and spend, links to the heat's match
+replay and to any replayed attempt, and the page shows the draw seed, the
+variation seed commitment, and the seed once it is revealed. Benchmark and
+season pages both report how many appearances were evaluated, separating
+provider, harness, arena, and controller failures from player outcomes.
 
 Open `site/index.html` locally or publish `site/` with GitHub Pages. Each match
 page includes the frozen outcome, territory and agent results, token and cost
