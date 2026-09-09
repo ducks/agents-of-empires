@@ -151,7 +151,7 @@ concurrent match from that base.
   ```
 
   This checks formatting, runs Clippy with pedantic warnings across every
-  target, runs the workspace tests, validates the bundled arena, and checks
+  target, runs the workspace tests, validates the example arena package, and checks
   the demo launcher.
 - Changes to scoring, the reducer, or the adapter contract should also run
   `make demo`, which races three oracle agents on real guests without model
