@@ -3,11 +3,12 @@ use std::env;
 use std::io::IsTerminal;
 use std::path::PathBuf;
 
+use aoe_controller::cli::SeasonCommand;
 use aoe_controller::{
-    ArenaCommand, BenchmarkOptions, Cli, Command, RunOptions, SeriesOptions, doctor,
-    export_trajectories, generate_reports_with_benchmarks, init_arena, inspect, render_benchmark,
-    render_series, replay_log, run_benchmark, run_match, run_series, validate,
-    validate_arena_package,
+    ArenaCommand, BenchmarkOptions, Cli, Command, DrawOptions, RunOptions, SeriesOptions,
+    WeekOptions, doctor, draw_week, export_trajectories, generate_reports_with_benchmarks,
+    init_arena, inspect, render_benchmark, render_draw, render_series, render_week, replay_log,
+    run_benchmark, run_match, run_series, run_week, validate, validate_arena_package,
 };
 use aoe_tui::RenderOptions;
 
@@ -28,6 +29,9 @@ Usage:
   agents-of-empires report MATCH_OR_MATCHES_DIR [--series SERIES_OR_SERIES_DIR]
       [--benchmark BENCHMARK_OR_BENCHMARKS_DIR] [--output DIR]
   agents-of-empires trajectory MATCH_OR_MATCHES_DIR [--output DIR]
+  agents-of-empires season draw SEASON --week LABEL [--salt TEXT] [--output DIR]
+  agents-of-empires season run WEEK_DIR --adapter NAME=PATH [--credential TERRITORY=PATH]
+      [--base-port PORT] [--multicast-port PORT] [--no-color]
   agents-of-empires doctor [--json]
 ";
 
@@ -109,6 +113,7 @@ async fn execute() -> Result<(), Box<dyn std::error::Error>> {
                 base_port,
                 multicast_port,
                 color: !no_color && std::io::stdout().is_terminal(),
+                scenario_seed: None,
             })
             .await?;
             println!("match ended: {:?}", state.match_state);
@@ -132,6 +137,7 @@ async fn execute() -> Result<(), Box<dyn std::error::Error>> {
                     base_port,
                     multicast_port,
                     color: !no_color && std::io::stdout().is_terminal(),
+                    scenario_seed: None,
                 },
                 rounds,
             })
@@ -181,6 +187,47 @@ async fn execute() -> Result<(), Box<dyn std::error::Error>> {
             sequence,
             json,
         } => println!("{}", inspect(&log, sequence, json)?),
+        Command::Season {
+            command:
+                SeasonCommand::Draw {
+                    season,
+                    week,
+                    salt,
+                    output,
+                },
+        } => {
+            let draw = draw_week(&DrawOptions {
+                season,
+                week,
+                salt,
+                output: output.clone(),
+            })?;
+            print!("{}", render_draw(&draw));
+            println!("draw written to {}", output.join("draw.json").display());
+        }
+        Command::Season {
+            command:
+                SeasonCommand::Run {
+                    week_dir,
+                    adapters,
+                    credentials,
+                    base_port,
+                    multicast_port,
+                    no_color,
+                },
+        } => {
+            let summary = run_week(WeekOptions {
+                week_dir: week_dir.clone(),
+                adapters: mappings(adapters, "--adapter")?,
+                credentials: mappings(credentials, "--credential")?,
+                base_port,
+                multicast_port,
+                color: !no_color && std::io::stdout().is_terminal(),
+            })
+            .await?;
+            print!("{}", render_week(&summary));
+            println!("week summary at {}", week_dir.join("week.json").display());
+        }
         Command::Report {
             input,
             output,

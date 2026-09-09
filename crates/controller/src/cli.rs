@@ -65,10 +65,31 @@ pub enum Command {
         input: PathBuf,
         output: PathBuf,
     },
+    Season {
+        command: SeasonCommand,
+    },
     Doctor {
         json: bool,
     },
     Help,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SeasonCommand {
+    Draw {
+        season: PathBuf,
+        week: String,
+        salt: Option<String>,
+        output: PathBuf,
+    },
+    Run {
+        week_dir: PathBuf,
+        adapters: Vec<String>,
+        credentials: Vec<String>,
+        base_port: u16,
+        multicast_port: u16,
+        no_color: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -105,6 +126,7 @@ impl Cli {
             "help" | "--help" | "-h" => Command::Help,
             "validate" => parse_validate(args)?,
             "arena" => parse_arena(args)?,
+            "season" => parse_season(args)?,
             "run" => parse_run(args)?,
             "series" => parse_series(args)?,
             "benchmark" => parse_benchmark(args)?,
@@ -152,6 +174,52 @@ fn parse_arena(mut args: Vec<String>) -> Result<Command, ParseError> {
         _ => return Err(ParseError::Unexpected(subcommand)),
     };
     Ok(Command::Arena { command })
+}
+
+fn parse_season(mut args: Vec<String>) -> Result<Command, ParseError> {
+    let subcommand = take_positional(&mut args, "SEASON_COMMAND")?;
+    let command = match subcommand.as_str() {
+        "draw" => {
+            let season = PathBuf::from(take_positional(&mut args, "SEASON")?);
+            let week = take_flag_value(&mut args, "--week")?;
+            let salt = if args.iter().any(|arg| arg == "--salt") {
+                Some(take_flag_value(&mut args, "--salt")?)
+            } else {
+                None
+            };
+            let output = if args.iter().any(|arg| arg == "--output") {
+                PathBuf::from(take_flag_value(&mut args, "--output")?)
+            } else {
+                PathBuf::from("seasons").join(&week)
+            };
+            reject_remaining(args)?;
+            SeasonCommand::Draw {
+                season,
+                week,
+                salt,
+                output,
+            }
+        }
+        "run" => {
+            let week_dir = PathBuf::from(take_positional(&mut args, "WEEK_DIR")?);
+            let base_port = numeric_flag(&mut args, "--base-port", 26_000_u16)?;
+            let multicast_port = numeric_flag(&mut args, "--multicast-port", 23_977_u16)?;
+            let no_color = take_bool(&mut args, "--no-color");
+            let adapters = repeated_flag(&mut args, "--adapter")?;
+            let credentials = repeated_flag(&mut args, "--credential")?;
+            reject_remaining(args)?;
+            SeasonCommand::Run {
+                week_dir,
+                adapters,
+                credentials,
+                base_port,
+                multicast_port,
+                no_color,
+            }
+        }
+        _ => return Err(ParseError::Unexpected(subcommand)),
+    };
+    Ok(Command::Season { command })
 }
 
 fn parse_report(mut args: Vec<String>) -> Result<Command, ParseError> {

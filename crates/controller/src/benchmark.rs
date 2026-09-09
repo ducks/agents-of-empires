@@ -175,6 +175,7 @@ pub async fn run_benchmark(options: BenchmarkOptions) -> Result<BenchmarkSummary
                 base_port: options.base_port,
                 multicast_port: options.multicast_port,
                 color: options.color,
+                scenario_seed: None,
             },
             rounds: Some(entry.rounds),
         })
