@@ -27,6 +27,15 @@ README.md                  arena-specific usage and design notes
 
 Relative paths are resolved from the arena directory. This makes a package runnable from another repository or an absolute checkout path. Verifiers and Nix flake references may not escape the package. Public internet access inside territories remains forbidden by the manifest schema.
 
+## Scenario variation seed
+
+Season weeks hand verifiers a secret seed in `AOE_SCENARIO_SEED`. An arena may
+derive opaque record values, ports, or names from it so guests differ week to
+week while staying reproducible from the revealed seed. The variable is absent
+for ordinary matches, so verifiers must keep generating their own random values
+when it is unset, and must never write the seed into a guest or an agent-visible
+file: only its commitment is public until the week ends.
+
 ## Fog of war
 
 Discovery-first arenas can replace the contract and seat-specific instructions with one deliberately narrow player brief:

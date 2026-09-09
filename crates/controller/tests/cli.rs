@@ -1,6 +1,68 @@
 use std::path::PathBuf;
 
+use aoe_controller::cli::SeasonCommand;
 use aoe_controller::{ArenaCommand, Cli, Command, ParseError};
+
+#[test]
+fn parses_season_draw_with_default_output() {
+    let cli = Cli::parse(
+        [
+            "season",
+            "draw",
+            "suites/weekly-season.toml",
+            "--week",
+            "2026-W37",
+        ]
+        .into_iter()
+        .map(str::to_owned),
+    )
+    .expect("parse");
+    assert_eq!(
+        cli.command,
+        Command::Season {
+            command: SeasonCommand::Draw {
+                season: PathBuf::from("suites/weekly-season.toml"),
+                week: "2026-W37".into(),
+                salt: None,
+                output: PathBuf::from("seasons/2026-W37"),
+            },
+        }
+    );
+}
+
+#[test]
+fn parses_season_run_with_adapters_and_credentials() {
+    let cli = Cli::parse(
+        [
+            "season",
+            "run",
+            "seasons/2026-W37",
+            "--adapter",
+            "claux=adapters/claux.sh",
+            "--credential",
+            "builder-one=/tmp/one.env",
+            "--base-port",
+            "27000",
+            "--no-color",
+        ]
+        .into_iter()
+        .map(str::to_owned),
+    )
+    .expect("parse");
+    assert_eq!(
+        cli.command,
+        Command::Season {
+            command: SeasonCommand::Run {
+                week_dir: PathBuf::from("seasons/2026-W37"),
+                adapters: vec!["claux=adapters/claux.sh".into()],
+                credentials: vec!["builder-one=/tmp/one.env".into()],
+                base_port: 27000,
+                multicast_port: 23977,
+                no_color: true,
+            },
+        }
+    );
+}
 
 #[test]
 fn parses_arena_init_with_default_output() {

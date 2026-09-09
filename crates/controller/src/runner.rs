@@ -31,6 +31,9 @@ pub struct RunOptions {
     pub base_port: u16,
     pub multicast_port: u16,
     pub color: bool,
+    /// Secret per-week seed handed to verifiers as `AOE_SCENARIO_SEED` so
+    /// arenas can vary opaque values between weeks. Never given to agents.
+    pub scenario_seed: Option<String>,
 }
 
 #[derive(Debug, Error)]
@@ -747,6 +750,12 @@ async fn run_milestone_verifier(
             )
             .env("AOE_PREVIOUS_EVIDENCE", previous_file)
             .env("AOE_EVIDENCE_FILE", &evidence_file)
+            .envs(
+                options
+                    .scenario_seed
+                    .iter()
+                    .map(|seed| ("AOE_SCENARIO_SEED", seed.as_str())),
+            )
             .output(),
     )
     .await
@@ -1626,6 +1635,7 @@ mod tests {
             base_port: 26000,
             multicast_port: 23977,
             color: false,
+            scenario_seed: None,
         };
         let invocations = invocations(&manifest, &plan, &options).expect("invocations");
         assert_eq!(invocations.len(), 3);
@@ -1656,6 +1666,7 @@ mod tests {
             base_port: 26000,
             multicast_port: 23977,
             color: false,
+            scenario_seed: None,
         };
         let invocations = invocations(&manifest, &plan, &options).expect("invocations");
         for invocation in invocations {
@@ -1686,6 +1697,7 @@ mod tests {
             base_port: 26000,
             multicast_port: 23977,
             color: false,
+            scenario_seed: None,
         };
         let invocations = invocations(&manifest, &plan, &options).expect("invocations");
         for invocation in invocations {

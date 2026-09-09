@@ -6,6 +6,7 @@ pub mod commands;
 pub mod provenance;
 pub mod report;
 pub mod runner;
+pub mod season;
 pub mod series;
 pub mod trajectory;
 
@@ -26,6 +27,11 @@ pub use report::{
     generate_reports_with_series,
 };
 pub use runner::{RunOptions, run_match};
+pub use season::{
+    DrawOptions, HeatResult, RoundResult, SeasonError, SeasonManifest, SeatOutcome, WeekDraw,
+    WeekOptions, WeekStanding, WeekSummary, bracket_shape, draw_week, render_draw, render_week,
+    run_week,
+};
 pub use series::{
     SeriesError, SeriesOptions, SeriesRound, SeriesStanding, SeriesSummary, render_series,
     run_series,

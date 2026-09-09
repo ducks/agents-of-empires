@@ -318,6 +318,48 @@ or forced post-match termination.
 
 Ctrl-C stops the guests but retains an aborted, inspectable match log.
 
+## Weekly season
+
+A season is a fleet of models and an arena pool. Each week is a bracket of
+three-seat heats: winners advance, and when the next round would not fill
+whole heats, the best non-winners by verified milestones are promoted as
+wildcards. The race still stops at the first durable deployment; losing it is
+the result.
+
+```bash
+# Commit the draw before any inference runs. The bracket, the arena for each
+# round, and every seat come from a published seed (season id, week, and an
+# optional salt), so anyone can re-derive them from draw.json.
+cargo run --release --bin agents-of-empires -- season draw \
+  suites/weekly-season.toml --week 2026-W37 --output seasons/infra-weekly/2026-W37
+
+export OPENROUTER_API_KEY=...
+credentials="$(scripts/prepare-infra-core-credentials.sh)"
+credential_args=()
+for file in "$credentials"/*.env; do
+  credential_args+=(--credential "$(basename "$file" .env)=$file")
+done
+cargo run --release --bin agents-of-empires -- season run \
+  seasons/infra-weekly/2026-W37 --adapter claux=adapters/claux.sh "${credential_args[@]}"
+```
+
+The draw also generates a secret variation seed. Only its SHA-256 commitment
+is published in `draw.json`; the seed itself is stored in `seed.secret` (mode
+0600), handed to verifiers as `AOE_SCENARIO_SEED`, and revealed in `week.json`
+once the week completes. Competitors cannot predict verifier-side values
+during the week, and anyone can check the reveal against the commitment
+afterwards.
+
+`season run` writes `week.json` after every heat and resumes a compatible
+checkpoint. A seat whose result is unavailable (provider or harness failure)
+earns the heat one automatic replay with the same seats; the earlier attempt
+stays under `heat-NN.replay-1/` as evidence. If it happens again the seat
+forfeits: it is recorded, never counted as a loss, and cannot win or advance.
+A heat with no durable finisher goes to the best evaluated seat by milestone
+points, then earliest durable time, then lowest cost. Weeks draw arenas
+independently, so they are not comparable to each other as benchmarks; the
+benchmark suite remains the comparable measurement.
+
 ## Durable job queue race
 
 The durable queue is a fog-of-war build race. Agents receive an external HTTP
