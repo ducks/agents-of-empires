@@ -9,7 +9,7 @@
       "last_health": null,
       "elimination_source": null,
       "elimination_detail": null,
-      "competitor_state": "durable",
+      "competitor_state": "verifying",
       "milestones": {
         "baseline-ready": {
           "evaluating": false,
@@ -25,57 +25,17 @@
           "failure_category": null,
           "failure_detail": null
         },
-        "host-reboot": {
-          "evaluating": false,
-          "passed": true,
-          "points": 20,
-          "evidence": {
-            "reboot": true,
-            "record": "rollout-1cfc825ffaba17a1",
-            "value": "opaque-dfbf93d7b214ee4bbd4e373a",
-            "version": "v2"
-          },
-          "failure_category": null,
-          "failure_detail": null
-        },
         "uninterrupted-cutover": {
           "evaluating": false,
-          "passed": true,
-          "points": 45,
-          "evidence": {
-            "samples": 370,
-            "uninterrupted": true,
-            "version": "v2"
-          },
-          "failure_category": null,
-          "failure_detail": null
-        },
-        "v2-restart": {
-          "evaluating": false,
-          "passed": true,
-          "points": 15,
-          "evidence": {
-            "record": "rollout-1cfc825ffaba17a1",
-            "v2_restart": true,
-            "value": "opaque-dfbf93d7b214ee4bbd4e373a"
-          },
-          "failure_category": null,
-          "failure_detail": null
-        },
-        "write-new": {
-          "evaluating": false,
-          "passed": true,
-          "points": 15,
-          "evidence": {
-            "record": "rollout-1cfc825ffaba17a1",
-            "value": "opaque-dfbf93d7b214ee4bbd4e373a"
-          },
-          "failure_category": null,
-          "failure_detail": null
+          "passed": false,
+          "points": 0,
+          "evidence": null,
+          "failure_category": "verification_failed",
+          "failure_detail": "observed 15 failed public checks during cutover"
         }
       },
-      "milestone_points": 100,
-      "durable_at_ms": 117745
+      "milestone_points": 5,
+      "durable_at_ms": null
     },
     "rollout-three": {
       "class": "rollout-engineer",
@@ -107,7 +67,7 @@
           "points": 0,
           "evidence": null,
           "failure_category": "verification_failed",
-          "failure_detail": "public endpoint never cut over to v2"
+          "failure_detail": "observed 40 failed public checks during cutover"
         }
       },
       "milestone_points": 5,
@@ -143,7 +103,7 @@
           "points": 0,
           "evidence": null,
           "failure_category": "verification_failed",
-          "failure_detail": "public endpoint never cut over to v2"
+          "failure_detail": "observed 44 failed public checks during cutover"
         }
       },
       "milestone_points": 5,
@@ -155,45 +115,45 @@
       "territory": "rollout-two",
       "model": "deepseek/deepseek-v4-flash-0731",
       "running": false,
-      "successful": null,
-      "failure_source": "controller",
-      "terminal_state": "terminated",
-      "terminal_detail": "post-match drain deadline expired",
-      "resource_units_used": 1,
-      "input_tokens": 142681,
-      "output_tokens": 7803,
-      "cost_microusd": 7972
-    },
-    "glm-rollout-engineer": {
-      "territory": "rollout-one",
-      "model": "z-ai/glm-5.2",
-      "running": false,
       "successful": true,
       "failure_source": "player",
       "terminal_state": "completed",
-      "terminal_detail": "Now I understand the setup. v2.py doesn't exist (that's why v2.service failed). Let me write it mirroring v1's contract on port 8082, using the same DB to preserve records.v2 is up and serving the existing records. Now switch the upstream atomically and verify the public endpoint.Cutover complete with no outage. Now verify a new write works through the proxy and that v2 survives a restart plus the durability requirements.Rollout complete. Summary of what was done:\n\n**Implemented v2** at `/opt/rollout/v2.py` — mirrors v1's behavior but listens on `127.0.0.1:8082`, returns `v2` on `/version`, and reads/writes the same `/var/lib/rollout/records.sqlite3` so existing records are preserved. The v2.service unit was already in place and enabled; it was only failing because the script didn't exist.\n\n**Cutover (no outage):**\n1. Reset the start-limit and started `rollout-v2.service`.\n2. Verified v2 directly: `/health`→`ready`, `/version`→`v2`, existing records served.\n3. Atomically switched `/var/lib/rollout/upstream` from `8081` to `8082` via temp-file + `mv`.\n4. The proxy reads that file per-request, so traffic moved without restarting `rollout-proxy.service` or `rollout-v1.service` (both left running untouched).\n\n**Verification through the public endpoint (port 8080):**\n- `/health` → 200 `ready`\n- `/version` → 200 `v2`\n- existing `customer-alpha-73c` → 200 `alpha-original`\n- existing `customer-beta-a19` → 200 `beta-original`\n- new `PUT /records/customer-gamma-001` → 204, then GET → 200 `gamma-fresh`\n- absent record → 404\n\n**Durability:**\n- After `systemctl restart rollout-v2.service`: service came back active, all records (old + new) still served correctly through the proxy.\n- Reboot survival: `rollout-v2.service` and `rollout-proxy.service` are both `enabled` (WantedBy=multi-user.target), records live in the on-disk sqlite file, and `upstream` contains `8082` on disk — so state survives a full host reboot without agent intervention.\n\nBoth v2 and the proxy are left enabled and healthy.",
+      "terminal_detail": "The `/opt/rollout/` dir is empty and there's no v2.py yet. Let me examine the services and existing stateNow let me read the v1 and proxy implementations to mirror behavior exactly.\n\nFull picture is clear now:\n\n- v1 (`8081`) and the proxy (`8080`, reads upstream port per-request from `/var/lib/rollout/upstream`) both run from the Nix store.\n- `rollout-v2.service` is enabled but failed (`start-limit-hit`) because `/opt/rollout/v2.py` doesn't exist yet.\n- DB has 2 existing records that must be preserved.\n\nLet me baseline the public endpoint, then build v2.\n\nBaseline confirmed: proxy → v1, ready/v1/alpha-original. Now I'll write v2 mirroring v1's exact DB semantics (same sqlite file, TEXT round-trip) but on port 8082 with `v2` version.\n\nNow start v2 (reset failed state first) and verify itv2 is live and serves all existing records. Let me verify write/read round-trip on v2, then do the atomic cutover.\n\nRound-trip correct. Now the atomic cutover — write a temp file in the same dir and rename (atomic on same filesystem), so the proxy never sees a partial fileCutover complete — public endpoint now serves v2 and all records. Let me verify end-to-end writes through the proxy, then prove v2 survives a restart (without touching proxy/v1).\n\n\n\nPublic writes work end-to-end. v1 (pid 542) and proxy (pid 543) are the original processes, never restarted. Now prove v2 survives its own restart (allowed — contract only forbids proxy/v1 restarts).\n\n\n\nBoth correct after restart, proxy/v1 still original from 03:00:19. Finally, confirm reboot-survival prerequisites: all services enabled, v2 on disk, DB intactRollout complete. Summary:\n\n**What was done**\n\n1. **Built v2** — wrote `/opt/rollout/v2.py` (`127.0.0.1:8082`) mirroring v1's exact DB semantics against the same `/var/lib/rollout/records.sqlite3` (TEXT round-trip preserves UTF-8 bodies exactly). Implements `/health`→`ready`, `/version`→`v2`, `PUT /records/<id>`→`204`, `GET /records/<id>`→stored body or `404`. The `rollout-v2.service` slot was in `failed` state (missing file); I reset and started it.\n2. **Verified v2 direct**: health/version correct, both pre-existing records returned, unknown id → `404`, PUT/GET round-trip exact.\n3. **Atomic cutover**: wrote `8082` to a temp file in `/var/lib/rollout/` and `mv`'d it over `upstream` (atomic rename — the per-request-reading proxy never sees a partial file). This was the only change to the live path.\n4. **Verified public endpoint** (`8080`): `ready`, `v2`, all records intact, plus a public PUT→GET write-through confirmed end-to-end persistence.\n5. **Proved resilience**: restarted `rollout-v2.service` — health/version/records all still correct. `rollout-proxy.service` (pid 543) and `rollout-v1.service` (pid 542) were never stopped or restarted (both original processes from 03:00:19).\n6. **Reboot survival**: proxy, v1, v2, seed all `enabled` + `active`; `v2.py`, `upstream` (=8082), and the DB are on persistent disk, so the deployment and all records survive a full reboot without intervention.\n\n**Final state**: proxy → v2 (`8082`); DB contains both original customer records plus the two records written during cutover (preserved as required).",
       "resource_units_used": 1,
-      "input_tokens": 52773,
-      "output_tokens": 3075,
-      "cost_microusd": 12104
+      "input_tokens": 149671,
+      "output_tokens": 7463,
+      "cost_microusd": 5030
+    },
+    "glm-rollout-engineer": {
+      "territory": "rollout-one",
+      "model": "z-ai/glm-5.3",
+      "running": false,
+      "successful": false,
+      "failure_source": "player",
+      "terminal_state": "failed",
+      "terminal_detail": "Claux exited with status 0",
+      "resource_units_used": 1,
+      "input_tokens": 177549,
+      "output_tokens": 12480,
+      "cost_microusd": 126261
     },
     "luna-rollout-engineer": {
       "territory": "rollout-three",
       "model": "openai/gpt-5.6-luna",
       "running": false,
-      "successful": null,
-      "failure_source": "controller",
-      "terminal_state": "terminated",
-      "terminal_detail": "post-match drain deadline expired",
+      "successful": true,
+      "failure_source": "player",
+      "terminal_state": "completed",
+      "terminal_detail": "Implemented and left the v2 rollout running.\n\n- v2 deployed at `/opt/rollout/v2.py:1`, listening on `127.0.0.1:8082`.\n- Uses the existing `/var/lib/rollout/records.sqlite3` state.\n- Verified:\n  - `GET /health` → `200 ready`\n  - `GET /version` → `200 v2`\n  - Existing records returned unchanged:\n    - `customer-alpha-73c` → `alpha-original`\n    - `customer-beta-a19` → `beta-original`\n  - Missing records → `404`\n  - UTF-8 PUT/GET round-trip → `204`, exact body preserved\n- Switched `/var/lib/rollout/upstream` atomically and durably to `8082`.\n- `rollout-v1.service` and `rollout-proxy.service` were not restarted; their PIDs remained unchanged.\n- `rollout-v2.service`, `rollout-v1.service`, and `rollout-proxy.service` are all active and enabled.\n- The seed unit preserves the `8082` upstream setting across reboot, and v2 is enabled for automatic startup.\n\nOne intentionally over-aggressive local probe briefly saturated the proxy’s small request backlog during cutover and observed transient curl timeouts. Subsequent low-rate public checks all passed, and the service is currently healthy on v2.",
       "resource_units_used": 1,
-      "input_tokens": 223956,
-      "output_tokens": 13001,
-      "cost_microusd": 12786
+      "input_tokens": 266117,
+      "output_tokens": 12420,
+      "cost_microusd": 25796
     }
   },
-  "winner": "rollout-one",
-  "finish_reason": "first durable deployment",
+  "winner": null,
+  "finish_reason": "match timer expired",
   "infrastructure_failures": 0,
-  "last_sequence": 45,
-  "elapsed_ms": 117749
+  "last_sequence": 6014,
+  "elapsed_ms": 900420
 }

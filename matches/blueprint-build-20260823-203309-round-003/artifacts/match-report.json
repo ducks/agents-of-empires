@@ -1,0 +1,4467 @@
+{
+  "analyses": {
+    "kimi-blueprint-builder": {
+      "actions": [
+        {
+          "command": "which python3 python; python3 --version; systemctl --version | head -1; ls /opt/blueprint 2>/dev/null; ls /var/lib/blueprint 2>/dev/null; systemctl list-unit-files | grep -i blueprint",
+          "description": "Check available tooling and existing state",
+          "duration_ms": 4864,
+          "index": 0,
+          "kind": "discovery",
+          "output_excerpt": "/run/current-system/sw/bin/python3\n/run/current-system/sw/bin/python\nPython 3.14.7\nsystemd 261 (261.1)\nblueprint-api.service                       enabled         ignored\nblueprint-edge.service                      enabled         ignored\nblueprint-worker.service                 …",
+          "started_after_ms": 30423,
+          "success": true,
+          "tool_id": "Bash_0"
+        },
+        {
+          "command": "systemctl cat blueprint-edge.service blueprint-api.service blueprint-worker.service 2>&1; echo ---; systemctl is-active blueprint-edge blueprint-api blueprint-worker",
+          "description": "Inspect existing blueprint systemd units",
+          "duration_ms": 31,
+          "index": 1,
+          "kind": "validation",
+          "output_excerpt": "# /etc/systemd/system/blueprint-edge.service -> /nix/store/cl009zv95mxdrlhlk86fjmwrxqy7w7a5-unit-blueprint-edge.service/blueprint-edge.service\n[Unit]\nAfter=network.target blueprint-api.service\nConditionPathIsExecutable=/opt/blueprint/edge\nDescription=Player-defined blueprint edge…",
+          "started_after_ms": 43713,
+          "success": false,
+          "tool_id": "Bash:0"
+        },
+        {
+          "command": "Write /opt/blueprint/blueprint.py",
+          "description": null,
+          "duration_ms": 0,
+          "index": 2,
+          "kind": "mutation",
+          "output_excerpt": "Successfully wrote to /opt/blueprint/blueprint.py",
+          "started_after_ms": 104315,
+          "success": true,
+          "tool_id": "Write:0"
+        },
+        {
+          "command": "for m in edge api worker; do printf '#!/bin/sh\\nexec /run/current-system/sw/bin/python3 /opt/blueprint/blueprint.py %s\\n' \"$m\" > /opt/blueprint/$m; chmod 755 /opt/blueprint/$m; done; chmod 755 /opt/blueprint/blueprint.py; mkdir -p /var/lib/blueprint/queue /var/lib/blueprint/results; ls -l /opt/blueprint",
+          "description": "Install launchers and state directories",
+          "duration_ms": 42,
+          "index": 3,
+          "kind": "mutation",
+          "output_excerpt": "total 20\n-rwxr-xr-x 1 root root   82 Aug 23 20:40 api\n-rwxr-xr-x 1 root root 5350 Aug 23 20:40 blueprint.py\n-rwxr-xr-x 1 root root   83 Aug 23 20:40 edge\n-rwxr-xr-x 1 root root   85 Aug 23 20:40 worker",
+          "started_after_ms": 111957,
+          "success": true,
+          "tool_id": "Bash:0"
+        },
+        {
+          "command": "systemctl start blueprint-api blueprint-worker blueprint-edge; sleep 1; systemctl is-active blueprint-edge blueprint-api blueprint-worker",
+          "description": "Start all three services",
+          "duration_ms": 1104,
+          "index": 4,
+          "kind": "lifecycle",
+          "output_excerpt": "active\nactive\nactive",
+          "started_after_ms": 124246,
+          "success": true,
+          "tool_id": "Bash:0"
+        },
+        {
+          "command": "set -e\necho \"health: $(curl -s -w ' [%{http_code}]' http://127.0.0.1:8080/health)\"\nhead -c 1024 /dev/urandom > /tmp/payload.bin\necho \"put: $(curl -s -w ' [%{http_code}]' -X PUT --data-binary @/tmp/payload.bin http://127.0.0.1:8080/jobs/job-123)\"\necho \"get1: $(curl -s -w ' [%{http_code}]' http://127.0.0.1:8080/jobs/job-123 -o /tmp/out.bin)\"\nsleep 0.5\necho \"get2: $(curl -s -w ' [%{http_code}]' http://127.0.0.1:8080/jobs/job-123 -o /tmp/out.bin)\"\ncmp /tmp/payload.bin /tmp/out.bin && echo \"bytes match\"",
+          "description": "End-to-end contract test through the edge",
+          "duration_ms": 662,
+          "index": 5,
+          "kind": "mutation",
+          "output_excerpt": "health: ready [200]\nput: accepted [202]\nget1:  [409]\nget2:  [200]\nbytes match",
+          "started_after_ms": 138636,
+          "success": true,
+          "tool_id": "Bash:0"
+        }
+      ],
+      "agent": "kimi-blueprint-builder",
+      "analyzer": "aoe-controller/20260816.0.1",
+      "architecture": {
+        "persistent_paths": [
+          "/opt/blueprint",
+          "/opt/blueprint/$m",
+          "/opt/blueprint/blueprint.py",
+          "/var/lib/blueprint",
+          "/var/lib/blueprint/queue",
+          "/var/lib/blueprint/results"
+        ],
+        "service_units": [
+          "blueprint-api.service",
+          "blueprint-edge.service",
+          "blueprint-worker.service"
+        ],
+        "technologies": [
+          "Python",
+          "systemd"
+        ]
+      },
+      "metrics": {
+        "discoveries": 1,
+        "first_mutation_after_ms": 104315,
+        "last_observed_after_ms": 139298,
+        "lifecycle_actions": 1,
+        "mutations": 3,
+        "tool_calls": 6,
+        "tool_errors": 1,
+        "validations": 1
+      },
+      "model": "moonshotai/kimi-k3",
+      "outcome": "running",
+      "schema_version": 1,
+      "source_sha256": "2f9fed968bf7ee407384730d33e977d6dda94a8974fe150a873890849e49fce1",
+      "territory": "blueprint-two"
+    },
+    "luna-blueprint-builder": {
+      "actions": [
+        {
+          "command": "pwd; printf '\\n-- root --\\n'; ls -la /; printf '\\n-- opt --\\n'; ls -la /opt 2>/dev/null || true; printf '\\n-- services --\\n'; systemctl is-system-running 2>&1 || true; systemctl list-unit-files 'blueprint*' 2>&1 || true",
+          "description": "Inspect host and existing services",
+          "duration_ms": 71,
+          "index": 1,
+          "kind": "discovery",
+          "output_excerpt": "/root\n\n-- root --\ntotal 68\ndrwxr-xr-x  18 root root  4096 Aug 23 20:38 .\ndrwxr-xr-x  18 root root  4096 Aug 23 20:38 ..\ndrwxr-xr-x   2 root root  4096 Aug 23 20:38 bin\ndrwxr-xr-x  17 root root  3280 Aug 23 20:38 dev\ndrwxr-xr-x  21 root root  4096 Aug 23 20:38 etc\ndrwxr-xr-x   2 r…",
+          "started_after_ms": 7888,
+          "success": true,
+          "tool_id": "call_UxHazBtAEq0BpddCBcQm5Gxm"
+        },
+        {
+          "command": "command -v python3 || true; python3 --version 2>&1 || true; command -v go || true; command -v node || true; command -v sqlite3 || true; command -v curl || true; command -v jq || true",
+          "description": "Check available runtimes and tools",
+          "duration_ms": 34,
+          "index": 2,
+          "kind": "mutation",
+          "output_excerpt": "/run/current-system/sw/bin/python3\nPython 3.14.7\n/run/current-system/sw/bin/sqlite3\n/run/current-system/sw/bin/curl\n/run/current-system/sw/bin/jq",
+          "started_after_ms": 7959,
+          "success": true,
+          "tool_id": "call_8hRD6SGVlSgBPuwNgDrrOOga"
+        },
+        {
+          "command": "find / -maxdepth 3 -type f \\( -iname '*blueprint*' -o -iname '*README*' \\) 2>/dev/null | head -100",
+          "description": "Look for task files and documentation",
+          "duration_ms": 1788,
+          "index": 3,
+          "kind": "discovery",
+          "output_excerpt": "/nix/.ro-store/l4834ggkp4ib37w04g8vp93rc2gfdqxc-hatch_fancy_pypi_readme-24.1.0.tar.gz.drv\n/nix/.ro-store/dbl1rmk79sj09falxk91frxnka4wi415-python3.12-hatch-fancy-pypi-readme-24.1.0.drv\n/nix/.ro-store/5q5qn2fnykiaw946w0mmfld97xrf563h-hatch_fancy_pypi_readme-25.1.0.tar.gz.drv\n/nix/.…",
+          "started_after_ms": 7994,
+          "success": true,
+          "tool_id": "call_kFleS8aTRWzftEsurzoX61us"
+        },
+        {
+          "command": "ls -la /opt/blueprint; for f in /opt/blueprint/*; do echo \"--- $f\"; file \"$f\"; done",
+          "description": "Inspect blueprint installation directory",
+          "duration_ms": 17,
+          "index": 4,
+          "kind": "discovery",
+          "output_excerpt": "total 8\ndrwxr-xr-x 2 root root 4096 Aug 23 20:38 .\ndrwxr-xr-x 3 root root 4096 Aug 23 20:38 ..\n--- /opt/blueprint/*\n\nsh: line 1: file: command not found\n\nExit code: exit status: 127",
+          "started_after_ms": 13247,
+          "success": false,
+          "tool_id": "call_PSvB797swKsURXv1rrND7loZ"
+        },
+        {
+          "command": "systemctl cat blueprint-edge.service; systemctl cat blueprint-api.service; systemctl cat blueprint-worker.service",
+          "description": "Inspect blueprint systemd units",
+          "duration_ms": 32,
+          "index": 5,
+          "kind": "discovery",
+          "output_excerpt": "# /etc/systemd/system/blueprint-edge.service -> /nix/store/cl009zv95mxdrlhlk86fjmwrxqy7w7a5-unit-blueprint-edge.service/blueprint-edge.service\n[Unit]\nAfter=network.target blueprint-api.service\nConditionPathIsExecutable=/opt/blueprint/edge\nDescription=Player-defined blueprint edge…",
+          "started_after_ms": 13264,
+          "success": true,
+          "tool_id": "call_khK6AaEpOJn99GPqc6mP0zc6"
+        },
+        {
+          "command": "grep -R \"blueprint\" -n /etc/nixos /etc/systemd/system /run/current-system 2>/dev/null | head -100",
+          "description": "Inspect host blueprint configuration",
+          "duration_ms": 35669,
+          "index": 6,
+          "kind": "discovery",
+          "output_excerpt": "/etc/systemd/system/multi-user.target.wants/blueprint-worker.service:3:ConditionPathIsExecutable=/opt/blueprint/worker\n/etc/systemd/system/multi-user.target.wants/blueprint-worker.service:4:Description=Player-defined blueprint worker\n/etc/systemd/system/multi-user.target.wants/bl…",
+          "started_after_ms": 13297,
+          "success": true,
+          "tool_id": "call_9LZRPFoIiaP0fhOB4kFFVG5B"
+        },
+        {
+          "command": "systemctl status blueprint-edge.service blueprint-api.service blueprint-worker.service --no-pager 2>&1; journalctl -u blueprint-edge.service -u blueprint-api.service -u blueprint-worker.service --no-pager -n 100 2>&1",
+          "description": "Check blueprint service status and logs",
+          "duration_ms": 49,
+          "index": 7,
+          "kind": "validation",
+          "output_excerpt": "× blueprint-edge.service - Player-defined blueprint edge gateway\n     Loaded: loaded (/etc/systemd/system/blueprint-edge.service; enabled; preset: ignored)\n     Active: failed (Result: start-limit-hit) since Sun 2026-08-23 20:38:55 UTC; 52s ago\n   Duration: 30ms\n Invocation: f1bb…",
+          "started_after_ms": 48966,
+          "success": true,
+          "tool_id": "call_tv1rDfQXE3cp9EifpBXDSY0f"
+        },
+        {
+          "command": "Write /opt/blueprint/blueprint.py",
+          "description": null,
+          "duration_ms": 0,
+          "index": 8,
+          "kind": "mutation",
+          "output_excerpt": "Successfully wrote to /opt/blueprint/blueprint.py",
+          "started_after_ms": 97572,
+          "success": true,
+          "tool_id": "call_pCTgE4j9uAMvokRQHV5YLev1"
+        },
+        {
+          "command": "Write /opt/blueprint/edge",
+          "description": null,
+          "duration_ms": 0,
+          "index": 9,
+          "kind": "mutation",
+          "output_excerpt": "Successfully wrote to /opt/blueprint/edge",
+          "started_after_ms": 100556,
+          "success": true,
+          "tool_id": "call_9FqeAc0K0IopFFJs572hv21i"
+        },
+        {
+          "command": "Write /opt/blueprint/api",
+          "description": null,
+          "duration_ms": 0,
+          "index": 10,
+          "kind": "mutation",
+          "output_excerpt": "Successfully wrote to /opt/blueprint/api",
+          "started_after_ms": 100556,
+          "success": true,
+          "tool_id": "call_vp5Kp3ZpY1u3U83Mw7cRsmad"
+        },
+        {
+          "command": "Write /opt/blueprint/worker",
+          "description": null,
+          "duration_ms": 0,
+          "index": 11,
+          "kind": "mutation",
+          "output_excerpt": "Successfully wrote to /opt/blueprint/worker",
+          "started_after_ms": 100556,
+          "success": true,
+          "tool_id": "call_YoCLkD2gEll0MUR6GkxvrynR"
+        },
+        {
+          "command": "chmod 0755 /opt/blueprint/edge /opt/blueprint/api /opt/blueprint/worker /opt/blueprint/blueprint.py && /run/current-system/sw/bin/python3 -m py_compile /opt/blueprint/blueprint.py && systemctl reset-failed blueprint-edge.service blueprint-api.service blueprint-worker.service && systemctl daemon-reload && systemctl start blueprint-api.service blueprint-worker.service blueprint-edge.service && sleep 2 && systemctl status blueprint-edge.service blueprint-api.service blueprint-worker.service --no-pager",
+          "description": "Install executables and start blueprint services",
+          "duration_ms": 3112,
+          "index": 12,
+          "kind": "lifecycle",
+          "output_excerpt": "● blueprint-edge.service - Player-defined blueprint edge gateway\n     Loaded: loaded (/etc/systemd/system/blueprint-edge.service; enabled; preset: ignored)\n     Active: active (running) since Sun 2026-08-23 20:40:43 UTC; 2s ago\n Invocation: 3f6a9f88b36c4cd6a3e116cc72265547\n   Mai…",
+          "started_after_ms": 103512,
+          "success": false,
+          "tool_id": "call_dljrWdgoY4x1aLy9m8r6E5Uw"
+        }
+      ],
+      "agent": "luna-blueprint-builder",
+      "analyzer": "aoe-controller/20260816.0.1",
+      "architecture": {
+        "persistent_paths": [
+          "/etc/nixos",
+          "/etc/systemd/system",
+          "/opt/blueprint",
+          "/opt/blueprint/api",
+          "/opt/blueprint/blueprint.py",
+          "/opt/blueprint/edge",
+          "/opt/blueprint/worker"
+        ],
+        "service_units": [
+          "blueprint-api.service",
+          "blueprint-edge.service",
+          "blueprint-worker.service"
+        ],
+        "technologies": [
+          "Python",
+          "SQLite",
+          "systemd"
+        ]
+      },
+      "metrics": {
+        "discoveries": 5,
+        "first_mutation_after_ms": 7959,
+        "last_observed_after_ms": 106624,
+        "lifecycle_actions": 1,
+        "mutations": 5,
+        "tool_calls": 12,
+        "tool_errors": 2,
+        "validations": 1
+      },
+      "model": "openai/gpt-5.6-luna",
+      "outcome": "running",
+      "schema_version": 1,
+      "source_sha256": "d1a93afd59bdfa4f8cb7215bdad6433817a43162497e96462863d0176227e917",
+      "territory": "blueprint-one"
+    }
+  },
+  "arena": {
+    "agents": [
+      {
+        "adapter": "claux",
+        "budget": {
+          "max_cost_microusd": null,
+          "resource_units": 900
+        },
+        "id": "ox-blueprint-builder",
+        "model": "stealth/ox-alpha",
+        "reasoning_effort": "high",
+        "territory": "blueprint-three"
+      },
+      {
+        "adapter": "claux",
+        "budget": {
+          "max_cost_microusd": null,
+          "resource_units": 900
+        },
+        "id": "luna-blueprint-builder",
+        "model": "openai/gpt-5.6-luna",
+        "reasoning_effort": "high",
+        "territory": "blueprint-one"
+      },
+      {
+        "adapter": "claux",
+        "budget": {
+          "max_cost_microusd": null,
+          "resource_units": 900
+        },
+        "id": "kimi-blueprint-builder",
+        "model": "moonshotai/kimi-k3",
+        "reasoning_effort": "high",
+        "territory": "blueprint-two"
+      }
+    ],
+    "arena": {
+      "category": "architecture-implementation",
+      "display_name": "Blueprint Build",
+      "id": "blueprint-build",
+      "mode": "build_race"
+    },
+    "build": {
+      "completion_milestone": "host-reboot",
+      "milestones": [
+        {
+          "depends_on": [],
+          "display_name": "Gateway Ready",
+          "id": "gateway-ready",
+          "operation": "observe",
+          "points": 10,
+          "required": true,
+          "timeout_seconds": 8,
+          "verifier": "verify/gateway-ready.sh"
+        },
+        {
+          "depends_on": [
+            "gateway-ready"
+          ],
+          "display_name": "Accept While Worker Stopped",
+          "id": "accept-under-stop",
+          "operation": "observe",
+          "points": 20,
+          "required": true,
+          "timeout_seconds": 20,
+          "verifier": "verify/accept-under-stop.sh"
+        },
+        {
+          "depends_on": [
+            "accept-under-stop"
+          ],
+          "display_name": "Recover Queued Work",
+          "id": "recover-blueprint",
+          "operation": "observe",
+          "points": 25,
+          "required": true,
+          "timeout_seconds": 35,
+          "verifier": "verify/recover-blueprint.sh"
+        },
+        {
+          "depends_on": [
+            "recover-blueprint"
+          ],
+          "display_name": "Independent Service Restart",
+          "id": "service-restart",
+          "operation": "observe",
+          "points": 20,
+          "required": true,
+          "timeout_seconds": 25,
+          "verifier": "verify/service-restart.sh"
+        },
+        {
+          "depends_on": [
+            "service-restart"
+          ],
+          "display_name": "Host Reboot",
+          "id": "host-reboot",
+          "operation": "host_reboot",
+          "points": 25,
+          "required": true,
+          "timeout_seconds": 40,
+          "verifier": "verify/host-reboot.sh"
+        }
+      ],
+      "stop_on_first_durable": true
+    },
+    "classes": [
+      {
+        "display_name": "Blueprint Builder",
+        "id": "blueprint-builder",
+        "resources": {
+          "disk_mib": 2048,
+          "memory_mib": 768,
+          "vcpus": 1
+        },
+        "strengths": [],
+        "weaknesses": []
+      }
+    ],
+    "fog_of_war": {
+      "guest_leak_audit": {
+        "forbidden_strings": [
+          "accept-under-stop.sh",
+          "recover-blueprint.sh",
+          "controller-owned blueprint evidence",
+          "blueprint oracle"
+        ],
+        "scan_paths": [
+          "/etc",
+          "/opt",
+          "/root",
+          "/var/lib"
+        ]
+      },
+      "hide_topology_until_observed": true,
+      "player_artifacts": [
+        "blueprint.png"
+      ],
+      "player_brief": "brief.md"
+    },
+    "network": {
+      "allow_public_internet": false,
+      "cidr": "10.84.0.0/24"
+    },
+    "rules": {
+      "duration_seconds": 900,
+      "healthy_resources_per_tick": 0,
+      "minimum_territories": 3,
+      "tick_ms": 2000
+    },
+    "schema_version": 1,
+    "territories": [
+      {
+        "class": "blueprint-builder",
+        "id": "blueprint-one",
+        "nixos_config": ".#nixosConfigurations.blueprint-one.config.system.build.vm",
+        "service": {
+          "expected_body": "ready",
+          "expected_status": 200,
+          "health": {
+            "consecutive_failures": 3,
+            "poll_interval_ms": 1000,
+            "recovery_window_seconds": 60
+          },
+          "path": "/health",
+          "port": 8080
+        }
+      },
+      {
+        "class": "blueprint-builder",
+        "id": "blueprint-two",
+        "nixos_config": ".#nixosConfigurations.blueprint-two.config.system.build.vm",
+        "service": {
+          "expected_body": "ready",
+          "expected_status": 200,
+          "health": {
+            "consecutive_failures": 3,
+            "poll_interval_ms": 1000,
+            "recovery_window_seconds": 60
+          },
+          "path": "/health",
+          "port": 8080
+        }
+      },
+      {
+        "class": "blueprint-builder",
+        "id": "blueprint-three",
+        "nixos_config": ".#nixosConfigurations.blueprint-three.config.system.build.vm",
+        "service": {
+          "expected_body": "ready",
+          "expected_status": 200,
+          "health": {
+            "consecutive_failures": 3,
+            "poll_interval_ms": 1000,
+            "recovery_window_seconds": 60
+          },
+          "path": "/health",
+          "port": 8080
+        }
+      }
+    ],
+    "visualization": {
+      "links": [
+        {
+          "from": "client",
+          "kind": "traffic",
+          "label": "HTTP :8080",
+          "to": "edge"
+        },
+        {
+          "from": "edge",
+          "kind": "traffic",
+          "label": "route",
+          "to": "api"
+        },
+        {
+          "from": "api",
+          "kind": "queue",
+          "label": "accept",
+          "to": "queue"
+        },
+        {
+          "from": "queue",
+          "kind": "queue",
+          "label": "claim",
+          "to": "worker"
+        },
+        {
+          "from": "worker",
+          "kind": "storage",
+          "label": "complete",
+          "to": "results"
+        },
+        {
+          "from": "results",
+          "kind": "storage",
+          "label": "read",
+          "to": "api"
+        },
+        {
+          "from": "host",
+          "kind": "lifecycle",
+          "label": null,
+          "to": "edge"
+        }
+      ],
+      "nodes": [
+        {
+          "display_name": "Client",
+          "id": "client",
+          "kind": "client",
+          "milestone": null,
+          "x": 5,
+          "y": 28
+        },
+        {
+          "display_name": "Edge Gateway",
+          "id": "edge",
+          "kind": "proxy",
+          "milestone": "gateway-ready",
+          "x": 23,
+          "y": 28
+        },
+        {
+          "display_name": "API Receiver",
+          "id": "api",
+          "kind": "service",
+          "milestone": "accept-under-stop",
+          "x": 42,
+          "y": 28
+        },
+        {
+          "display_name": "Durable Queue",
+          "id": "queue",
+          "kind": "queue",
+          "milestone": "recover-blueprint",
+          "x": 61,
+          "y": 28
+        },
+        {
+          "display_name": "Worker",
+          "id": "worker",
+          "kind": "worker",
+          "milestone": "recover-blueprint",
+          "x": 80,
+          "y": 28
+        },
+        {
+          "display_name": "Result Store",
+          "id": "results",
+          "kind": "storage",
+          "milestone": "service-restart",
+          "x": 80,
+          "y": 72
+        },
+        {
+          "display_name": "NixOS Host",
+          "id": "host",
+          "kind": "host",
+          "milestone": "host-reboot",
+          "x": 42,
+          "y": 72
+        }
+      ]
+    }
+  },
+  "artifact_type": "agents-of-empires.match",
+  "events": [
+    {
+      "elapsed_ms": 0,
+      "from": "preparing",
+      "kind": "match_state_changed",
+      "schema_version": 1,
+      "sequence": 0,
+      "to": "running"
+    },
+    {
+      "elapsed_ms": 0,
+      "from": "preparing",
+      "kind": "competitor_state_changed",
+      "reason": "SSH preflight passed",
+      "schema_version": 1,
+      "sequence": 1,
+      "territory": "blueprint-one",
+      "to": "building"
+    },
+    {
+      "elapsed_ms": 0,
+      "from": "preparing",
+      "kind": "competitor_state_changed",
+      "reason": "SSH preflight passed",
+      "schema_version": 1,
+      "sequence": 2,
+      "territory": "blueprint-three",
+      "to": "building"
+    },
+    {
+      "elapsed_ms": 0,
+      "from": "preparing",
+      "kind": "competitor_state_changed",
+      "reason": "SSH preflight passed",
+      "schema_version": 1,
+      "sequence": 3,
+      "territory": "blueprint-two",
+      "to": "building"
+    },
+    {
+      "agent": "luna-blueprint-builder",
+      "class": "blueprint-builder",
+      "elapsed_ms": 0,
+      "kind": "territory_registered",
+      "schema_version": 1,
+      "sequence": 4,
+      "territory": "blueprint-one"
+    },
+    {
+      "agent": "kimi-blueprint-builder",
+      "class": "blueprint-builder",
+      "elapsed_ms": 0,
+      "kind": "territory_registered",
+      "schema_version": 1,
+      "sequence": 5,
+      "territory": "blueprint-two"
+    },
+    {
+      "agent": "ox-blueprint-builder",
+      "class": "blueprint-builder",
+      "elapsed_ms": 0,
+      "kind": "territory_registered",
+      "schema_version": 1,
+      "sequence": 6,
+      "territory": "blueprint-three"
+    },
+    {
+      "agent": "ox-blueprint-builder",
+      "elapsed_ms": 0,
+      "kind": "agent_started",
+      "model": "stealth/ox-alpha",
+      "schema_version": 1,
+      "sequence": 7,
+      "territory": "blueprint-three"
+    },
+    {
+      "agent": "luna-blueprint-builder",
+      "elapsed_ms": 0,
+      "kind": "agent_started",
+      "model": "openai/gpt-5.6-luna",
+      "schema_version": 1,
+      "sequence": 8,
+      "territory": "blueprint-one"
+    },
+    {
+      "agent": "kimi-blueprint-builder",
+      "elapsed_ms": 0,
+      "kind": "agent_started",
+      "model": "moonshotai/kimi-k3",
+      "schema_version": 1,
+      "sequence": 9,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 2000,
+      "from": "building",
+      "kind": "competitor_state_changed",
+      "reason": "milestone verification began",
+      "schema_version": 1,
+      "sequence": 10,
+      "territory": "blueprint-one",
+      "to": "verifying"
+    },
+    {
+      "elapsed_ms": 2000,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 11,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 2000,
+      "from": "building",
+      "kind": "competitor_state_changed",
+      "reason": "milestone verification began",
+      "schema_version": 1,
+      "sequence": 12,
+      "territory": "blueprint-two",
+      "to": "verifying"
+    },
+    {
+      "elapsed_ms": 2000,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 13,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 2000,
+      "from": "building",
+      "kind": "competitor_state_changed",
+      "reason": "milestone verification began",
+      "schema_version": 1,
+      "sequence": 14,
+      "territory": "blueprint-three",
+      "to": "verifying"
+    },
+    {
+      "elapsed_ms": 2000,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 15,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 2022,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 16,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 2022,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 17,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 2022,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 18,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 4023,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 19,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 4023,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 20,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 4023,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 21,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 4033,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 22,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 4033,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 23,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 4033,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 24,
+      "territory": "blueprint-three"
+    },
+    {
+      "agent": "ox-blueprint-builder",
+      "detail": "Claux exited with status 1",
+      "elapsed_ms": 6033,
+      "kind": "agent_finished",
+      "schema_version": 1,
+      "sequence": 25,
+      "source": "player",
+      "success": false
+    },
+    {
+      "agent": "ox-blueprint-builder",
+      "cost_microusd": null,
+      "elapsed_ms": 6033,
+      "input_tokens": null,
+      "kind": "usage_charged",
+      "output_tokens": null,
+      "resource_units": 1,
+      "schema_version": 1,
+      "sequence": 26
+    },
+    {
+      "elapsed_ms": 6033,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 27,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 6033,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 28,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 6033,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 29,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 6062,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 30,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 6062,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 31,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 6062,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 32,
+      "territory": "blueprint-three"
+    },
+    {
+      "agent": "kimi-blueprint-builder",
+      "cost_microusd": null,
+      "elapsed_ms": 6062,
+      "input_tokens": 0,
+      "kind": "usage_charged",
+      "output_tokens": 0,
+      "resource_units": 1,
+      "schema_version": 1,
+      "sequence": 33
+    },
+    {
+      "agent": "luna-blueprint-builder",
+      "cost_microusd": 0,
+      "elapsed_ms": 6062,
+      "input_tokens": 0,
+      "kind": "usage_charged",
+      "output_tokens": 0,
+      "resource_units": 1,
+      "schema_version": 1,
+      "sequence": 34
+    },
+    {
+      "elapsed_ms": 8064,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 35,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 8064,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 36,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 8064,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 37,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 8078,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 38,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 8078,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 39,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 8078,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 40,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 10079,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 41,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 10079,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 42,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 10079,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 43,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 10101,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 44,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 10101,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 45,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 10101,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 46,
+      "territory": "blueprint-three"
+    },
+    {
+      "agent": "luna-blueprint-builder",
+      "cost_microusd": 331,
+      "elapsed_ms": 10101,
+      "input_tokens": 3,
+      "kind": "usage_charged",
+      "output_tokens": 214,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 47
+    },
+    {
+      "elapsed_ms": 12102,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 48,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 12102,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 49,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 12102,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 50,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 12112,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 51,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 12112,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 52,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 12112,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 53,
+      "territory": "blueprint-three"
+    },
+    {
+      "agent": "luna-blueprint-builder",
+      "cost_microusd": 478,
+      "elapsed_ms": 12112,
+      "input_tokens": 3,
+      "kind": "usage_charged",
+      "output_tokens": 267,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 54
+    },
+    {
+      "elapsed_ms": 14114,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 55,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 14114,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 56,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 14114,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 57,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 14132,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 58,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 14132,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 59,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 14132,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 60,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 16133,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 61,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 16133,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 62,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 16133,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 63,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 16142,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 64,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 16142,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 65,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 16142,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 66,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 18144,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 67,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 18144,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 68,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 18144,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 69,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 18155,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 70,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 18155,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 71,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 18155,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 72,
+      "territory": "blueprint-three"
+    },
+    {
+      "agent": "luna-blueprint-builder",
+      "cost_microusd": 902,
+      "elapsed_ms": 18155,
+      "input_tokens": 3,
+      "kind": "usage_charged",
+      "output_tokens": 283,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 73
+    },
+    {
+      "elapsed_ms": 20156,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 74,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 20156,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 75,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 20156,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 76,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 20170,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 77,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 20170,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 78,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 20170,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 79,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 22171,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 80,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 22171,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 81,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 22171,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 82,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 22181,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 83,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 22181,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 84,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 22181,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 85,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 24182,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 86,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 24182,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 87,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 24182,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 88,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 24192,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 89,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 24192,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 90,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 24192,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 91,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 26194,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 92,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 26194,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 93,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 26194,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 94,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 26206,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 95,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 26206,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 96,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 26206,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 97,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 28206,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 98,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 28206,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 99,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 28206,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 100,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 28230,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 101,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 28230,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 102,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 28230,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 103,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 30231,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 104,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 30231,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 105,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 30231,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 106,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 30241,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 107,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 30241,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 108,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 30241,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 109,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 32242,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 110,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 32242,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 111,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 32242,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 112,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 32253,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 113,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 32253,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 114,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 32253,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 115,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 34254,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 116,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 34254,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 117,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 34254,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 118,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 34265,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 119,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 34265,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 120,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 34265,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 121,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 36266,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 122,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 36266,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 123,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 36266,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 124,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 36278,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 125,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 36278,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 126,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 36278,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 127,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 38279,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 128,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 38279,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 129,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 38279,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 130,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 38290,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 131,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 38290,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 132,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 38290,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 133,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 40291,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 134,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 40291,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 135,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 40291,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 136,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 40303,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 137,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 40303,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 138,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 40303,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 139,
+      "territory": "blueprint-three"
+    },
+    {
+      "agent": "kimi-blueprint-builder",
+      "cost_microusd": 30327,
+      "elapsed_ms": 40303,
+      "input_tokens": 4209,
+      "kind": "usage_charged",
+      "output_tokens": 1180,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 140
+    },
+    {
+      "elapsed_ms": 42304,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 141,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 42304,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 142,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 42304,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 143,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 42314,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 144,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 42314,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 145,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 42314,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 146,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 44315,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 147,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 44315,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 148,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 44315,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 149,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 44325,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 150,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 44325,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 151,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 44325,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 152,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 46326,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 153,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 46326,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 154,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 46326,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 155,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 46341,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 156,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 46341,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 157,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 46341,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 158,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 48343,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 159,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 48343,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 160,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 48343,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 161,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 48353,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 162,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 48353,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 163,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 48353,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 164,
+      "territory": "blueprint-three"
+    },
+    {
+      "agent": "kimi-blueprint-builder",
+      "cost_microusd": 16876,
+      "elapsed_ms": 48353,
+      "input_tokens": 5472,
+      "kind": "usage_charged",
+      "output_tokens": 111,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 165
+    },
+    {
+      "elapsed_ms": 50354,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 166,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 50354,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 167,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 50354,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 168,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 50364,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 169,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 50364,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 170,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 50364,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 171,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 52367,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 172,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 52367,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 173,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 52367,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 174,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 52399,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 175,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 52399,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 176,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 52399,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 177,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 54400,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 178,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 54400,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 179,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 54400,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 180,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 54424,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 181,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 54424,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 182,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 54424,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 183,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 56425,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 184,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 56425,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 185,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 56425,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 186,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 56442,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 187,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 56442,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 188,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 56442,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 189,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 58443,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 190,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 58443,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 191,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 58443,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 192,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 58463,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 193,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 58463,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 194,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 58463,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 195,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 60464,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 196,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 60464,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 197,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 60464,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 198,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 60474,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 199,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 60474,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 200,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 60474,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 201,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 62476,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 202,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 62476,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 203,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 62476,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 204,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 62500,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 205,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 62500,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 206,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 62500,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 207,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 64501,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 208,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 64501,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 209,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 64501,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 210,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 64518,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 211,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 64518,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 212,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 64518,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 213,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 66519,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 214,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 66519,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 215,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 66519,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 216,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 66531,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 217,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 66531,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 218,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 66531,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 219,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 68533,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 220,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 68533,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 221,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 68533,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 222,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 68547,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 223,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 68547,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 224,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 68547,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 225,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 70549,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 226,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 70549,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 227,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 70549,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 228,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 70570,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 229,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 70570,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 230,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 70570,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 231,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 72571,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 232,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 72571,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 233,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 72571,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 234,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 72591,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 235,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 72591,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 236,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 72591,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 237,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 74593,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 238,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 74593,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 239,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 74593,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 240,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 74620,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 241,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 74620,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 242,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 74620,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 243,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 76621,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 244,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 76621,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 245,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 76621,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 246,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 76642,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 247,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 76642,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 248,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 76642,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 249,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 78642,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 250,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 78642,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 251,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 78642,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 252,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 78669,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 253,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 78669,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 254,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 78669,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 255,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 80670,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 256,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 80670,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 257,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 80670,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 258,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 80682,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 259,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 80682,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 260,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 80682,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 261,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 82683,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 262,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 82683,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 263,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 82683,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 264,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 82705,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 265,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 82705,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 266,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 82705,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 267,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 84706,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 268,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 84706,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 269,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 84706,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 270,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 84720,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 271,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 84720,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 272,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 84720,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 273,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 86721,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 274,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 86721,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 275,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 86721,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 276,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 86736,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 277,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 86736,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 278,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 86736,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 279,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 88736,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 280,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 88736,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 281,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 88736,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 282,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 88757,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 283,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 88757,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 284,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 88757,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 285,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 90758,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 286,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 90758,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 287,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 90758,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 288,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 90784,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 289,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 90784,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 290,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 90784,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 291,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 92785,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 292,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 92785,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 293,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 92785,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 294,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 92796,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 295,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 92796,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 296,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 92796,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 297,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 94796,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 298,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 94796,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 299,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 94796,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 300,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 94815,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 301,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 94815,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 302,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 94815,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 303,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 96816,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 304,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 96816,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 305,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 96816,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 306,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 96833,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 307,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 96833,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 308,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 96833,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 309,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 98835,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 310,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 98835,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 311,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 98835,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 312,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 98888,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 313,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 98888,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 314,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 98889,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 315,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 100889,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 316,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 100889,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 317,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 100889,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 318,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 100913,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 319,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 100913,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 320,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 100913,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 321,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 102914,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 322,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 102914,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 323,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 102914,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 324,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 102936,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 325,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 102936,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 326,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 102936,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 327,
+      "territory": "blueprint-three"
+    },
+    {
+      "agent": "luna-blueprint-builder",
+      "cost_microusd": 8945,
+      "elapsed_ms": 102936,
+      "input_tokens": 3,
+      "kind": "usage_charged",
+      "output_tokens": 5694,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 328
+    },
+    {
+      "elapsed_ms": 104937,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 329,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 104937,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 330,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 104937,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 331,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 104948,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 332,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 104948,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 333,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 104948,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 334,
+      "territory": "blueprint-three"
+    },
+    {
+      "agent": "luna-blueprint-builder",
+      "cost_microusd": 1968,
+      "elapsed_ms": 104948,
+      "input_tokens": 3,
+      "kind": "usage_charged",
+      "output_tokens": 217,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 335
+    },
+    {
+      "elapsed_ms": 106949,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 336,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 106949,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 337,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 106949,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 338,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 106958,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 339,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 106958,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 340,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 106958,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 341,
+      "territory": "blueprint-three"
+    },
+    {
+      "agent": "luna-blueprint-builder",
+      "cost_microusd": 694,
+      "elapsed_ms": 106958,
+      "input_tokens": 3,
+      "kind": "usage_charged",
+      "output_tokens": 194,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 342
+    },
+    {
+      "elapsed_ms": 108960,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 343,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 108960,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 344,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 108960,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 345,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 108974,
+      "evidence": {
+        "health": "ready"
+      },
+      "kind": "milestone_passed",
+      "milestone": "gateway-ready",
+      "points": 10,
+      "schema_version": 1,
+      "sequence": 346,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 108974,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 347,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 108974,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 348,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 108974,
+      "kind": "milestone_evaluation_started",
+      "milestone": "accept-under-stop",
+      "schema_version": 1,
+      "sequence": 349,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 109370,
+      "evidence": {
+        "jobs": [
+          "cedar-c50bf00b50ef",
+          "cobalt-dcb12238edd0",
+          "saffron-3721a4a1cdcb"
+        ],
+        "payloads": [
+          "opaque/cedar/7e396a87dd9d751823403ff1",
+          "opaque/cobalt/6b54f4e91a4a5d98ffb91217",
+          "opaque/saffron/2fa9c09fb1dc5fb9437c1b0e"
+        ],
+        "worker_stopped": true
+      },
+      "kind": "milestone_passed",
+      "milestone": "accept-under-stop",
+      "points": 20,
+      "schema_version": 1,
+      "sequence": 350,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 109370,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-blueprint",
+      "schema_version": 1,
+      "sequence": 351,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 110839,
+      "evidence": {
+        "jobs": [
+          "cedar-c50bf00b50ef",
+          "cobalt-dcb12238edd0",
+          "saffron-3721a4a1cdcb"
+        ],
+        "payloads": [
+          "opaque/cedar/7e396a87dd9d751823403ff1",
+          "opaque/cobalt/6b54f4e91a4a5d98ffb91217",
+          "opaque/saffron/2fa9c09fb1dc5fb9437c1b0e"
+        ],
+        "recovered": true
+      },
+      "kind": "milestone_passed",
+      "milestone": "recover-blueprint",
+      "points": 25,
+      "schema_version": 1,
+      "sequence": 352,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 110839,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-restart",
+      "schema_version": 1,
+      "sequence": 353,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 112338,
+      "evidence": {
+        "jobs": [
+          "cedar-c50bf00b50ef",
+          "cobalt-dcb12238edd0",
+          "saffron-3721a4a1cdcb",
+          "restart-636aa885ef65"
+        ],
+        "payloads": [
+          "opaque/cedar/7e396a87dd9d751823403ff1",
+          "opaque/cobalt/6b54f4e91a4a5d98ffb91217",
+          "opaque/saffron/2fa9c09fb1dc5fb9437c1b0e",
+          "opaque/restart/33d16ec21c72bab83de5fe9c"
+        ],
+        "restarted": true
+      },
+      "kind": "milestone_passed",
+      "milestone": "service-restart",
+      "points": 20,
+      "schema_version": 1,
+      "sequence": 354,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 112338,
+      "kind": "milestone_evaluation_started",
+      "milestone": "host-reboot",
+      "schema_version": 1,
+      "sequence": 355,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 126053,
+      "evidence": {
+        "jobs": [
+          "cedar-c50bf00b50ef",
+          "cobalt-dcb12238edd0",
+          "saffron-3721a4a1cdcb",
+          "restart-636aa885ef65"
+        ],
+        "reboot": true
+      },
+      "kind": "milestone_passed",
+      "milestone": "host-reboot",
+      "points": 25,
+      "schema_version": 1,
+      "sequence": 356,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 126053,
+      "from": "verifying",
+      "kind": "competitor_state_changed",
+      "reason": "completion milestone passed",
+      "schema_version": 1,
+      "sequence": 357,
+      "territory": "blueprint-one",
+      "to": "durable"
+    },
+    {
+      "elapsed_ms": 126053,
+      "kind": "durable_deployment_completed",
+      "schema_version": 1,
+      "sequence": 358,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 126053,
+      "from": "running",
+      "kind": "match_state_changed",
+      "schema_version": 1,
+      "sequence": 359,
+      "to": "finished"
+    },
+    {
+      "elapsed_ms": 126053,
+      "kind": "match_finished",
+      "reason": "first durable deployment",
+      "schema_version": 1,
+      "sequence": 360,
+      "winner": "blueprint-one"
+    },
+    {
+      "agent": "kimi-blueprint-builder",
+      "cost_microusd": 73313,
+      "elapsed_ms": 126058,
+      "input_tokens": 12306,
+      "kind": "usage_charged",
+      "output_tokens": 2680,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 361
+    },
+    {
+      "elapsed_ms": 126058,
+      "kind": "post_match_drain_started",
+      "pending_agents": 2,
+      "schema_version": 1,
+      "sequence": 362,
+      "timeout_ms": 30000
+    },
+    {
+      "agent": "luna-blueprint-builder",
+      "detail": "agent session was interrupted by the referee's host reboot",
+      "elapsed_ms": 126058,
+      "kind": "agent_interrupted",
+      "schema_version": 1,
+      "sequence": 363,
+      "source": "arena"
+    },
+    {
+      "agent": "luna-blueprint-builder",
+      "cost_microusd": 0,
+      "elapsed_ms": 126058,
+      "input_tokens": 0,
+      "kind": "usage_charged",
+      "output_tokens": 0,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 364
+    },
+    {
+      "agent": "kimi-blueprint-builder",
+      "cost_microusd": 38745,
+      "elapsed_ms": 126058,
+      "input_tokens": 11048,
+      "kind": "usage_charged",
+      "output_tokens": 367,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 365
+    },
+    {
+      "agent": "kimi-blueprint-builder",
+      "elapsed_ms": 126058,
+      "kind": "agent_terminated",
+      "reason": "post-match drain deadline expired",
+      "schema_version": 1,
+      "sequence": 366
+    },
+    {
+      "captured_agents": 1,
+      "elapsed_ms": 126058,
+      "kind": "post_match_drain_finished",
+      "schema_version": 1,
+      "sequence": 367,
+      "terminated_agents": 1
+    }
+  ],
+  "match": {
+    "fog_of_war": true,
+    "listed": false,
+    "name": "blueprint-build-20260823-203309 · round 3",
+    "slug": "blueprint-build-20260823-203309-round-003"
+  },
+  "provenance": {
+    "adapter_sha256": {
+      "claux": "c2fbb4b03553c4334bf4ee1ba03b999a2879c278e15f58934da12fbcdbe0905d"
+    },
+    "arena_id": "blueprint-build",
+    "arena_mode": "buildrace",
+    "compatibility_key": "6993192d92a82a355a84335edbdca7ba185594910ba3c5c4b6053508256a0967",
+    "controller_version": "20260816.0.1",
+    "manifest_sha256": "dcbfb8d55c614439a540a7963b84faf87bb26420e74af264f43670959f60591e",
+    "player_artifacts_sha256": {
+      "blueprint.png": "66c10f15220b04bae3501c368dd9dd2643488955a170a6fa5a5ee2502d339108"
+    },
+    "player_brief_sha256": "a18f814ed4b9e7e7f93a26a877ad00240a58dc96752419b25e0281b9623f2475",
+    "schema_version": 1,
+    "source_revision": "067b460cfe763149d64273063dfc20a1d5cda750",
+    "verifier_sha256": "6fdb7133839a89474454324d434c3e64ffb4965bd83698faf0ef5a52fc0ff700"
+  },
+  "schema_version": 1,
+  "visualization": {
+    "links": [
+      {
+        "from": "client",
+        "kind": "traffic",
+        "label": "HTTP :8080",
+        "to": "edge"
+      },
+      {
+        "from": "edge",
+        "kind": "traffic",
+        "label": "route",
+        "to": "api"
+      },
+      {
+        "from": "api",
+        "kind": "queue",
+        "label": "accept",
+        "to": "queue"
+      },
+      {
+        "from": "queue",
+        "kind": "queue",
+        "label": "claim",
+        "to": "worker"
+      },
+      {
+        "from": "worker",
+        "kind": "storage",
+        "label": "complete",
+        "to": "results"
+      },
+      {
+        "from": "results",
+        "kind": "storage",
+        "label": "read",
+        "to": "api"
+      },
+      {
+        "from": "host",
+        "kind": "lifecycle",
+        "label": null,
+        "to": "edge"
+      }
+    ],
+    "nodes": [
+      {
+        "display_name": "Client",
+        "id": "client",
+        "kind": "client",
+        "milestone": null,
+        "x": 5,
+        "y": 28
+      },
+      {
+        "display_name": "Edge Gateway",
+        "id": "edge",
+        "kind": "proxy",
+        "milestone": "gateway-ready",
+        "x": 23,
+        "y": 28
+      },
+      {
+        "display_name": "API Receiver",
+        "id": "api",
+        "kind": "service",
+        "milestone": "accept-under-stop",
+        "x": 42,
+        "y": 28
+      },
+      {
+        "display_name": "Durable Queue",
+        "id": "queue",
+        "kind": "queue",
+        "milestone": "recover-blueprint",
+        "x": 61,
+        "y": 28
+      },
+      {
+        "display_name": "Worker",
+        "id": "worker",
+        "kind": "worker",
+        "milestone": "recover-blueprint",
+        "x": 80,
+        "y": 28
+      },
+      {
+        "display_name": "Result Store",
+        "id": "results",
+        "kind": "storage",
+        "milestone": "service-restart",
+        "x": 80,
+        "y": 72
+      },
+      {
+        "display_name": "NixOS Host",
+        "id": "host",
+        "kind": "host",
+        "milestone": "host-reboot",
+        "x": 42,
+        "y": 72
+      }
+    ]
+  },
+  "world": {
+    "agents": {
+      "kimi-blueprint-builder": {
+        "cost_microusd": 159261,
+        "failure_source": "controller",
+        "input_tokens": 33035,
+        "model": "moonshotai/kimi-k3",
+        "output_tokens": 4338,
+        "resource_units_used": 1,
+        "running": false,
+        "successful": null,
+        "terminal_detail": "post-match drain deadline expired",
+        "terminal_state": "terminated",
+        "territory": "blueprint-two"
+      },
+      "luna-blueprint-builder": {
+        "cost_microusd": 13318,
+        "failure_source": "arena",
+        "input_tokens": 18,
+        "model": "openai/gpt-5.6-luna",
+        "output_tokens": 6869,
+        "resource_units_used": 1,
+        "running": false,
+        "successful": null,
+        "terminal_detail": "agent session was interrupted by the referee's host reboot",
+        "terminal_state": "interrupted",
+        "territory": "blueprint-one"
+      },
+      "ox-blueprint-builder": {
+        "cost_microusd": 0,
+        "failure_source": "player",
+        "input_tokens": 0,
+        "model": "stealth/ox-alpha",
+        "output_tokens": 0,
+        "resource_units_used": 1,
+        "running": false,
+        "successful": false,
+        "terminal_detail": "Claux exited with status 1",
+        "terminal_state": "failed",
+        "territory": "blueprint-three"
+      }
+    },
+    "elapsed_ms": 126058,
+    "finish_reason": "first durable deployment",
+    "infrastructure_failures": 0,
+    "last_sequence": 367,
+    "match_state": "finished",
+    "territories": {
+      "blueprint-one": {
+        "agent": "luna-blueprint-builder",
+        "class": "blueprint-builder",
+        "competitor_state": "durable",
+        "durable_at_ms": 126053,
+        "elimination_detail": null,
+        "elimination_source": null,
+        "last_health": null,
+        "milestone_points": 100,
+        "milestones": {
+          "accept-under-stop": {
+            "evaluating": false,
+            "evidence": {
+              "jobs": [
+                "cedar-c50bf00b50ef",
+                "cobalt-dcb12238edd0",
+                "saffron-3721a4a1cdcb"
+              ],
+              "payloads": [
+                "opaque/cedar/7e396a87dd9d751823403ff1",
+                "opaque/cobalt/6b54f4e91a4a5d98ffb91217",
+                "opaque/saffron/2fa9c09fb1dc5fb9437c1b0e"
+              ],
+              "worker_stopped": true
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 20
+          },
+          "gateway-ready": {
+            "evaluating": false,
+            "evidence": {
+              "health": "ready"
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 10
+          },
+          "host-reboot": {
+            "evaluating": false,
+            "evidence": {
+              "jobs": [
+                "cedar-c50bf00b50ef",
+                "cobalt-dcb12238edd0",
+                "saffron-3721a4a1cdcb",
+                "restart-636aa885ef65"
+              ],
+              "reboot": true
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 25
+          },
+          "recover-blueprint": {
+            "evaluating": false,
+            "evidence": {
+              "jobs": [
+                "cedar-c50bf00b50ef",
+                "cobalt-dcb12238edd0",
+                "saffron-3721a4a1cdcb"
+              ],
+              "payloads": [
+                "opaque/cedar/7e396a87dd9d751823403ff1",
+                "opaque/cobalt/6b54f4e91a4a5d98ffb91217",
+                "opaque/saffron/2fa9c09fb1dc5fb9437c1b0e"
+              ],
+              "recovered": true
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 25
+          },
+          "service-restart": {
+            "evaluating": false,
+            "evidence": {
+              "jobs": [
+                "cedar-c50bf00b50ef",
+                "cobalt-dcb12238edd0",
+                "saffron-3721a4a1cdcb",
+                "restart-636aa885ef65"
+              ],
+              "payloads": [
+                "opaque/cedar/7e396a87dd9d751823403ff1",
+                "opaque/cobalt/6b54f4e91a4a5d98ffb91217",
+                "opaque/saffron/2fa9c09fb1dc5fb9437c1b0e",
+                "opaque/restart/33d16ec21c72bab83de5fe9c"
+              ],
+              "restarted": true
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 20
+          }
+        },
+        "resources": 0,
+        "state": "provisioning"
+      },
+      "blueprint-three": {
+        "agent": "ox-blueprint-builder",
+        "class": "blueprint-builder",
+        "competitor_state": "verifying",
+        "durable_at_ms": null,
+        "elimination_detail": null,
+        "elimination_source": null,
+        "last_health": null,
+        "milestone_points": 0,
+        "milestones": {
+          "gateway-ready": {
+            "evaluating": false,
+            "evidence": null,
+            "failure_category": "verification_failed",
+            "failure_detail": "curl: (56) Recv failure: Connection reset by peer",
+            "passed": false,
+            "points": 0
+          }
+        },
+        "resources": 0,
+        "state": "provisioning"
+      },
+      "blueprint-two": {
+        "agent": "kimi-blueprint-builder",
+        "class": "blueprint-builder",
+        "competitor_state": "verifying",
+        "durable_at_ms": null,
+        "elimination_detail": null,
+        "elimination_source": null,
+        "last_health": null,
+        "milestone_points": 0,
+        "milestones": {
+          "gateway-ready": {
+            "evaluating": false,
+            "evidence": null,
+            "failure_category": "verification_failed",
+            "failure_detail": "curl: (56) Recv failure: Connection reset by peer",
+            "passed": false,
+            "points": 0
+          }
+        },
+        "resources": 0,
+        "state": "provisioning"
+      }
+    },
+    "winner": "blueprint-one"
+  }
+}

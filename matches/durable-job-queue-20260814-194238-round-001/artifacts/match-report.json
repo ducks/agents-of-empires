@@ -1,0 +1,4810 @@
+{
+  "analyses": {
+    "deepseek-queue-builder": {
+      "actions": [
+        {
+          "command": "ls -la /opt/job-queue/ 2>&1; echo \"---\"; ls -la /var/lib/job-queue/ 2>&1; echo \"---\"; python3 --version 2>&1; echo \"---\"; ls /etc/systemd/system/ | grep -i queue 2>&1; echo \"---\"; systemctl list-unit-files 2>/dev/null | grep -i queue",
+          "description": "Check environment: directories, python, systemd units",
+          "duration_ms": 5978,
+          "index": 1,
+          "kind": "discovery",
+          "output_excerpt": "ls: cannot access '/opt/job-queue/': No such file or directory\n---\ntotal 20\ndrwxr-xr-x 2 root root  4096 Aug 15 02:43 .\ndrwxr-xr-x 9 root root  4096 Aug 15 02:43 ..\n-rw-r--r-- 1 root root 12288 Aug 15 02:43 jobs.sqlite3\n---\nPython 3.14.7\n---\ndev-mqueue.mount\nqueue-api.service\nque…",
+          "started_after_ms": 11909,
+          "success": true,
+          "tool_id": "call_9fb108b2e17e4ca7a62e0d77"
+        },
+        {
+          "command": "which sqlite3; echo \"---\"; systemctl is-system-running 2>&1; echo \"---\"; whoami; id",
+          "description": "Check sqlite, systemd state, current user",
+          "duration_ms": 64,
+          "index": 2,
+          "kind": "discovery",
+          "output_excerpt": "/run/current-system/sw/bin/sqlite3\n---\ndegraded\n---\nroot\nuid=0(root) gid=0(root) groups=0(root)",
+          "started_after_ms": 17887,
+          "success": true,
+          "tool_id": "call_7d63727b6b69413bb3a03343"
+        },
+        {
+          "command": "cat /etc/systemd/system/queue-api.service; echo \"===\"; cat /etc/systemd/system/queue-worker.service; echo \"===\"; cat /etc/systemd/system/queue-seed.service; echo \"===\"; cat /etc/systemd/system/dev-mqueue.mount",
+          "description": "Read existing systemd unit files",
+          "duration_ms": 46,
+          "index": 3,
+          "kind": "discovery",
+          "output_excerpt": "[Unit]\nAfter=network.target queue-seed.service\nDescription=Agent-built durable queue API slot\nRequires=queue-seed.service\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE=/nix/store/c59mcax29xrwyfdqs308wkmn2srnmzkn-glibc-locales-2.42-67/lib/locale/locale-archive\"\nEnvironment=\"PATH=/nix/sto…",
+          "started_after_ms": 23330,
+          "success": true,
+          "tool_id": "call_77d84e9f96994c4f988a29f6"
+        },
+        {
+          "command": "sqlite3 /var/lib/job-queue/jobs.sqlite3 \".schema\"; echo \"===\"; sqlite3 /var/lib/job-queue/jobs.sqlite3 \"SELECT * FROM jobs LIMIT 10;\" 2>&1; echo \"===\"; sqlite3 /var/lib/job-queue/jobs.sqlite3 \"SELECT COUNT(*) FROM jobs;\" 2>&1",
+          "description": "Inspect existing SQLite schema and data",
+          "duration_ms": 33,
+          "index": 4,
+          "kind": "mutation",
+          "output_excerpt": "CREATE TABLE jobs (id TEXT PRIMARY KEY, payload TEXT NOT NULL, status TEXT NOT NULL, result TEXT, attempts INTEGER NOT NULL DEFAULT 0);\n===\naccepted-alpha-7d3|alpha|queued||0\naccepted-beta-91e|beta|queued||0\naccepted-gamma-c42|gamma|queued||0\n===\n3",
+          "started_after_ms": 23376,
+          "success": true,
+          "tool_id": "call_1ebc14f2af3e4fc8ba7bb1d2"
+        },
+        {
+          "command": "ls -la /nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python 2>&1; echo \"---\"; which python3; python3 -c \"import sqlite3; print('sqlite3 ok')\"; echo \"---\"; ls /nix/store/ | grep -i \"python3-3.14\" | head; echo \"---\"; systemctl status queue-seed.service --no-pager 2>&1 | head -20",
+          "description": "Verify python interpreter paths and seed service state",
+          "duration_ms": 314,
+          "index": 5,
+          "kind": "mutation",
+          "output_excerpt": "lrwxrwxrwx 1 root root 10 Jan  1  1970 /nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python -> python3.14\n---\n/run/current-system/sw/bin/python3\nsqlite3 ok\n---\n00gr40y8pa7x732jpkwsvb3n6dxs0dch-python3-3.14.7-env.drv\n0gkcwag87140mwpw1qapxvl342szxa77-python3-3.14.6…",
+          "started_after_ms": 36417,
+          "success": true,
+          "tool_id": "call_bbb8000c9aa64211a8847828"
+        },
+        {
+          "command": "date; echo \"---\"; cat /proc/filesystems | grep mqueue; echo \"---\"; ss -tlnp 2>/dev/null | grep 8080 || echo \"nothing on 8080\"",
+          "description": "Check mqueue fs, date, and port 8080 state",
+          "duration_ms": 95,
+          "index": 6,
+          "kind": "validation",
+          "output_excerpt": "Sat Aug 15 02:44:01 AM UTC 2026\n---\nnodev\tmqueue\n---\nnothing on 8080",
+          "started_after_ms": 36731,
+          "success": true,
+          "tool_id": "call_7aff1698df9e44dcbaacb65d"
+        },
+        {
+          "command": "/nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python -c \"import sqlite3, json, http.server; import sqlite3; c=sqlite3.connect(':memory:', autocommit=True); c.execute('BEGIN IMMEDIATE'); c.execute('CREATE TABLE t(x)'); c.commit(); print('py+sqlite autocommit OK, sqlite', sqlite3.sqlite_version)\"",
+          "description": "Test Nix python and sqlite3 autocommit API",
+          "duration_ms": 412,
+          "index": 7,
+          "kind": "discovery",
+          "output_excerpt": "py+sqlite autocommit OK, sqlite 3.53.3",
+          "started_after_ms": 155104,
+          "success": true,
+          "tool_id": "call_4d9e5aedace64735a2b07166"
+        },
+        {
+          "command": "sqlite3 /var/lib/job-queue/jobs.sqlite3 \"PRAGMA journal_mode; PRAGMA synchronous; PRAGMA wal_checkpoint;\" 2>&1; echo \"---\"; ls -la /dev/mqueue 2>&1 | head -3; echo \"---\"; df -h /var/lib/job-queue /opt 2>&1",
+          "description": "Check journal mode and filesystems",
+          "duration_ms": 40,
+          "index": 8,
+          "kind": "mutation",
+          "output_excerpt": "delete\n2\n0|-1|-1\n---\ntotal 0\ndrwxrwxrwt  2 root root   40 Aug 15 02:43 .\ndrwxr-xr-x 17 root root 3260 Aug 15 02:43 ..\n---\ndf: /opt: No such file or directory\nFilesystem      Size  Used Avail Use% Mounted on\n/dev/vda        2.0G   36M  1.8G   2% /\n\nExit code: exit status: 1",
+          "started_after_ms": 155516,
+          "success": false,
+          "tool_id": "call_d8a2b9ab369542f0accf3422"
+        },
+        {
+          "command": "mkdir -p /opt/job-queue && touch /opt/job-queue/.keep && ls -la /opt/job-queue/",
+          "description": "Create /opt/job-queue directory",
+          "duration_ms": 33,
+          "index": 10,
+          "kind": "mutation",
+          "output_excerpt": "total 8\ndrwxr-xr-x 2 root root 4096 Aug 15 02:46 .\ndrwxr-xr-x 3 root root 4096 Aug 15 02:46 ..\n-rw-r--r-- 1 root root    0 Aug 15 02:46 .keep",
+          "started_after_ms": 166579,
+          "success": true,
+          "tool_id": "call_ca04e2763776436186f54eca"
+        },
+        {
+          "command": "Write /opt/job-queue/api.py",
+          "description": null,
+          "duration_ms": 0,
+          "index": 11,
+          "kind": "mutation",
+          "output_excerpt": "Successfully wrote to /opt/job-queue/api.py",
+          "started_after_ms": 191278,
+          "success": true,
+          "tool_id": "call_a123c5a92b8b4a44a2a8da38"
+        },
+        {
+          "command": "Write /opt/job-queue/worker.py",
+          "description": null,
+          "duration_ms": 0,
+          "index": 12,
+          "kind": "mutation",
+          "output_excerpt": "Successfully wrote to /opt/job-queue/worker.py",
+          "started_after_ms": 191278,
+          "success": true,
+          "tool_id": "call_f249e3b98bd44ee6b5ac3b9a"
+        },
+        {
+          "command": "chmod 644 /opt/job-queue/api.py /opt/job-queue/worker.py && rm -f /opt/job-queue/.keep && systemctl daemon-reload && systemctl restart queue-api.service queue-worker.service && sleep 2 && systemctl is-active queue-api.service queue-worker.service; echo \"---\"; systemctl status queue-api.service --no-pager 2>&1 | head -8; echo \"---\"; systemctl status queue-worker.service --no-pager 2>&1 | head -8",
+          "description": "Restart and check status of both services",
+          "duration_ms": 2920,
+          "index": 14,
+          "kind": "lifecycle",
+          "output_excerpt": "active\nactive\n---\n● queue-api.service - Agent-built durable queue API slot\n     Loaded: loaded (/etc/systemd/system/queue-api.service; enabled; preset: ignored)\n     Active: active (running) since Sat 2026-08-15 02:46:45 UTC; 2s ago\n Invocation: 719861700113476c9a6486c3dc93cee8\n …",
+          "started_after_ms": 199306,
+          "success": true,
+          "tool_id": "call_ccbf14b7775542fcb2484071"
+        },
+        {
+          "command": "echo \"=== health ===\"; curl -s -w \"\\nHTTP %{http_code}\\n\" http://127.0.0.1:8080/health; echo; echo \"=== seeded jobs ===\"; for id in accepted-alpha-7d3 accepted-beta-91e accepted-gamma-c42; do curl -s \"http://127.0.0.1:8080/jobs/$id\"; echo; done; echo \"=== DB ===\"; sqlite3 /var/lib/job-queue/jobs.sqlite3 \"SELECT id, status, result, attempts FROM jobs ORDER BY rowid;\"",
+          "description": "Verify health endpoint and seeded job completion",
+          "duration_ms": 170,
+          "index": 15,
+          "kind": "mutation",
+          "output_excerpt": "=== health ===\nready\nHTTP 200\n\n=== seeded jobs ===\n{\"id\": \"accepted-alpha-7d3\", \"payload\": \"alpha\", \"status\": \"queued\", \"result\": null, \"attempts\": 0}\n{\"id\": \"accepted-beta-91e\", \"payload\": \"beta\", \"status\": \"queued\", \"result\": null, \"attempts\": 0}\n{\"id\": \"accepted-gamma-c42\", \"p…",
+          "started_after_ms": 208556,
+          "success": true,
+          "tool_id": "call_d92de8ce79484057b4a1b2b4"
+        },
+        {
+          "command": "journalctl -u queue-worker.service --no-pager -n 30 2>&1; echo \"===\"; journalctl -u queue-api.service --no-pager -n 10 2>&1",
+          "description": "Check worker and api logs",
+          "duration_ms": 38,
+          "index": 16,
+          "kind": "validation",
+          "output_excerpt": "Aug 15 02:46:58 queue-one python[1354]: [worker] completed accepted-alpha-7d3\nAug 15 02:46:58 queue-one python[1354]: [worker] completed accepted-alpha-7d3\nAug 15 02:46:58 queue-one python[1354]: [worker] completed accepted-alpha-7d3\nAug 15 02:46:58 queue-one python[1354]: [worke…",
+          "started_after_ms": 213603,
+          "success": true,
+          "tool_id": "call_d67ece16445d452bb9bf7486"
+        },
+        {
+          "command": "cd /tmp && rm -f t1.sqlite3 && /nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python - <<'EOF'\nimport sqlite3\nconn = sqlite3.connect(\"/tmp/t1.sqlite3\", timeout=10, autocommit=True)\nconn.execute(\"PRAGMA journal_mode=WAL\")\nconn.execute(\"CREATE TABLE jobs (id TEXT PRIMARY KEY, payload TEXT NOT NULL, status TEXT NOT NULL, result TEXT, attempts INTEGER NOT NULL DEFAULT 0)\")\nconn.execute(\"INSERT INTO jobs VALUES ('x','alpha','queued',NULL,0)\")\nconn.commit()\n# replicate worker loop\nconn.execute(\"BEGIN IMMEDIATE\")\ncur = conn.execute(\"SELECT id, payload FROM jobs WHERE status='queued' ORDER BY rowid LIMIT 1\")\nrow = cur.fetchone()\nprint(\"row:\", row)\nconn.execute(\"UPDATE jobs SET status…",
+          "description": "Reproduce worker transaction behavior in isolation",
+          "duration_ms": 198,
+          "index": 17,
+          "kind": "mutation",
+          "output_excerpt": "row: ('x', 'alpha')\nin-tx status: ('done',)\nafter commit:  ('done', 'processed:alpha', 1)\n=== CLI read-back ===\nx|queued||0",
+          "started_after_ms": 252907,
+          "success": true,
+          "tool_id": "call_6c8fd0fbe2d44886ab49f3dd"
+        },
+        {
+          "command": "sqlite3 --version; echo \"---\"; ls -la /tmp/t1.sqlite3*; echo \"---\"; /nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python - <<'EOF'\nimport sqlite3\n# fresh connection, read-only check\nc = sqlite3.connect(\"/tmp/t1.sqlite3\", timeout=5)\nprint(\"journal_mode from fresh conn:\", c.execute(\"PRAGMA journal_mode\").fetchone())\nprint(\"fresh conn read:\", c.execute(\"SELECT id,status,result,attempts FROM jobs\").fetchall())\nc.close()\nEOF",
+          "description": "Check sqlite3 CLI version and fresh connection read",
+          "duration_ms": 133,
+          "index": 18,
+          "kind": "mutation",
+          "output_excerpt": "3.53.3 2026-06-26 20:14:12 d4c0e51e4aeb96955b99185ab9cde75c339e2c29c3f3f12428d364a10d78alt1 (64-bit)\n---\n-rw-r--r-- 1 root root 12288 Aug 15 02:47 /tmp/t1.sqlite3\n---\njournal_mode from fresh conn: ('wal',)\nfresh conn read: [('x', 'queued', None, 0)]",
+          "started_after_ms": 280358,
+          "success": true,
+          "tool_id": "call_da4dc36c693a4db9a9436124"
+        },
+        {
+          "command": "cd /tmp && rm -f v2.sqlite3 v3.sqlite3 v4.sqlite3 && /nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python - <<'EOF'\nimport sqlite3\n\ndef setup(path):\n    c = sqlite3.connect(path, timeout=10, autocommit=True)\n    c.execute(\"PRAGMA journal_mode=WAL\")\n    c.execute(\"CREATE TABLE jobs (id TEXT PRIMARY KEY, payload TEXT NOT NULL, status TEXT NOT NULL, result TEXT, attempts INTEGER NOT NULL DEFAULT 0)\")\n    c.execute(\"INSERT INTO jobs VALUES ('x','alpha','queued',NULL,0)\")\n    c.execute(\"COMMIT\")\n    c.close()\n\ndef show(path, label):\n    c = sqlite3.connect(path, timeout=5)\n    print(label, c.execute(\"SELECT id,status,result,attempts FROM jobs\").fetchall())\n    c.close()\n\n# Varian…",
+          "description": "Compare transaction control variants on Python 3.14",
+          "duration_ms": 312,
+          "index": 19,
+          "kind": "mutation",
+          "output_excerpt": "Traceback (most recent call last):\n  File \"<stdin>\", line 17, in <module>\n  File \"<stdin>\", line 8, in setup\nsqlite3.OperationalError: cannot commit - no transaction is active\n\nExit code: exit status: 1",
+          "started_after_ms": 315320,
+          "success": false,
+          "tool_id": "call_e0f6c2ce43f0443487015025"
+        },
+        {
+          "command": "cd /tmp && rm -f v2.sqlite3 v3.sqlite3 v4.sqlite3 && /nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python - <<'EOF'\nimport sqlite3\n\ndef show(path, label):\n    c = sqlite3.connect(path, timeout=5)\n    print(label, c.execute(\"SELECT id,status,result,attempts FROM jobs\").fetchall())\n    c.close()\n\ndef setup(path, autocommit):\n    c = sqlite3.connect(path, timeout=10, autocommit=autocommit)\n    c.execute(\"PRAGMA journal_mode=WAL\")\n    c.execute(\"CREATE TABLE jobs (id TEXT PRIMARY KEY, payload TEXT NOT NULL, status TEXT NOT NULL, result TEXT, attempts INTEGER NOT NULL DEFAULT 0)\")\n    c.execute(\"INSERT INTO jobs VALUES ('x','alpha','queued',NULL,0)\")\n    c.close()\n\n# Variant A: a…",
+          "description": "Compare transaction variants, fixed setup",
+          "duration_ms": 434,
+          "index": 20,
+          "kind": "mutation",
+          "output_excerpt": "A (autocommit=True + BEGIN/COMMIT): [('x', 'done', 'processed:alpha', 1)]\nB default isolation_level: ''\nB (legacy + BEGIN IMMEDIATE + commit()): [('x', 'done', 'processed:alpha', 1)]\n\nTraceback (most recent call last):\n  File \"<stdin>\", line 37, in <module>\nsqlite3.OperationalErr…",
+          "started_after_ms": 330726,
+          "success": false,
+          "tool_id": "call_37feed69b80b4bb8b891b46c"
+        },
+        {
+          "command": "cd /tmp && rm -f v5.sqlite3 v6.sqlite3 && /nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python - <<'EOF'\nimport sqlite3\n\ndef setup(path):\n    c = sqlite3.connect(path, timeout=10, autocommit=True)\n    c.execute(\"PRAGMA journal_mode=WAL\")\n    c.execute(\"CREATE TABLE jobs (id TEXT PRIMARY KEY, payload TEXT NOT NULL, status TEXT NOT NULL, result TEXT, attempts INTEGER NOT NULL DEFAULT 0)\")\n    c.execute(\"INSERT INTO jobs VALUES ('x','alpha','queued',NULL,0)\")\n    c.close()\n\ndef show(path, label):\n    c = sqlite3.connect(path, timeout=5)\n    print(label, c.execute(\"SELECT id,status,result,attempts FROM jobs\").fetchall())\n    c.close()\n\n# Test 1: worker pattern with conn.commit()…",
+          "description": "Test conn.commit() semantics in autocommit mode",
+          "duration_ms": 238,
+          "index": 21,
+          "kind": "mutation",
+          "output_excerpt": "T1 conn.commit() ok\nT1 fresh reader after close: [('x', 'queued', None, 0)]\nT2 conn.commit() after INSERT ok\nT2 fresh reader after close: [('x', 'queued', None, 0), ('y', 'queued', None, 0)]",
+          "started_after_ms": 379992,
+          "success": true,
+          "tool_id": "call_cbf40b4b18324a5d9c0b2f80"
+        },
+        {
+          "command": "Edit /opt/job-queue/worker.py",
+          "description": null,
+          "duration_ms": 0,
+          "index": 22,
+          "kind": "mutation",
+          "output_excerpt": "Updated /opt/job-queue/worker.py",
+          "started_after_ms": 402502,
+          "success": true,
+          "tool_id": "call_1b7fd90e78804d2a994eec5a"
+        },
+        {
+          "command": "Edit /opt/job-queue/api.py",
+          "description": null,
+          "duration_ms": 0,
+          "index": 23,
+          "kind": "mutation",
+          "output_excerpt": "Updated /opt/job-queue/api.py",
+          "started_after_ms": 402502,
+          "success": true,
+          "tool_id": "call_4a535eef35da4bf680b77c89"
+        },
+        {
+          "command": "systemctl restart queue-api.service queue-worker.service && sleep 3 && echo \"=== DB after restart ===\" && sqlite3 /var/lib/job-queue/jobs.sqlite3 \"SELECT id, status, result, attempts FROM jobs ORDER BY rowid;\" && echo \"=== logs ===\" && journalctl -u queue-worker.service --no-pager --since \"1 min ago\" | tail -10",
+          "description": "Restart services and verify seeded jobs complete",
+          "duration_ms": 3641,
+          "index": 24,
+          "kind": "lifecycle",
+          "output_excerpt": "=== DB after restart ===\naccepted-alpha-7d3|done|processed:alpha|1\naccepted-beta-91e|done|processed:beta|1\naccepted-gamma-c42|done|processed:gamma|1\n=== logs ===\nAug 15 02:50:00 queue-one python[1354]: [worker] completed accepted-alpha-7d3\nAug 15 02:50:00 queue-one python[1354]: …",
+          "started_after_ms": 408878,
+          "success": true,
+          "tool_id": "call_ed1756a4c1d24a1184af1191"
+        },
+        {
+          "command": "journalctl -u queue-worker.service --no-pager --since \"02:50:13\" | tail -6; echo \"=== API GET seeded ===\"; curl -s http://127.0.0.1:8080/jobs/accepted-beta-91e; echo; echo \"=== submit new jobs ===\"; curl -s -w \" [%{http_code}]\\n\" -d \"hello world\" http://127.0.0.1:8080/jobs/new-x1; curl -s -w \" [%{http_code}]\\n\" -d \"unicode: 你好 🚀\" http://127.0.0.1:8080/jobs/new-x2; sleep 2; echo \"=== new jobs now ===\"; curl -s http://127.0.0.1:8080/jobs/new-x1; echo; curl -s http://127.0.0.1:8080/jobs/new-x2; echo; echo \"=== missing id ===\"; curl -s -w \" [%{http_code}]\\n\" http://127.0.0.1:8080/jobs/nope-123; echo \"=== health exact ===\"; curl -s http://127.0.0.1:8080/health | od -c | head -2",
+          "description": "Verify API endpoints and new job submission",
+          "duration_ms": 2221,
+          "index": 25,
+          "kind": "validation",
+          "output_excerpt": "Aug 15 02:50:13 queue-one systemd[1]: Stopping Agent-built durable queue worker slot...\nAug 15 02:50:14 queue-one systemd[1]: queue-worker.service: Deactivated successfully.\nAug 15 02:50:14 queue-one systemd[1]: Stopped Agent-built durable queue worker slot.\nAug 15 02:50:14 queue…",
+          "started_after_ms": 424222,
+          "success": true,
+          "tool_id": "call_dd81dd1f76b14b34ba3ad58a"
+        },
+        {
+          "command": "set -e\n# Batch 1: crash the worker while it drains a big batch\nfor i in $(seq 1 30); do curl -s -o /dev/null -d \"crash-batch-$i\" http://127.0.0.1:8080/jobs/crash-$i; done\nWPID=$(systemctl show -p MainPID --value queue-worker.service)\nkill -9 $WPID\necho \"killed worker pid $WPID at $(date +%T)\"\nsleep 4   # systemd Restart=always brings it back\nsystemctl is-active queue-worker.service\necho \"=== crash-batch results ===\"\nsqlite3 /var/lib/job-queue/jobs.sqlite3 \"SELECT status, COUNT(*) FROM jobs WHERE id LIKE 'crash-%' GROUP BY status; SELECT COUNT(*) AS not_done FROM jobs WHERE id LIKE 'crash-%' AND status!='done'; SELECT COUNT(*) AS bad_attempts FROM jobs WHERE id LIKE 'crash-%' AND attempts != …",
+          "description": "Crash worker with kill -9 mid-drain, verify recovery",
+          "duration_ms": 4981,
+          "index": 26,
+          "kind": "mutation",
+          "output_excerpt": "killed worker pid 2387 at 02:50:52\nactive\n=== crash-batch results ===\ndone|30\n0\n0\n0",
+          "started_after_ms": 446913,
+          "success": true,
+          "tool_id": "call_896f25d62dd4473a824867ed"
+        },
+        {
+          "command": "echo \"PID1: $(cat /proc/1/comm)\"; systemd-detect-virt 2>/dev/null || echo \"no virt\"; echo \"bootid: $(cat /proc/sys/kernel/random/boot_id)\"; ls /run/systemd/system >/dev/null && echo \"systemd running\"; echo \"---\"; which reboot shutdown; echo \"---\"; sqlite3 /var/lib/job-queue/jobs.sqlite3 \"PRAGMA journal_mode; PRAGMA synchronous; PRAGMA busy_timeout;\"; ls -la /var/lib/job-queue/",
+          "description": "Check init, virtualization, reboot tool, journal settings",
+          "duration_ms": 124,
+          "index": 27,
+          "kind": "lifecycle",
+          "output_excerpt": "PID1: systemd\nkvm\nbootid: 11e0639f-48f8-4acf-9fe1-9dd5d814b448\nsystemd running\n---\n/run/current-system/sw/bin/reboot\n/run/current-system/sw/bin/shutdown\n---\nwal\n2\n0\ntotal 52\ndrwxr-xr-x 2 root root  4096 Aug 15 02:51 .\ndrwxr-xr-x 9 root root  4096 Aug 15 02:43 ..\n-rw-r--r-- 1 root…",
+          "started_after_ms": 470928,
+          "success": true,
+          "tool_id": "call_a277e225ee954e6c931e603b"
+        },
+        {
+          "command": "# concurrent submission + drain while worker runs\n(for i in $(seq 1 40); do curl -s -o /dev/null -d \"conc-$i\" http://127.0.0.1:8080/jobs/conc-$i & done; wait)\nsleep 3\nsqlite3 /var/lib/job-queue/jobs.sqlite3 \"SELECT COUNT(*) AS total, SUM(status='done') AS done, SUM(attempts != 1) AS bad_attempts, SUM(result != 'processed:conc-' || substr(id, 6)) AS bad_results FROM jobs WHERE id LIKE 'conc-%';\"",
+          "description": "Concurrent POST storm while worker drains",
+          "duration_ms": 4305,
+          "index": 28,
+          "kind": "mutation",
+          "output_excerpt": "40|40|0|0",
+          "started_after_ms": 471052,
+          "success": true,
+          "tool_id": "call_fe2d9855acbf40d7b92d4cd6"
+        }
+      ],
+      "agent": "deepseek-queue-builder",
+      "analyzer": "aoe-controller/20260816.0.1",
+      "architecture": {
+        "persistent_paths": [
+          "/etc/systemd/system",
+          "/etc/systemd/system/dev-mqueue.mount",
+          "/etc/systemd/system/queue-api.service",
+          "/etc/systemd/system/queue-seed.service",
+          "/etc/systemd/system/queue-worker.service",
+          "/opt/job-queue",
+          "/opt/job-queue/.keep",
+          "/opt/job-queue/api.py",
+          "/opt/job-queue/worker.py",
+          "/var/lib/job-queue",
+          "/var/lib/job-queue/jobs.sqlite3"
+        ],
+        "service_units": [
+          "etc/systemd/system/queue-api.service",
+          "etc/systemd/system/queue-seed.service",
+          "etc/systemd/system/queue-worker.service",
+          "queue-api.service",
+          "queue-seed.service",
+          "queue-worker.service"
+        ],
+        "technologies": [
+          "Python",
+          "Redis",
+          "SQLite",
+          "systemd"
+        ]
+      },
+      "metrics": {
+        "discoveries": 4,
+        "first_mutation_after_ms": 23376,
+        "last_observed_after_ms": 475357,
+        "lifecycle_actions": 3,
+        "mutations": 16,
+        "tool_calls": 26,
+        "tool_errors": 3,
+        "validations": 3
+      },
+      "model": "deepseek/deepseek-v4-flash-0731",
+      "outcome": "running",
+      "schema_version": 1,
+      "source_sha256": "6d8f09e8ed3aace8d2f998c51821feca9264f3cb32a8aceaf04d15c72e3a222a",
+      "territory": "queue-one"
+    },
+    "glm-queue-builder": {
+      "actions": [
+        {
+          "command": "ls -la /opt/job-queue/ 2>&1; echo \"---\"; ls -la /var/lib/job-queue/ 2>&1; echo \"---\"; systemctl list-unit-files 2>/dev/null | grep -i queue; echo \"---\"; systemctl status queue-api.service queue-worker.service 2>&1 | head -40",
+          "description": "Inspect existing job-queue state",
+          "duration_ms": 5702,
+          "index": 0,
+          "kind": "validation",
+          "output_excerpt": "ls: cannot access '/opt/job-queue/': No such file or directory\n---\ntotal 20\ndrwxr-xr-x 2 root root  4096 Aug 15 02:43 .\ndrwxr-xr-x 9 root root  4096 Aug 15 02:43 ..\n-rw-r--r-- 1 root root 12288 Aug 15 02:43 jobs.sqlite3\n---\ndev-mqueue.mount                            enabled     …",
+          "started_after_ms": 1291,
+          "success": true,
+          "tool_id": "5e48dda3-02a9-445a-b429-4da07ead3a8f"
+        },
+        {
+          "command": "cat /etc/systemd/system/queue-api.service; echo \"===\"; cat /etc/systemd/system/queue-worker.service; echo \"===\"; cat /etc/systemd/system/queue-seed.service; echo \"===\"; which python3; python3 --version; echo \"===\"; cat /etc/systemd/system/queue-seed.service 2>/dev/null | head; echo \"=== sqlite schema ===\"; sqlite3 /var/lib/job-queue/jobs.sqlite3 \".schema\" 2>&1; echo \"=== rows ===\"; sqlite3 /var/lib/job-queue/jobs.sqlite3 \"SELECT * FROM jobs;\" 2>&1 | head -20",
+          "description": "Inspect units, python, db schema",
+          "duration_ms": 104,
+          "index": 1,
+          "kind": "mutation",
+          "output_excerpt": "[Unit]\nAfter=network.target queue-seed.service\nDescription=Agent-built durable queue API slot\nRequires=queue-seed.service\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE=/nix/store/c59mcax29xrwyfdqs308wkmn2srnmzkn-glibc-locales-2.42-67/lib/locale/locale-archive\"\nEnvironment=\"PATH=/nix/sto…",
+          "started_after_ms": 8978,
+          "success": true,
+          "tool_id": "314c0a53-b0b5-4316-bdb2-c45ce7a793b4"
+        },
+        {
+          "command": "cat /nix/store/2dfn4ylvf2r7j47aqms6mn63pnk0nj5h-unit-script-queue-seed-start/bin/queue-seed-start 2>&1 | head -60; echo \"=== which sqlite3 ===\"; which sqlite3; echo \"=== python modules ===\"; python3 -c \"import sqlite3; print('sqlite3 ok')\"; python3 -c \"import flask\" 2>&1; python3 -c \"import http.server; print('http.server ok')\"",
+          "description": "Inspect seed script and python modules",
+          "duration_ms": 528,
+          "index": 2,
+          "kind": "mutation",
+          "output_excerpt": "#!/nix/store/byi2zpy2bgcf3dr6y0l8m50rmjj8z7q1-bash-5.3p15/bin/bash\nset -e\n\ninstall -d -m 0755 /var/lib/job-queue\n/nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python - <<'PY'\nimport sqlite3\ndb = sqlite3.connect('/var/lib/job-queue/jobs.sqlite3')\ndb.execute('CREAT…",
+          "started_after_ms": 11013,
+          "success": true,
+          "tool_id": "389e3405-ea98-438f-b46c-bd8116852d5a"
+        },
+        {
+          "command": "Write /opt/job-queue/api.py",
+          "description": null,
+          "duration_ms": 0,
+          "index": 4,
+          "kind": "mutation",
+          "output_excerpt": "Successfully wrote to /opt/job-queue/api.py",
+          "started_after_ms": 40991,
+          "success": true,
+          "tool_id": "call_6ba08fdd49b842cfa654d7cf"
+        },
+        {
+          "command": "Write /opt/job-queue/worker.py",
+          "description": null,
+          "duration_ms": 0,
+          "index": 5,
+          "kind": "mutation",
+          "output_excerpt": "Successfully wrote to /opt/job-queue/worker.py",
+          "started_after_ms": 47556,
+          "success": true,
+          "tool_id": "call_40609b6343e1487ca9bc9499"
+        },
+        {
+          "command": "systemctl reset-failed queue-api.service queue-worker.service; systemctl daemon-reload; systemctl restart queue-api.service queue-worker.service; sleep 2; systemctl is-active queue-api.service queue-worker.service; echo \"=== seed state ===\"; sqlite3 /var/lib/job-queue/jobs.sqlite3 \"SELECT * FROM jobs;\"",
+          "description": "Reset and restart services",
+          "duration_ms": 2625,
+          "index": 7,
+          "kind": "lifecycle",
+          "output_excerpt": "active\nactive\n=== seed state ===\naccepted-alpha-7d3|alpha|done|processed:alpha|1\naccepted-beta-91e|beta|done|processed:beta|1\naccepted-gamma-c42|gamma|done|processed:gamma|1",
+          "started_after_ms": 52797,
+          "success": true,
+          "tool_id": "call_9fe60055c85d41f19f321703"
+        },
+        {
+          "command": "echo \"=== /health ===\"; curl -s -w \"\\nHTTP %{http_code}\\n\" http://localhost:8080/health; echo \"=== GET existing job ===\"; curl -s http://localhost:8080/jobs/accepted-alpha-7d3; echo; echo \"=== POST new job ===\"; curl -s -w \"\\nHTTP %{http_code}\\n\" -X POST --data-binary 'héllo wörld' http://localhost:8080/jobs/job-new-123; sleep 1; echo \"=== GET new job (after worker) ===\"; curl -s http://localhost:8080/jobs/job-new-123; echo",
+          "description": "Verify health, GET, POST, worker completion",
+          "duration_ms": 1142,
+          "index": 8,
+          "kind": "validation",
+          "output_excerpt": "=== /health ===\nready\nHTTP 200\n=== GET existing job ===\n{\"id\": \"accepted-alpha-7d3\", \"payload\": \"alpha\", \"status\": \"done\", \"result\": \"processed:alpha\", \"attempts\": 1}\n=== POST new job ===\n\nHTTP 202\n=== GET new job (after worker) ===\n{\"id\": \"job-new-123\", \"payload\": \"h\\u00e9llo w\\…",
+          "started_after_ms": 59533,
+          "success": true,
+          "tool_id": "call_304d1b9b8055459db3f062a3"
+        },
+        {
+          "command": "# Submit a batch of jobs, then immediately restart the worker to prove restart-survival\nfor i in $(seq 1 20); do curl -s -X POST --data-binary \"payload-$i\" http://localhost:8080/jobs/burst-$i >/dev/null; done\nsystemctl restart queue-worker.service\nsleep 2\necho \"=== burst jobs after worker restart ===\"\nsqlite3 /var/lib/job-queue/jobs.sqlite3 \"SELECT status, COUNT(*) FROM jobs WHERE id LIKE 'burst-%' GROUP BY status;\"\necho \"=== all done, attempts check ===\"\nsqlite3 /var/lib/job-queue/jobs.sqlite3 \"SELECT COUNT(*) AS done, MIN(attempts), MAX(attempts) FROM jobs WHERE id LIKE 'burst-%' AND status='done';\"\necho \"=== verify result correctness ===\"\nsqlite3 /var/lib/job-queue/jobs.sqlite3 \"SELECT id…",
+          "description": "Burst + worker restart durability test",
+          "duration_ms": 2800,
+          "index": 9,
+          "kind": "lifecycle",
+          "output_excerpt": "=== burst jobs after worker restart ===\ndone|20\n=== all done, attempts check ===\n20|1|1\n=== verify result correctness ===\nburst-1|processed:payload-1\nburst-2|processed:payload-2\nburst-3|processed:payload-3",
+          "started_after_ms": 65589,
+          "success": true,
+          "tool_id": "call_cd1ab81af61f4abf91f27ea6"
+        },
+        {
+          "command": "# Simulate reboot ordering: stop both, re-run seed, then start both (as on boot)\nsystemctl stop queue-api.service queue-worker.service\nsystemctl restart queue-seed.service\nsleep 1\nsystemctl start queue-api.service queue-worker.service\nsleep 2\necho \"=== active state ===\"; systemctl is-active queue-api queue-worker queue-seed\necho \"=== seed jobs intact ===\"; sqlite3 /var/lib/job-queue/jobs.sqlite3 \"SELECT id,status,attempts FROM jobs WHERE id LIKE 'accepted-%';\"\necho \"=== health after simulated reboot ===\"; curl -s -w \" HTTP %{http_code}\\n\" http://localhost:8080/health\necho \"=== submit post-reboot job ===\"; curl -s -X POST --data-binary 'reboot-test' http://localhost:8080/jobs/post-reboot-1 -w…",
+          "description": "Full reboot-ordering simulation",
+          "duration_ms": 4342,
+          "index": 10,
+          "kind": "lifecycle",
+          "output_excerpt": "=== active state ===\nactive\nactive\nactive\n=== seed jobs intact ===\naccepted-alpha-7d3|done|1\naccepted-beta-91e|done|1\naccepted-gamma-c42|done|1\n=== health after simulated reboot ===\nready HTTP 200\n=== submit post-reboot job ===\n HTTP 202\n{\"id\": \"post-reboot-1\", \"payload\": \"reboot…",
+          "started_after_ms": 74899,
+          "success": true,
+          "tool_id": "call_b08cd47c9cb84800a6c57a8a"
+        },
+        {
+          "command": "systemctl is-enabled queue-api queue-worker queue-seed; echo \"=== api log tail ===\"; journalctl -u queue-api.service -n 5 --no-pager 2>&1; echo \"=== worker log tail ===\"; journalctl -u queue-worker.service -n 5 --no-pager 2>&1",
+          "description": "Confirm units enabled for auto-start on boot",
+          "duration_ms": 53,
+          "index": 11,
+          "kind": "validation",
+          "output_excerpt": "enabled\nenabled\nenabled\n=== api log tail ===\nAug 15 02:44:39 queue-three systemd[1]: Stopping Agent-built durable queue API slot...\nAug 15 02:44:39 queue-three systemd[1]: queue-api.service: Deactivated successfully.\nAug 15 02:44:39 queue-three systemd[1]: Stopped Agent-built dur…",
+          "started_after_ms": 81732,
+          "success": true,
+          "tool_id": "call_4b8a1b3c22194c9e8cef517c"
+        }
+      ],
+      "agent": "glm-queue-builder",
+      "analyzer": "aoe-controller/20260816.0.1",
+      "architecture": {
+        "persistent_paths": [
+          "/etc/systemd/system/queue-api.service",
+          "/etc/systemd/system/queue-seed.service",
+          "/etc/systemd/system/queue-worker.service",
+          "/opt/job-queue",
+          "/opt/job-queue/api.py",
+          "/opt/job-queue/worker.py",
+          "/var/lib/job-queue",
+          "/var/lib/job-queue/jobs.sqlite3"
+        ],
+        "service_units": [
+          "etc/systemd/system/queue-api.service",
+          "etc/systemd/system/queue-seed.service",
+          "etc/systemd/system/queue-worker.service",
+          "queue-api.service",
+          "queue-seed.service",
+          "queue-worker.service"
+        ],
+        "technologies": [
+          "Python",
+          "SQLite",
+          "systemd"
+        ]
+      },
+      "metrics": {
+        "discoveries": 0,
+        "first_mutation_after_ms": 8978,
+        "last_observed_after_ms": 81785,
+        "lifecycle_actions": 3,
+        "mutations": 4,
+        "tool_calls": 10,
+        "tool_errors": 0,
+        "validations": 3
+      },
+      "model": "z-ai/glm-5.2",
+      "outcome": "completed",
+      "schema_version": 1,
+      "source_sha256": "6bc8471219f13c7b59a67776c72f3533288ec22356f0b6ec87f34e1820c6ebaf",
+      "territory": "queue-three"
+    },
+    "luna-queue-builder": {
+      "actions": [
+        {
+          "command": "pwd; printf '\\n-- root --\\n'; ls -la /; printf '\\n-- /root --\\n'; ls -la /root",
+          "description": "Inspect filesystem roots",
+          "duration_ms": 71,
+          "index": 1,
+          "kind": "discovery",
+          "output_excerpt": "/root\n\n-- root --\ntotal 64\ndrwxr-xr-x  17 root root  4096 Aug 20 02:42 .\ndrwxr-xr-x  17 root root  4096 Aug 20 02:42 ..\ndrwxr-xr-x   2 root root  4096 Aug 20 02:42 bin\ndrwxr-xr-x  17 root root  3260 Aug 20 02:42 dev\ndrwxr-xr-x  22 root root  4096 Aug 20 02:42 etc\ndrwxr-xr-x   2 r…",
+          "started_after_ms": 6359,
+          "success": true,
+          "tool_id": "call_m2hI3zmd32GU1ZQHnddPNeyd"
+        },
+        {
+          "command": "ps auxww; printf '\\n-- systemd --\\n'; systemctl is-system-running || true; systemctl list-units --type=service --all --no-pager | head -200",
+          "description": "Inspect processes and services",
+          "duration_ms": 59,
+          "index": 2,
+          "kind": "discovery",
+          "output_excerpt": "USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND\nroot           1  5.2  1.6  18592 11680 ?        Ss   02:42   0:01 /run/current-system/systemd/lib/systemd/systemd --switched-root --system --deserialize=46\nroot           2  0.0  0.0      0     0 ?       …",
+          "started_after_ms": 6430,
+          "success": true,
+          "tool_id": "call_CgmVt8ZYWEhZYELR6I6Khasn"
+        },
+        {
+          "command": "printf '%s\\n' '-- likely files --'; find / -xdev -type f \\( -iname '*job*' -o -iname '*queue*' -o -iname '*payload*' -o -iname '*work*' \\) -printf '%p\\n' 2>/dev/null | head -300",
+          "description": "Locate candidate job storage",
+          "duration_ms": 20,
+          "index": 3,
+          "kind": "discovery",
+          "output_excerpt": "-- likely files --",
+          "started_after_ms": 6490,
+          "success": true,
+          "tool_id": "call_NuLAacIxk8afgWBufczN6ZZB"
+        },
+        {
+          "command": "printf '%s\\n' '-- listening sockets --'; ss -ltnp; printf '%s\\n' '-- mounts/disks --'; df -hT; mount | head -100",
+          "description": "Inspect network and storage",
+          "duration_ms": 69,
+          "index": 4,
+          "kind": "validation",
+          "output_excerpt": "-- listening sockets --\nState  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess\nLISTEN 0      4096      127.0.0.54:53         0.0.0.0:*    users:((\"systemd-resolve\",pid=297,fd=25))\nLISTEN 0      4096   127.0.0.53%lo:53         0.0.0.0:*    users:((\"systemd-resolve\",pid=…",
+          "started_after_ms": 6510,
+          "success": true,
+          "tool_id": "call_sm90JAnyDQ1y1kEorkzeW5tV"
+        },
+        {
+          "command": "systemctl cat accepted-job-spool.service job-api.service job-worker.service post-boot.service; printf '\\n-- status --\\n'; systemctl status accepted-job-spool.service job-api.service job-worker.service --no-pager -l || true",
+          "description": "Inspect existing job units",
+          "duration_ms": 60,
+          "index": 5,
+          "kind": "validation",
+          "output_excerpt": "# /etc/systemd/system/accepted-job-spool.service -> /nix/store/a8l437l1lrlh5q2wh2spa3c5h7sfgcnk-unit-accepted-job-spool.service/accepted-job-spool.service\n[Unit]\nDescription=Preserve opaque jobs accepted before the deployment\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE=/nix/store/c59m…",
+          "started_after_ms": 10624,
+          "success": true,
+          "tool_id": "call_Om58T9atv5G72LkWAwFKWwos"
+        },
+        {
+          "command": "printf '%s\\n' '-- /var --'; ls -laR /var 2>/dev/null | head -500; printf '%s\\n' '-- /srv --'; ls -laR /srv 2>/dev/null",
+          "description": "Inspect persistent service directories",
+          "duration_ms": 27,
+          "index": 6,
+          "kind": "discovery",
+          "output_excerpt": "-- /var --\n/var:\ntotal 40\ndrwxr-xr-x  9 root root 4096 Aug 20 02:42 .\ndrwxr-xr-x 17 root root 4096 Aug 20 02:42 ..\ndrwxr-xr-x  3 root root 4096 Aug 20 02:42 cache\ndrwxr-xr-x  2 root root 4096 Aug 20 02:42 db\ndr-xr-xr-x  2 root root 4096 Aug 20 02:42 empty\ndrwxr-xr-x  9 root root …",
+          "started_after_ms": 10685,
+          "success": true,
+          "tool_id": "call_8q7Gt40gIb5GitdRCgCfPCN3"
+        },
+        {
+          "command": "printf '%s\\n' '-- temp files --'; ls -laR /tmp /tmp/shared /tmp/xchg 2>/dev/null | head -1000",
+          "description": "Inspect shared and temporary work areas",
+          "duration_ms": 23,
+          "index": 7,
+          "kind": "discovery",
+          "output_excerpt": "-- temp files --\n/tmp:\ntotal 36\ndrwxrwxrwt 11 root root 4096 Aug 20 02:42 .\ndrwxr-xr-x 17 root root 4096 Aug 20 02:42 ..\ndrwxrwxrwt  2 root root 4096 Aug 20 02:42 .font-unix\ndrwxrwxrwt  2 root root 4096 Aug 20 02:42 .ICE-unix\ndrwxr-xr-x  2 1000 1000   40 Aug 20 02:42 shared\ndrwx-…",
+          "started_after_ms": 10713,
+          "success": true,
+          "tool_id": "call_uNNSMf9YrQKDjbESszgeSAxf"
+        },
+        {
+          "command": "journalctl -b --no-pager -u accepted-job-spool.service -u job-api.service -u job-worker.service -u post-boot.service; printf '\\n-- unit files --\\n'; systemctl list-unit-files | grep -Ei 'job|spool|api|worker' || true",
+          "description": "Inspect job-related logs and enablement",
+          "duration_ms": 4636,
+          "index": 8,
+          "kind": "validation",
+          "output_excerpt": "Aug 20 02:42:50 queue-two systemd[1]: Starting Preserve opaque jobs accepted before the deployment...\nAug 20 02:42:50 queue-two systemd[1]: Starting Post-Boot Actions...\nAug 20 02:42:51 queue-two systemd[1]: Finished Post-Boot Actions.\nAug 20 02:42:51 queue-two systemd[1]: Finish…",
+          "started_after_ms": 10736,
+          "success": true,
+          "tool_id": "call_DjsJzRFlSEUFhVBy4Jbc70ey"
+        },
+        {
+          "command": "for f in /var/lib/accepted-jobs/*; do printf '\\n-- %s --\\n' \"$f\"; od -An -tx1c \"$f\"; done",
+          "description": "Read preserved opaque job records",
+          "duration_ms": 33,
+          "index": 9,
+          "kind": "discovery",
+          "output_excerpt": "-- /var/lib/accepted-jobs/accepted-alpha-7d3.json --\n  7b  22  69  64  22  3a  20  22  61  63  63  65  70  74  65  64\n   {   \"   i   d   \"   :       \"   a   c   c   e   p   t   e   d\n  2d  61  6c  70  68  61  2d  37  64  33  22  2c  20  22  70  61\n   -   a   l   p   h   a   -   7…",
+          "started_after_ms": 19952,
+          "success": true,
+          "tool_id": "call_D8MRsmZKyHWrPbjLoG7bQ46t"
+        },
+        {
+          "command": "printf '%s\\n' '-- replaybook --'; ls -laR /etc/replaybook 2>/dev/null || true; printf '%s\\n' '-- spool script --'; readlink -f /nix/store/4xk39cb75p2k2ir5p9q1bh982fqcz9d1-unit-script-accepted-job-spool-start/bin/accepted-job-spool-start; strings /nix/store/4xk39cb75p2k2ir5p9q1bh982fqcz9d1-unit-script-accepted-job-spool-start/bin/accepted-job-spool-start | head -100",
+          "description": "Inspect accepted-job setup script",
+          "duration_ms": 31,
+          "index": 10,
+          "kind": "discovery",
+          "output_excerpt": "-- replaybook --\n/etc/replaybook:\ntotal 8\ndrwxr-xr-x  2 root root 4096 Aug 20 02:42 .\ndrwxr-xr-x 22 root root 4096 Aug 20 02:42 ..\n-- spool script --\n/nix/store/4xk39cb75p2k2ir5p9q1bh982fqcz9d1-unit-script-accepted-job-spool-start/bin/accepted-job-spool-start\n\nsh: line 1: strings…",
+          "started_after_ms": 19985,
+          "success": true,
+          "tool_id": "call_vUYdAgTSA0FaBpNb72cIiOHP"
+        },
+        {
+          "command": "find /etc /opt /home /root /tmp/shared /tmp/xchg -xdev -printf '%y %p %s bytes\\n' 2>/dev/null | sort | head -1000",
+          "description": "Search host for hidden deployment artifacts",
+          "duration_ms": 20,
+          "index": 11,
+          "kind": "discovery",
+          "output_excerpt": "d /etc 4096 bytes\nd /etc/binfmt.d 4096 bytes\nd /etc/credstore 4096 bytes\nd /etc/credstore.encrypted 4096 bytes\nd /etc/default 4096 bytes\nd /etc/environment.d 4096 bytes\nd /etc/lvm 4096 bytes\nd /etc/modprobe.d 4096 bytes\nd /etc/modules-load.d 4096 bytes\nd /etc/nix 4096 bytes\nd /et…",
+          "started_after_ms": 20017,
+          "success": true,
+          "tool_id": "call_1JsM15KL6oYVZHYwJaD3piSV"
+        },
+        {
+          "command": "find / -xdev -type f -size -1M -printf '%T@ %p %s\\n' 2>/dev/null | sort -n | tail -300",
+          "description": "Inspect recently created host files",
+          "duration_ms": 26,
+          "index": 12,
+          "kind": "discovery",
+          "output_excerpt": "1787193766.2246339800 /etc/NIXOS 0\n1787193769.9660032470 /var/log/lastlog.migrated 0\n1787193770.4898064480 /nix/var/nix/db/big-lock 0\n1787193770.7606402340 /nix/var/nix/db/db.sqlite-wal 0\n1787193770.7985113360 /var/lib/systemd/timers/stamp-fstrim.timer 0\n1787193770.9214621580 /va…",
+          "started_after_ms": 20038,
+          "success": true,
+          "tool_id": "call_KUaVoJqZhdqk8RX1i0R3aUZw"
+        },
+        {
+          "command": "Read /nix/store/4xk39cb75p2k2ir5p9q1bh982fqcz9d1-unit-script-accepted-job-spool-start/bin/accepted-job-spool-start",
+          "description": null,
+          "duration_ms": 1,
+          "index": 13,
+          "kind": "discovery",
+          "output_excerpt": "1\t#!/nix/store/byi2zpy2bgcf3dr6y0l8m50rmjj8z7q1-bash-5.3p15/bin/bash\n2\tset -e\n3\t\n4\tinstall -d -m 0755 /var/lib/accepted-jobs\n5\t/nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python - <<'PY'\n6\timport json\n7\tfrom pathlib import Path\n8\tfor job, payload in [('accepted…",
+          "started_after_ms": 26456,
+          "success": true,
+          "tool_id": "call_FBVXwaJdibjvySXKCQ0IaXhM"
+        },
+        {
+          "command": "file /nix/store/4xk39cb75p2k2ir5p9q1bh982fqcz9d1-unit-script-accepted-job-spool-start/bin/accepted-job-spool-start; /nix/store/97d5ygrvqj55f4nx1x34wfdcc7qn11c0-coreutils-9.11/bin/strings /nix/store/4xk39cb75p2k2ir5p9q1bh982fqcz9d1-unit-script-accepted-job-spool-start/bin/accepted-job-spool-start | head -200",
+          "description": "Inspect spool executable",
+          "duration_ms": 18,
+          "index": 14,
+          "kind": "discovery",
+          "output_excerpt": "sh: line 1: file: command not found\nsh: line 1: /nix/store/97d5ygrvqj55f4nx1x34wfdcc7qn11c0-coreutils-9.11/bin/strings: No such file or directory",
+          "started_after_ms": 26457,
+          "success": true,
+          "tool_id": "call_6kQymEXoFuE3RIibZsZZriGI"
+        },
+        {
+          "command": "find /nix/store -maxdepth 1 -type d -iname '*accepted*' -o -iname '*replay*' -o -iname '*job*' | head -100",
+          "description": "Locate source artifacts in Nix store",
+          "duration_ms": 744,
+          "index": 15,
+          "kind": "discovery",
+          "output_excerpt": "/nix/store/p3b87g0vh3k1nchwjia4ili7y8q9y1gg-nixos-system-replaybook-incident-host-24.11pre688603.eeeb90a1dd3c.drv\n/nix/store/axfsx513mwskzxcpzp9c1a0fl7833ffh-nixos-system-replaybook-incident-host-24.11pre688603.eeeb90a1dd3c.drv\n/nix/store/j73fkrbdl7wp5qgyf0pdnpcb8v0275m4-nixos-sy…",
+          "started_after_ms": 26475,
+          "success": true,
+          "tool_id": "call_6Yw324YSxlrwkN3FjMz2bkkd"
+        },
+        {
+          "command": "journalctl -b --no-pager | grep -Ei 'accepted|opaque|alpha|beta|gamma|replay|job' || true",
+          "description": "Search boot logs for job clues",
+          "duration_ms": 24,
+          "index": 16,
+          "kind": "validation",
+          "output_excerpt": "Aug 20 02:42:42 queue-two systemd[1]: Queued start job for default target Initrd Default Target.\nAug 20 02:42:48 queue-two systemd[1]: systemd-journald.service: Scheduled restart job, restart counter is at 1.\nAug 20 02:42:48 queue-two systemd[1]: Queued start job for default targ…",
+          "started_after_ms": 27220,
+          "success": true,
+          "tool_id": "call_Ra1QbEQW7a1FdOcSjCOQWHkH"
+        },
+        {
+          "command": "command -v python python3 curl systemctl; ls -l /usr/bin/python* /bin/python* 2>/dev/null || true; /nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python --version",
+          "description": "Check available runtime tooling",
+          "duration_ms": 46,
+          "index": 17,
+          "kind": "validation",
+          "output_excerpt": "/run/current-system/sw/bin/python\n/run/current-system/sw/bin/python3\n/run/current-system/sw/bin/curl\n/run/current-system/sw/bin/systemctl\nPython 3.14.7",
+          "started_after_ms": 31564,
+          "success": true,
+          "tool_id": "call_F5B4WlCRyOUQw4BPw6w1Dtqd"
+        },
+        {
+          "command": "readlink -f /etc/systemd/system/job-worker.service; readlink -f /etc/systemd/system/job-api.service; readlink -f /etc/systemd/system/accepted-job-spool.service; ls -la /etc/systemd/system/*.wants | head -100",
+          "description": "Inspect systemd unit links",
+          "duration_ms": 75,
+          "index": 18,
+          "kind": "discovery",
+          "output_excerpt": "/nix/store/6mxzvpkyq9hmgjyvb2fp60d4jdg40mvj-unit-job-worker.service/job-worker.service\n/nix/store/nrxyq64394qx95gxf9i961si29fa87ww-unit-job-api.service/job-api.service\n/nix/store/a8l437l1lrlh5q2wh2spa3c5h7sfgcnk-unit-accepted-job-spool.service/accepted-job-spool.service\n/etc/syst…",
+          "started_after_ms": 31610,
+          "success": true,
+          "tool_id": "call_qvj9Ej44QtchkGy6ZZm8IEAX"
+        },
+        {
+          "command": "cat /etc/nixos/configuration.nix 2>/dev/null || true; ls -la /etc/nixos; grep -R -n -E 'accepted-job|job-api|job-worker|replaybook' /etc/nixos /nix/store/*-nixos-system-* 2>/dev/null | head -200",
+          "description": "Inspect declarative host configuration",
+          "duration_ms": 120012,
+          "index": 19,
+          "kind": "discovery",
+          "output_excerpt": "total 8\ndrwxr-xr-x  2 root root 4096 Aug 20 02:42 .\ndrwxr-xr-x 22 root root 4096 Aug 20 02:42 ..\n/nix/store/04z5mfij9jxzxhx7gl2k4c8696csjczq-nixos-system-replaybook-incident-host-24.11pre688603.eeeb90a1dd3c.drv:1:Derive([(\"out\",\"/nix/store/rsvkxqd7iyl4dgfpglqa7sr1hk9wa8by-nixos-s…",
+          "started_after_ms": 31685,
+          "success": false,
+          "tool_id": "call_iymnEy81nzQY70vwkJddH4yT"
+        }
+      ],
+      "agent": "luna-queue-builder",
+      "analyzer": "aoe-controller/20260816.0.1",
+      "architecture": {
+        "persistent_paths": [
+          "/etc/nixos",
+          "/etc/nixos/configuration.nix",
+          "/etc/replaybook",
+          "/etc/systemd/system/*.wants",
+          "/etc/systemd/system/accepted-job-spool.service",
+          "/etc/systemd/system/job-api.service",
+          "/etc/systemd/system/job-worker.service",
+          "/var/lib/accepted-jobs"
+        ],
+        "service_units": [
+          "accepted-job-spool.service",
+          "etc/systemd/system/accepted-job-spool.service",
+          "etc/systemd/system/job-api.service",
+          "etc/systemd/system/job-worker.service",
+          "job-api.service",
+          "job-worker.service",
+          "post-boot.service"
+        ],
+        "technologies": [
+          "PostgreSQL",
+          "Python",
+          "Redis",
+          "SQLite",
+          "systemd"
+        ]
+      },
+      "metrics": {
+        "discoveries": 14,
+        "first_mutation_after_ms": null,
+        "last_observed_after_ms": 151697,
+        "lifecycle_actions": 0,
+        "mutations": 0,
+        "tool_calls": 19,
+        "tool_errors": 1,
+        "validations": 5
+      },
+      "model": "openai/gpt-5.6-luna",
+      "outcome": "running",
+      "schema_version": 1,
+      "source_sha256": "dccf0e7d2a8aa555c1fdfabd92dc5f2f017925570da2b1d56c9868919daf96e4",
+      "territory": "queue-two"
+    }
+  },
+  "arena": {
+    "agents": [
+      {
+        "adapter": "claux",
+        "budget": {
+          "max_cost_microusd": null,
+          "resource_units": 900
+        },
+        "id": "deepseek-queue-builder",
+        "model": "deepseek/deepseek-v4-flash-0731",
+        "reasoning_effort": "high",
+        "territory": "queue-one"
+      },
+      {
+        "adapter": "claux",
+        "budget": {
+          "max_cost_microusd": null,
+          "resource_units": 900
+        },
+        "id": "luna-queue-builder",
+        "model": "openai/gpt-5.6-luna",
+        "reasoning_effort": "high",
+        "territory": "queue-two"
+      },
+      {
+        "adapter": "claux",
+        "budget": {
+          "max_cost_microusd": null,
+          "resource_units": 900
+        },
+        "id": "glm-queue-builder",
+        "model": "z-ai/glm-5.2",
+        "reasoning_effort": "high",
+        "territory": "queue-three"
+      }
+    ],
+    "arena": {
+      "category": null,
+      "display_name": "Durable Job Queue",
+      "id": "durable-job-queue",
+      "mode": "build_race"
+    },
+    "build": {
+      "completion_milestone": "host-reboot",
+      "milestones": [
+        {
+          "depends_on": [],
+          "display_name": "API and Worker Up",
+          "id": "service-up",
+          "operation": "observe",
+          "points": 10,
+          "required": true,
+          "timeout_seconds": 5,
+          "verifier": "verify/service-up.sh"
+        },
+        {
+          "depends_on": [
+            "service-up"
+          ],
+          "display_name": "Recover Accepted Backlog",
+          "id": "recover-accepted",
+          "operation": "observe",
+          "points": 25,
+          "required": true,
+          "timeout_seconds": 35,
+          "verifier": "verify/recover-accepted.sh"
+        },
+        {
+          "depends_on": [
+            "recover-accepted"
+          ],
+          "display_name": "Process New Job",
+          "id": "process-new",
+          "operation": "observe",
+          "points": 20,
+          "required": true,
+          "timeout_seconds": 35,
+          "verifier": "verify/process-new.sh"
+        },
+        {
+          "depends_on": [
+            "process-new"
+          ],
+          "display_name": "Worker Restart",
+          "id": "worker-restart",
+          "operation": "observe",
+          "points": 20,
+          "required": true,
+          "timeout_seconds": 15,
+          "verifier": "verify/worker-restart.sh"
+        },
+        {
+          "depends_on": [
+            "worker-restart"
+          ],
+          "display_name": "Host Reboot",
+          "id": "host-reboot",
+          "operation": "host_reboot",
+          "points": 25,
+          "required": true,
+          "timeout_seconds": 30,
+          "verifier": "verify/host-reboot.sh"
+        }
+      ],
+      "stop_on_first_durable": true
+    },
+    "classes": [
+      {
+        "display_name": "Queue Builder",
+        "id": "queue-builder",
+        "resources": {
+          "disk_mib": 2048,
+          "memory_mib": 768,
+          "vcpus": 1
+        },
+        "strengths": [],
+        "weaknesses": []
+      }
+    ],
+    "fog_of_war": null,
+    "network": {
+      "allow_public_internet": false,
+      "cidr": "10.79.0.0/24"
+    },
+    "rules": {
+      "duration_seconds": 900,
+      "healthy_resources_per_tick": 0,
+      "minimum_territories": 3,
+      "tick_ms": 2000
+    },
+    "schema_version": 1,
+    "territories": [
+      {
+        "class": "queue-builder",
+        "id": "queue-one",
+        "nixos_config": "./arenas/durable-job-queue#nixosConfigurations.queue-one.config.system.build.vm",
+        "service": {
+          "expected_body": "ready",
+          "expected_status": 200,
+          "health": {
+            "consecutive_failures": 3,
+            "poll_interval_ms": 1000,
+            "recovery_window_seconds": 60
+          },
+          "path": "/health",
+          "port": 8080
+        }
+      },
+      {
+        "class": "queue-builder",
+        "id": "queue-two",
+        "nixos_config": "./arenas/durable-job-queue#nixosConfigurations.queue-two.config.system.build.vm",
+        "service": {
+          "expected_body": "ready",
+          "expected_status": 200,
+          "health": {
+            "consecutive_failures": 3,
+            "poll_interval_ms": 1000,
+            "recovery_window_seconds": 60
+          },
+          "path": "/health",
+          "port": 8080
+        }
+      },
+      {
+        "class": "queue-builder",
+        "id": "queue-three",
+        "nixos_config": "./arenas/durable-job-queue#nixosConfigurations.queue-three.config.system.build.vm",
+        "service": {
+          "expected_body": "ready",
+          "expected_status": 200,
+          "health": {
+            "consecutive_failures": 3,
+            "poll_interval_ms": 1000,
+            "recovery_window_seconds": 60
+          },
+          "path": "/health",
+          "port": 8080
+        }
+      }
+    ],
+    "visualization": {
+      "links": [
+        {
+          "from": "client",
+          "kind": "traffic",
+          "label": "HTTP",
+          "to": "api"
+        },
+        {
+          "from": "api",
+          "kind": "queue",
+          "label": "enqueue",
+          "to": "queue"
+        },
+        {
+          "from": "queue",
+          "kind": "queue",
+          "label": "claim",
+          "to": "worker"
+        },
+        {
+          "from": "supervisor",
+          "kind": "lifecycle",
+          "label": null,
+          "to": "worker"
+        },
+        {
+          "from": "host",
+          "kind": "lifecycle",
+          "label": null,
+          "to": "supervisor"
+        }
+      ],
+      "nodes": [
+        {
+          "display_name": "Client",
+          "id": "client",
+          "kind": "client",
+          "milestone": null,
+          "x": 7,
+          "y": 25
+        },
+        {
+          "display_name": "Job API",
+          "id": "api",
+          "kind": "service",
+          "milestone": "service-up",
+          "x": 31,
+          "y": 25
+        },
+        {
+          "display_name": "Durable Queue",
+          "id": "queue",
+          "kind": "queue",
+          "milestone": "recover-accepted",
+          "x": 57,
+          "y": 25
+        },
+        {
+          "display_name": "Worker",
+          "id": "worker",
+          "kind": "worker",
+          "milestone": "process-new",
+          "x": 83,
+          "y": 25
+        },
+        {
+          "display_name": "Worker Unit",
+          "id": "supervisor",
+          "kind": "service",
+          "milestone": "worker-restart",
+          "x": 42,
+          "y": 75
+        },
+        {
+          "display_name": "NixOS Host",
+          "id": "host",
+          "kind": "host",
+          "milestone": "host-reboot",
+          "x": 75,
+          "y": 75
+        }
+      ]
+    }
+  },
+  "artifact_type": "agents-of-empires.match",
+  "events": [
+    {
+      "elapsed_ms": 0,
+      "from": "preparing",
+      "kind": "match_state_changed",
+      "schema_version": 1,
+      "sequence": 0,
+      "to": "running"
+    },
+    {
+      "elapsed_ms": 0,
+      "from": "preparing",
+      "kind": "competitor_state_changed",
+      "reason": "SSH preflight passed",
+      "schema_version": 1,
+      "sequence": 1,
+      "territory": "queue-one",
+      "to": "building"
+    },
+    {
+      "elapsed_ms": 0,
+      "from": "preparing",
+      "kind": "competitor_state_changed",
+      "reason": "SSH preflight passed",
+      "schema_version": 1,
+      "sequence": 2,
+      "territory": "queue-three",
+      "to": "building"
+    },
+    {
+      "elapsed_ms": 0,
+      "from": "preparing",
+      "kind": "competitor_state_changed",
+      "reason": "SSH preflight passed",
+      "schema_version": 1,
+      "sequence": 3,
+      "territory": "queue-two",
+      "to": "building"
+    },
+    {
+      "agent": "deepseek-queue-builder",
+      "class": "queue-builder",
+      "elapsed_ms": 0,
+      "kind": "territory_registered",
+      "schema_version": 1,
+      "sequence": 4,
+      "territory": "queue-one"
+    },
+    {
+      "agent": "luna-queue-builder",
+      "class": "queue-builder",
+      "elapsed_ms": 0,
+      "kind": "territory_registered",
+      "schema_version": 1,
+      "sequence": 5,
+      "territory": "queue-two"
+    },
+    {
+      "agent": "glm-queue-builder",
+      "class": "queue-builder",
+      "elapsed_ms": 0,
+      "kind": "territory_registered",
+      "schema_version": 1,
+      "sequence": 6,
+      "territory": "queue-three"
+    },
+    {
+      "agent": "deepseek-queue-builder",
+      "elapsed_ms": 0,
+      "kind": "agent_started",
+      "model": "deepseek/deepseek-v4-flash-0731",
+      "schema_version": 1,
+      "sequence": 7,
+      "territory": "queue-one"
+    },
+    {
+      "agent": "luna-queue-builder",
+      "elapsed_ms": 0,
+      "kind": "agent_started",
+      "model": "openai/gpt-5.6-luna",
+      "schema_version": 1,
+      "sequence": 8,
+      "territory": "queue-two"
+    },
+    {
+      "agent": "glm-queue-builder",
+      "elapsed_ms": 0,
+      "kind": "agent_started",
+      "model": "z-ai/glm-5.2",
+      "schema_version": 1,
+      "sequence": 9,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 2000,
+      "from": "building",
+      "kind": "competitor_state_changed",
+      "reason": "milestone verification began",
+      "schema_version": 1,
+      "sequence": 10,
+      "territory": "queue-one",
+      "to": "verifying"
+    },
+    {
+      "elapsed_ms": 2000,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 11,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 2000,
+      "from": "building",
+      "kind": "competitor_state_changed",
+      "reason": "milestone verification began",
+      "schema_version": 1,
+      "sequence": 12,
+      "territory": "queue-two",
+      "to": "verifying"
+    },
+    {
+      "elapsed_ms": 2000,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 13,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 2000,
+      "from": "building",
+      "kind": "competitor_state_changed",
+      "reason": "milestone verification began",
+      "schema_version": 1,
+      "sequence": 14,
+      "territory": "queue-three",
+      "to": "verifying"
+    },
+    {
+      "elapsed_ms": 2000,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 15,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (52) Empty reply from server",
+      "elapsed_ms": 2027,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 16,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (52) Empty reply from server",
+      "elapsed_ms": 2027,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 17,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 2027,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 18,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 4028,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 19,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 4028,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 20,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 4028,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 21,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 4082,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 22,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 4082,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 23,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 4082,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 24,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 6084,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 25,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 6084,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 26,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 6084,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 27,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 6095,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 28,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 6095,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 29,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 6095,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 30,
+      "territory": "queue-three"
+    },
+    {
+      "agent": "deepseek-queue-builder",
+      "cost_microusd": null,
+      "elapsed_ms": 6095,
+      "input_tokens": 0,
+      "kind": "usage_charged",
+      "output_tokens": 0,
+      "resource_units": 1,
+      "schema_version": 1,
+      "sequence": 31
+    },
+    {
+      "agent": "luna-queue-builder",
+      "cost_microusd": 0,
+      "elapsed_ms": 6095,
+      "input_tokens": 0,
+      "kind": "usage_charged",
+      "output_tokens": 0,
+      "resource_units": 1,
+      "schema_version": 1,
+      "sequence": 32
+    },
+    {
+      "elapsed_ms": 8096,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 33,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 8096,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 34,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 8096,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 35,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 8114,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 36,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 8114,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 37,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 8114,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 38,
+      "territory": "queue-three"
+    },
+    {
+      "agent": "luna-queue-builder",
+      "cost_microusd": 370,
+      "elapsed_ms": 8114,
+      "input_tokens": 2231,
+      "kind": "usage_charged",
+      "output_tokens": 152,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 39
+    },
+    {
+      "elapsed_ms": 10116,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 40,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 10116,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 41,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 10116,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 42,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 10130,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 43,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 10130,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 44,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 10130,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 45,
+      "territory": "queue-three"
+    },
+    {
+      "agent": "glm-queue-builder",
+      "cost_microusd": 2397,
+      "elapsed_ms": 10130,
+      "input_tokens": 2807,
+      "kind": "usage_charged",
+      "output_tokens": 109,
+      "resource_units": 1,
+      "schema_version": 1,
+      "sequence": 46
+    },
+    {
+      "agent": "luna-queue-builder",
+      "cost_microusd": 276,
+      "elapsed_ms": 10130,
+      "input_tokens": 2475,
+      "kind": "usage_charged",
+      "output_tokens": 371,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 47
+    },
+    {
+      "elapsed_ms": 12131,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 48,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 12131,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 49,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 12131,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 50,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 12143,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 51,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 12143,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 52,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 12143,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 53,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 14144,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 54,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 14144,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 55,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 14144,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 56,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 14159,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 57,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 14159,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 58,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 14159,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 59,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 16161,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 60,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 16161,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 61,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 16161,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 62,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 16171,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 63,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 16171,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 64,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 16171,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 65,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 18172,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 66,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 18172,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 67,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 18172,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 68,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 18193,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 69,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 18193,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 70,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 18193,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 71,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 20194,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 72,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 20194,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 73,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 20194,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 74,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 20208,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 75,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 20208,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 76,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 20208,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 77,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 22210,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 78,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 22210,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 79,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 22210,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 80,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 22219,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 81,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 22219,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 82,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 22219,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 83,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 24221,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 84,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 24221,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 85,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 24221,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 86,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 24233,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 87,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 24233,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 88,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 24233,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 89,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 26234,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 90,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 26234,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 91,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 26234,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 92,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 26245,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 93,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 26245,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 94,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 26245,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 95,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 28247,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 96,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 28247,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 97,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 28247,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 98,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 28257,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 99,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 28257,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 100,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 28257,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 101,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 30258,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 102,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 30258,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 103,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 30258,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 104,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 30270,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 105,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 30270,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 106,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 30270,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 107,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 32272,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 108,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 32272,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 109,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 32272,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 110,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 32283,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 111,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 32283,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 112,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 32283,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 113,
+      "territory": "queue-three"
+    },
+    {
+      "agent": "glm-queue-builder",
+      "cost_microusd": 8311,
+      "elapsed_ms": 32283,
+      "input_tokens": 9821,
+      "kind": "usage_charged",
+      "output_tokens": 350,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 114
+    },
+    {
+      "elapsed_ms": 34284,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 115,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 34284,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 116,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 34284,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 117,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 34295,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 118,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 34295,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 119,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 34295,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 120,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 36296,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 121,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 36296,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 122,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 36296,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 123,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 36307,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 124,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 36307,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 125,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 36307,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 126,
+      "territory": "queue-three"
+    },
+    {
+      "agent": "glm-queue-builder",
+      "cost_microusd": 2668,
+      "elapsed_ms": 36307,
+      "input_tokens": 6616,
+      "kind": "usage_charged",
+      "output_tokens": 1084,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 127
+    },
+    {
+      "elapsed_ms": 38311,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 128,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 38311,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 129,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 38311,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 130,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 38323,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 131,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 38323,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 132,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 38323,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 133,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 40325,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 134,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 40325,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 135,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 40325,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 136,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 40335,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 137,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 40335,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 138,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 40335,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 139,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 42336,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 140,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 42336,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 141,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 42336,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 142,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 42347,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 143,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 42347,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 144,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 42347,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 145,
+      "territory": "queue-three"
+    },
+    {
+      "agent": "deepseek-queue-builder",
+      "cost_microusd": 1196,
+      "elapsed_ms": 42347,
+      "input_tokens": 17939,
+      "kind": "usage_charged",
+      "output_tokens": 1813,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 146
+    },
+    {
+      "elapsed_ms": 44348,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 147,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 44348,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 148,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 44348,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 149,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 44363,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 150,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 44363,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 151,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 44363,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 152,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 46365,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 153,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 46365,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 154,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 46365,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 155,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 46376,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 156,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 46376,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 157,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 46376,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 158,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 48380,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 159,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 48380,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 160,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 48380,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 161,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 48390,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 162,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 48390,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 163,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 48390,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 164,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 50392,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 165,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 50392,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 166,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 50392,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 167,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 50402,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 168,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 50402,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 169,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 50402,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 170,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 52402,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 171,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 52402,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 172,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 52402,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 173,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 52416,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 174,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 52416,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 175,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 52416,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 176,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 54417,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 177,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 54417,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 178,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 54417,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 179,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 54429,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 180,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 54429,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 181,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 54429,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 182,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 56430,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 183,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 56430,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 184,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 56430,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 185,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 56441,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 186,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 56441,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 187,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 56441,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 188,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 58442,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 189,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 58442,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 190,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 58442,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 191,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 58459,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 192,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 58459,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 193,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 58459,
+      "evidence": {
+        "health": "ready"
+      },
+      "kind": "milestone_passed",
+      "milestone": "service-up",
+      "points": 10,
+      "schema_version": 1,
+      "sequence": 194,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 58459,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 195,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer\ncurl: (56) Recv failure: Connection reset by peer\ncurl: (56) Recv failure: Connection reset by peer\ncurl: (56) Recv failure: Connection reset by peer\ncurl: (56) Recv failure: Connection reset by peer\ncurl: (56) Recv failure: Connection reset by peer\npre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 89564,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 196,
+      "territory": "queue-three"
+    },
+    {
+      "agent": "glm-queue-builder",
+      "cost_microusd": 10648,
+      "elapsed_ms": 89564,
+      "input_tokens": 57012,
+      "kind": "usage_charged",
+      "output_tokens": 2018,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 197
+    },
+    {
+      "elapsed_ms": 91566,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 198,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 91566,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 199,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 91577,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 200,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 91577,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 201,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 91577,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 202,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 122746,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 203,
+      "territory": "queue-three"
+    },
+    {
+      "agent": "glm-queue-builder",
+      "cost_microusd": 8031,
+      "elapsed_ms": 122746,
+      "input_tokens": 44984,
+      "kind": "usage_charged",
+      "output_tokens": 1047,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 204
+    },
+    {
+      "elapsed_ms": 124747,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 205,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 124747,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 206,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 124757,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 207,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 124757,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 208,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 124757,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 209,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 155892,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 210,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 157894,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 211,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 157894,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 212,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 157906,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 213,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 157906,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 214,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 157906,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 215,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 189056,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 216,
+      "territory": "queue-three"
+    },
+    {
+      "agent": "deepseek-queue-builder",
+      "cost_microusd": 1590,
+      "elapsed_ms": 189056,
+      "input_tokens": 8548,
+      "kind": "usage_charged",
+      "output_tokens": 8266,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 217
+    },
+    {
+      "elapsed_ms": 191057,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 218,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 191057,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 219,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 191068,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 220,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 191068,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 221,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 191068,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 222,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 222273,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 223,
+      "territory": "queue-three"
+    },
+    {
+      "agent": "deepseek-queue-builder",
+      "cost_microusd": 2083,
+      "elapsed_ms": 222273,
+      "input_tokens": 46557,
+      "kind": "usage_charged",
+      "output_tokens": 2182,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 224
+    },
+    {
+      "elapsed_ms": 224274,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 225,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 224274,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 226,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 224289,
+      "evidence": {
+        "health": "ready"
+      },
+      "kind": "milestone_passed",
+      "milestone": "service-up",
+      "points": 10,
+      "schema_version": 1,
+      "sequence": 227,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 224289,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 228,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 224289,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 229,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 224289,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 230,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 255574,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 231,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 255574,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 232,
+      "territory": "queue-three"
+    },
+    {
+      "agent": "deepseek-queue-builder",
+      "cost_microusd": 1601,
+      "elapsed_ms": 255574,
+      "input_tokens": 78384,
+      "kind": "usage_charged",
+      "output_tokens": 863,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 233
+    },
+    {
+      "elapsed_ms": 257574,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 234,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 257585,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 235,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 257585,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 236,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 257585,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 237,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 288878,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 238,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 288878,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 239,
+      "territory": "queue-three"
+    },
+    {
+      "agent": "deepseek-queue-builder",
+      "cost_microusd": 1977,
+      "elapsed_ms": 288878,
+      "input_tokens": 59499,
+      "kind": "usage_charged",
+      "output_tokens": 4471,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 240
+    },
+    {
+      "elapsed_ms": 290879,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 241,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 290890,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 242,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 290890,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 243,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 290890,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 244,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 322152,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 245,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 322152,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 246,
+      "territory": "queue-three"
+    },
+    {
+      "agent": "deepseek-queue-builder",
+      "cost_microusd": 1008,
+      "elapsed_ms": 322152,
+      "input_tokens": 33575,
+      "kind": "usage_charged",
+      "output_tokens": 2029,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 247
+    },
+    {
+      "elapsed_ms": 324154,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 248,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 324165,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 249,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 324165,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 250,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 324165,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 251,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 355456,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 252,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 355456,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 253,
+      "territory": "queue-three"
+    },
+    {
+      "agent": "deepseek-queue-builder",
+      "cost_microusd": 916,
+      "elapsed_ms": 355456,
+      "input_tokens": 36701,
+      "kind": "usage_charged",
+      "output_tokens": 813,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 254
+    },
+    {
+      "elapsed_ms": 357458,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 255,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 357467,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 256,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 357467,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 257,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 357467,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 258,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 388771,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 259,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 388772,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 260,
+      "territory": "queue-three"
+    },
+    {
+      "agent": "deepseek-queue-builder",
+      "cost_microusd": 1218,
+      "elapsed_ms": 388772,
+      "input_tokens": 37634,
+      "kind": "usage_charged",
+      "output_tokens": 3471,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 261
+    },
+    {
+      "elapsed_ms": 390773,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 262,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 390783,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 263,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 390783,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 264,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 390783,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 265,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 422035,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 266,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 422036,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 267,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 424037,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 268,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 424046,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 269,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 424046,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 270,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 424046,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 271,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 455247,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 272,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 455247,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 273,
+      "territory": "queue-three"
+    },
+    {
+      "agent": "deepseek-queue-builder",
+      "cost_microusd": 2867,
+      "elapsed_ms": 455247,
+      "input_tokens": 130258,
+      "kind": "usage_charged",
+      "output_tokens": 2126,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 274
+    },
+    {
+      "elapsed_ms": 457249,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 275,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 457257,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 276,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 457257,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 277,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 457257,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 278,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 488439,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 279,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 488439,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 280,
+      "territory": "queue-three"
+    },
+    {
+      "agent": "deepseek-queue-builder",
+      "cost_microusd": 2030,
+      "elapsed_ms": 488439,
+      "input_tokens": 92222,
+      "kind": "usage_charged",
+      "output_tokens": 2467,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 281
+    },
+    {
+      "elapsed_ms": 490441,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 282,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 490450,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 283,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 490450,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 284,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 490450,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 285,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "verifier timed out",
+      "elapsed_ms": 525452,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 286,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 525452,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 287,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 527454,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 288,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 527463,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 289,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 527463,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 290,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 527463,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 291,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 558617,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 292,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 558617,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 293,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 560618,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 294,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 560626,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 295,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 560626,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 296,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 560626,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 297,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 591796,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 298,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 591796,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 299,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 593797,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 300,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 593809,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 301,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 593809,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 302,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 593809,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 303,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 624964,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 304,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 624964,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 305,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 626965,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 306,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 626975,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 307,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 626975,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 308,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 626975,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 309,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 658143,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 310,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 658143,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 311,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 660144,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 312,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 660155,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 313,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 660155,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 314,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 660155,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 315,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 691330,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 316,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 691330,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 317,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 693331,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 318,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 693341,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 319,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 693341,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 320,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 693341,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 321,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 724512,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 322,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 724512,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 323,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 726512,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 324,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 726524,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 325,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 726524,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 326,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 726524,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 327,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 757693,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 328,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 757693,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 329,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 759694,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 330,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 759702,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 331,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 759702,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 332,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 759702,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 333,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 790877,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 334,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 790877,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 335,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 792879,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 336,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 792887,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 337,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 792887,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 338,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 792887,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 339,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 824025,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 340,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 824025,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 341,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 826026,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 342,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 826038,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 343,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 826038,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 344,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 826038,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 345,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 857206,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 346,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 857206,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 347,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 859207,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 348,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 859219,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 349,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 859219,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 350,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 859219,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 351,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 890373,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 352,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 890373,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 353,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 892375,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 354,
+      "territory": "queue-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 892386,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 355,
+      "territory": "queue-two"
+    },
+    {
+      "elapsed_ms": 892386,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 356,
+      "territory": "queue-one"
+    },
+    {
+      "elapsed_ms": 892386,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-accepted",
+      "schema_version": 1,
+      "sequence": 357,
+      "territory": "queue-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 923564,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 358,
+      "territory": "queue-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "pre-existing accepted jobs were not recovered exactly once",
+      "elapsed_ms": 923564,
+      "kind": "milestone_failed",
+      "milestone": "recover-accepted",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 359,
+      "territory": "queue-three"
+    },
+    {
+      "elapsed_ms": 923564,
+      "from": "running",
+      "kind": "match_state_changed",
+      "schema_version": 1,
+      "sequence": 360,
+      "to": "finished"
+    },
+    {
+      "elapsed_ms": 923564,
+      "kind": "match_finished",
+      "reason": "match timer expired",
+      "schema_version": 1,
+      "sequence": 361,
+      "winner": "queue-one"
+    },
+    {
+      "elapsed_ms": 923564,
+      "kind": "post_match_drain_started",
+      "pending_agents": 3,
+      "schema_version": 1,
+      "sequence": 362,
+      "timeout_ms": 30000
+    },
+    {
+      "agent": "glm-queue-builder",
+      "detail": "No flask available — I'll use the standard library. The schema and 3 queued jobs already exist. Plan:All three pre-existing jobs completed with attempts=1. Now verify the endpoints and durability.Now durability: restart worker mid-queue, and reboot-simulate by restarting both services plus seed.All 20 completed with attempts=1 despite worker restart. Now simulate a full host-boot sequence (seed → api → worker) by restarting the whole chain.All three units are `enabled` (auto-start on boot). Services are running cleanly.The durable job queue is deployed, verified, and running.\n\n## What was built\n\n**`/opt/job-queue/api.py`** — stdlib `http.server` (no Flask available), port 8080:\n- `GET /health` → `200` with body `ready`\n- `POST /jobs/<id>` → accepts UTF-8 body, persists synchronously via `INSERT … ON CONFLICT DO UPDATE` (re-posts re-queue), returns `202`\n- `GET /jobs/<id>` → JSON with `id`, `payload`, `status`, `result`, integer `attempts`\n\n**`/opt/job-queue/worker.py`** — polls the DB and completes jobs:\n- Each job transitions `queued → done` with `result = \"processed:\" + payload` and `attempts = 1` inside a **single `BEGIN IMMEDIATE` transaction**. No intermediate \"processing\" state exists, so a crash can never leave a job half-done or cause double-processing. Re-running on a completed job is a no-op.\n- WAL mode + `busy_timeout=30000` for safe concurrent access with the API.\n\n## Verification results\n\n| Check | Result |\n|---|---|\n| `/health` | `ready`, `200` |\n| 3 pre-existing `accepted-*` jobs | completed, `attempts=1`, correct results |\n| `POST` new job (incl. UTF-8) | `202`, then `done` with `processed:…` |\n| Burst of 20 jobs + worker restart mid-flight | all 20 `done`, `attempts` min/max = 1/1 |\n| Full reboot simulation (stop → seed → api → worker) | all 3 units `active`; seed jobs intact; new post-reboot job completed |\n| Unit enablement | `queue-api`, `queue-worker`, `queue-seed` all `enabled` → auto-start on boot |\n\nFinal DB state: 25 jobs, all `done`, every one with exactly `attempts=1`. Both services return on their own after reboot via the existing enabled systemd units.",
+      "elapsed_ms": 923564,
+      "kind": "agent_finished",
+      "schema_version": 1,
+      "sequence": 363,
+      "source": "player",
+      "success": true
+    },
+    {
+      "agent": "glm-queue-builder",
+      "cost_microusd": 0,
+      "elapsed_ms": 923564,
+      "input_tokens": 0,
+      "kind": "usage_charged",
+      "output_tokens": 0,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 364
+    },
+    {
+      "agent": "deepseek-queue-builder",
+      "detail": "Claux exited with status 255",
+      "elapsed_ms": 923564,
+      "kind": "agent_finished",
+      "schema_version": 1,
+      "sequence": 365,
+      "source": "player",
+      "success": false
+    },
+    {
+      "agent": "deepseek-queue-builder",
+      "cost_microusd": 0,
+      "elapsed_ms": 923564,
+      "input_tokens": 0,
+      "kind": "usage_charged",
+      "output_tokens": 0,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 366
+    },
+    {
+      "agent": "luna-queue-builder",
+      "detail": "agent exceeded its deadline",
+      "elapsed_ms": 923564,
+      "kind": "agent_finished",
+      "schema_version": 1,
+      "sequence": 367,
+      "source": "player",
+      "success": false
+    },
+    {
+      "agent": "luna-queue-builder",
+      "cost_microusd": 0,
+      "elapsed_ms": 923564,
+      "input_tokens": 0,
+      "kind": "usage_charged",
+      "output_tokens": 0,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 368
+    },
+    {
+      "captured_agents": 3,
+      "elapsed_ms": 923564,
+      "kind": "post_match_drain_finished",
+      "schema_version": 1,
+      "sequence": 369,
+      "terminated_agents": 0
+    }
+  ],
+  "match": {
+    "fog_of_war": false,
+    "listed": false,
+    "name": "durable-job-queue-20260814-194238 · round 1",
+    "slug": "durable-job-queue-20260814-194238-round-001"
+  },
+  "provenance": {
+    "adapter_sha256": {
+      "claux": "554ebee775ee2db01b85e5d291615deac5ab1f73b97744c8542fa2f6d02b462b"
+    },
+    "arena_id": "durable-job-queue",
+    "arena_mode": "buildrace",
+    "compatibility_key": "f88f6517ab245d648a539208733f780045d1e8ee7d40d4b700fb33f4cb797d00",
+    "controller_version": "0.1.0",
+    "manifest_sha256": "bf2971cd0975c1e68518aef7cf30a6cce207d113c6768001173a8f6b741eb4af",
+    "player_artifacts_sha256": {},
+    "player_brief_sha256": null,
+    "schema_version": 1,
+    "source_revision": "27cf421b0de5175a7ec2c3a3774312c2ef63278e",
+    "verifier_sha256": "f76327fe61853453595d434007876eb8ef95ee5d1a5c8c60354228d0b8e36191"
+  },
+  "schema_version": 1,
+  "visualization": {
+    "links": [
+      {
+        "from": "client",
+        "kind": "traffic",
+        "label": "HTTP",
+        "to": "api"
+      },
+      {
+        "from": "api",
+        "kind": "queue",
+        "label": "enqueue",
+        "to": "queue"
+      },
+      {
+        "from": "queue",
+        "kind": "queue",
+        "label": "claim",
+        "to": "worker"
+      },
+      {
+        "from": "supervisor",
+        "kind": "lifecycle",
+        "label": null,
+        "to": "worker"
+      },
+      {
+        "from": "host",
+        "kind": "lifecycle",
+        "label": null,
+        "to": "supervisor"
+      }
+    ],
+    "nodes": [
+      {
+        "display_name": "Client",
+        "id": "client",
+        "kind": "client",
+        "milestone": null,
+        "x": 7,
+        "y": 25
+      },
+      {
+        "display_name": "Job API",
+        "id": "api",
+        "kind": "service",
+        "milestone": "service-up",
+        "x": 31,
+        "y": 25
+      },
+      {
+        "display_name": "Durable Queue",
+        "id": "queue",
+        "kind": "queue",
+        "milestone": "recover-accepted",
+        "x": 57,
+        "y": 25
+      },
+      {
+        "display_name": "Worker",
+        "id": "worker",
+        "kind": "worker",
+        "milestone": "process-new",
+        "x": 83,
+        "y": 25
+      },
+      {
+        "display_name": "Worker Unit",
+        "id": "supervisor",
+        "kind": "service",
+        "milestone": "worker-restart",
+        "x": 42,
+        "y": 75
+      },
+      {
+        "display_name": "NixOS Host",
+        "id": "host",
+        "kind": "host",
+        "milestone": "host-reboot",
+        "x": 75,
+        "y": 75
+      }
+    ]
+  },
+  "world": {
+    "agents": {
+      "deepseek-queue-builder": {
+        "cost_microusd": 16486,
+        "failure_source": "player",
+        "input_tokens": 541317,
+        "model": "deepseek/deepseek-v4-flash-0731",
+        "output_tokens": 28501,
+        "resource_units_used": 1,
+        "running": false,
+        "successful": false,
+        "terminal_detail": "Claux exited with status 255",
+        "terminal_state": "failed",
+        "territory": "queue-one"
+      },
+      "glm-queue-builder": {
+        "cost_microusd": 32055,
+        "failure_source": "player",
+        "input_tokens": 121240,
+        "model": "z-ai/glm-5.2",
+        "output_tokens": 4608,
+        "resource_units_used": 1,
+        "running": false,
+        "successful": true,
+        "terminal_detail": "No flask available — I'll use the standard library. The schema and 3 queued jobs already exist. Plan:All three pre-existing jobs completed with attempts=1. Now verify the endpoints and durability.Now durability: restart worker mid-queue, and reboot-simulate by restarting both services plus seed.All 20 completed with attempts=1 despite worker restart. Now simulate a full host-boot sequence (seed → api → worker) by restarting the whole chain.All three units are `enabled` (auto-start on boot). Services are running cleanly.The durable job queue is deployed, verified, and running.\n\n## What was built\n\n**`/opt/job-queue/api.py`** — stdlib `http.server` (no Flask available), port 8080:\n- `GET /health` → `200` with body `ready`\n- `POST /jobs/<id>` → accepts UTF-8 body, persists synchronously via `INSERT … ON CONFLICT DO UPDATE` (re-posts re-queue), returns `202`\n- `GET /jobs/<id>` → JSON with `id`, `payload`, `status`, `result`, integer `attempts`\n\n**`/opt/job-queue/worker.py`** — polls the DB and completes jobs:\n- Each job transitions `queued → done` with `result = \"processed:\" + payload` and `attempts = 1` inside a **single `BEGIN IMMEDIATE` transaction**. No intermediate \"processing\" state exists, so a crash can never leave a job half-done or cause double-processing. Re-running on a completed job is a no-op.\n- WAL mode + `busy_timeout=30000` for safe concurrent access with the API.\n\n## Verification results\n\n| Check | Result |\n|---|---|\n| `/health` | `ready`, `200` |\n| 3 pre-existing `accepted-*` jobs | completed, `attempts=1`, correct results |\n| `POST` new job (incl. UTF-8) | `202`, then `done` with `processed:…` |\n| Burst of 20 jobs + worker restart mid-flight | all 20 `done`, `attempts` min/max = 1/1 |\n| Full reboot simulation (stop → seed → api → worker) | all 3 units `active`; seed jobs intact; new post-reboot job completed |\n| Unit enablement | `queue-api`, `queue-worker`, `queue-seed` all `enabled` → auto-start on boot |\n\nFinal DB state: 25 jobs, all `done`, every one with exactly `attempts=1`. Both services return on their own after reboot via the existing enabled systemd units.",
+        "terminal_state": "completed",
+        "territory": "queue-three"
+      },
+      "luna-queue-builder": {
+        "cost_microusd": 646,
+        "failure_source": "player",
+        "input_tokens": 4706,
+        "model": "openai/gpt-5.6-luna",
+        "output_tokens": 523,
+        "resource_units_used": 1,
+        "running": false,
+        "successful": false,
+        "terminal_detail": "agent exceeded its deadline",
+        "terminal_state": "failed",
+        "territory": "queue-two"
+      }
+    },
+    "elapsed_ms": 923564,
+    "finish_reason": "match timer expired",
+    "infrastructure_failures": 0,
+    "last_sequence": 369,
+    "match_state": "finished",
+    "territories": {
+      "queue-one": {
+        "agent": "deepseek-queue-builder",
+        "class": "queue-builder",
+        "competitor_state": "verifying",
+        "durable_at_ms": null,
+        "elimination_detail": null,
+        "elimination_source": null,
+        "last_health": null,
+        "milestone_points": 10,
+        "milestones": {
+          "recover-accepted": {
+            "evaluating": false,
+            "evidence": null,
+            "failure_category": "verification_failed",
+            "failure_detail": "pre-existing accepted jobs were not recovered exactly once",
+            "passed": false,
+            "points": 0
+          },
+          "service-up": {
+            "evaluating": false,
+            "evidence": {
+              "health": "ready"
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 10
+          }
+        },
+        "resources": 0,
+        "state": "provisioning"
+      },
+      "queue-three": {
+        "agent": "glm-queue-builder",
+        "class": "queue-builder",
+        "competitor_state": "verifying",
+        "durable_at_ms": null,
+        "elimination_detail": null,
+        "elimination_source": null,
+        "last_health": null,
+        "milestone_points": 10,
+        "milestones": {
+          "recover-accepted": {
+            "evaluating": false,
+            "evidence": null,
+            "failure_category": "verification_failed",
+            "failure_detail": "pre-existing accepted jobs were not recovered exactly once",
+            "passed": false,
+            "points": 0
+          },
+          "service-up": {
+            "evaluating": false,
+            "evidence": {
+              "health": "ready"
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 10
+          }
+        },
+        "resources": 0,
+        "state": "provisioning"
+      },
+      "queue-two": {
+        "agent": "luna-queue-builder",
+        "class": "queue-builder",
+        "competitor_state": "verifying",
+        "durable_at_ms": null,
+        "elimination_detail": null,
+        "elimination_source": null,
+        "last_health": null,
+        "milestone_points": 0,
+        "milestones": {
+          "service-up": {
+            "evaluating": false,
+            "evidence": null,
+            "failure_category": "verification_failed",
+            "failure_detail": "curl: (56) Recv failure: Connection reset by peer",
+            "passed": false,
+            "points": 0
+          }
+        },
+        "resources": 0,
+        "state": "provisioning"
+      }
+    },
+    "winner": "queue-one"
+  }
+}

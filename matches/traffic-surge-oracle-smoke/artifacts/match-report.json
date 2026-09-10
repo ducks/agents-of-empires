@@ -1,0 +1,1421 @@
+{
+  "analyses": {},
+  "arena": {
+    "agents": [
+      {
+        "adapter": "oracle-surge",
+        "budget": {
+          "max_cost_microusd": null,
+          "resource_units": 1
+        },
+        "id": "surge-one-agent",
+        "model": "oracle",
+        "reasoning_effort": "default",
+        "territory": "surge-one"
+      },
+      {
+        "adapter": "oracle-surge",
+        "budget": {
+          "max_cost_microusd": null,
+          "resource_units": 1
+        },
+        "id": "surge-two-agent",
+        "model": "oracle",
+        "reasoning_effort": "default",
+        "territory": "surge-two"
+      },
+      {
+        "adapter": "oracle-surge",
+        "budget": {
+          "max_cost_microusd": null,
+          "resource_units": 1
+        },
+        "id": "surge-three-agent",
+        "model": "oracle",
+        "reasoning_effort": "default",
+        "territory": "surge-three"
+      }
+    ],
+    "arena": {
+      "category": null,
+      "display_name": "Traffic Surge",
+      "id": "traffic-surge",
+      "mode": "build_race"
+    },
+    "build": {
+      "completion_milestone": "host-reboot",
+      "milestones": [
+        {
+          "depends_on": [],
+          "display_name": "Baseline Ready",
+          "id": "baseline-ready",
+          "operation": "observe",
+          "points": 5,
+          "required": true,
+          "timeout_seconds": 5,
+          "verifier": "verify/baseline-ready.sh"
+        },
+        {
+          "depends_on": [
+            "baseline-ready"
+          ],
+          "display_name": "Priority Writes Under Surge",
+          "id": "priority-first-surge",
+          "operation": "observe",
+          "points": 20,
+          "required": true,
+          "timeout_seconds": 15,
+          "verifier": "verify/priority-first-surge.sh"
+        },
+        {
+          "depends_on": [
+            "priority-first-surge"
+          ],
+          "display_name": "Optional Load Bounded",
+          "id": "bounded-optional",
+          "operation": "observe",
+          "points": 15,
+          "required": true,
+          "timeout_seconds": 15,
+          "verifier": "verify/bounded-optional.sh"
+        },
+        {
+          "depends_on": [
+            "bounded-optional"
+          ],
+          "display_name": "Peak Writes Recoverable",
+          "id": "recover-peak",
+          "operation": "observe",
+          "points": 25,
+          "required": true,
+          "timeout_seconds": 20,
+          "verifier": "verify/recover-peak.sh"
+        },
+        {
+          "depends_on": [
+            "recover-peak"
+          ],
+          "display_name": "Restart Under Load",
+          "id": "restart-under-load",
+          "operation": "observe",
+          "points": 15,
+          "required": true,
+          "timeout_seconds": 25,
+          "verifier": "verify/restart-under-load.sh"
+        },
+        {
+          "depends_on": [
+            "restart-under-load"
+          ],
+          "display_name": "Host Reboot",
+          "id": "host-reboot",
+          "operation": "host_reboot",
+          "points": 20,
+          "required": true,
+          "timeout_seconds": 40,
+          "verifier": "verify/host-reboot.sh"
+        }
+      ],
+      "stop_on_first_durable": true
+    },
+    "classes": [
+      {
+        "display_name": "Surge Engineer",
+        "id": "surge-engineer",
+        "resources": {
+          "disk_mib": 2048,
+          "memory_mib": 768,
+          "vcpus": 1
+        },
+        "strengths": [],
+        "weaknesses": []
+      }
+    ],
+    "fog_of_war": {
+      "guest_leak_audit": {
+        "forbidden_strings": [
+          "priority-first-surge.sh",
+          "bounded-optional.sh",
+          "recover-peak.sh",
+          "controller-owned load generator",
+          "Traffic surge oracle"
+        ],
+        "scan_paths": [
+          "/etc",
+          "/opt",
+          "/root",
+          "/var/lib"
+        ]
+      },
+      "hide_topology_until_observed": true,
+      "player_artifacts": [],
+      "player_brief": "brief.md"
+    },
+    "network": {
+      "allow_public_internet": false,
+      "cidr": "10.82.0.0/24"
+    },
+    "rules": {
+      "duration_seconds": 900,
+      "healthy_resources_per_tick": 0,
+      "minimum_territories": 3,
+      "tick_ms": 2000
+    },
+    "schema_version": 1,
+    "territories": [
+      {
+        "class": "surge-engineer",
+        "id": "surge-one",
+        "nixos_config": ".#nixosConfigurations.surge-one.config.system.build.vm",
+        "service": {
+          "expected_body": "ready",
+          "expected_status": 200,
+          "health": {
+            "consecutive_failures": 3,
+            "poll_interval_ms": 1000,
+            "recovery_window_seconds": 60
+          },
+          "path": "/health",
+          "port": 8080
+        }
+      },
+      {
+        "class": "surge-engineer",
+        "id": "surge-two",
+        "nixos_config": ".#nixosConfigurations.surge-two.config.system.build.vm",
+        "service": {
+          "expected_body": "ready",
+          "expected_status": 200,
+          "health": {
+            "consecutive_failures": 3,
+            "poll_interval_ms": 1000,
+            "recovery_window_seconds": 60
+          },
+          "path": "/health",
+          "port": 8080
+        }
+      },
+      {
+        "class": "surge-engineer",
+        "id": "surge-three",
+        "nixos_config": ".#nixosConfigurations.surge-three.config.system.build.vm",
+        "service": {
+          "expected_body": "ready",
+          "expected_status": 200,
+          "health": {
+            "consecutive_failures": 3,
+            "poll_interval_ms": 1000,
+            "recovery_window_seconds": 60
+          },
+          "path": "/health",
+          "port": 8080
+        }
+      }
+    ],
+    "visualization": {
+      "links": [
+        {
+          "from": "priority",
+          "kind": "traffic",
+          "label": "writes",
+          "to": "service"
+        },
+        {
+          "from": "optional",
+          "kind": "traffic",
+          "label": "surge",
+          "to": "service"
+        },
+        {
+          "from": "service",
+          "kind": "traffic",
+          "label": "prioritize",
+          "to": "admission"
+        },
+        {
+          "from": "admission",
+          "kind": "traffic",
+          "label": "durable",
+          "to": "ledger"
+        },
+        {
+          "from": "supervisor",
+          "kind": "lifecycle",
+          "label": null,
+          "to": "service"
+        },
+        {
+          "from": "host",
+          "kind": "lifecycle",
+          "label": null,
+          "to": "supervisor"
+        }
+      ],
+      "nodes": [
+        {
+          "display_name": "Priority Traffic",
+          "id": "priority",
+          "kind": "client",
+          "milestone": null,
+          "x": 7,
+          "y": 22
+        },
+        {
+          "display_name": "Optional Surge",
+          "id": "optional",
+          "kind": "client",
+          "milestone": "bounded-optional",
+          "x": 7,
+          "y": 76
+        },
+        {
+          "display_name": "Surge Service",
+          "id": "service",
+          "kind": "service",
+          "milestone": "baseline-ready",
+          "x": 39,
+          "y": 48
+        },
+        {
+          "display_name": "Load Boundary",
+          "id": "admission",
+          "kind": "proxy",
+          "milestone": "priority-first-surge",
+          "x": 66,
+          "y": 22
+        },
+        {
+          "display_name": "Priority Ledger",
+          "id": "ledger",
+          "kind": "database",
+          "milestone": "recover-peak",
+          "x": 91,
+          "y": 48
+        },
+        {
+          "display_name": "Service Unit",
+          "id": "supervisor",
+          "kind": "service",
+          "milestone": "restart-under-load",
+          "x": 65,
+          "y": 76
+        },
+        {
+          "display_name": "NixOS Host",
+          "id": "host",
+          "kind": "host",
+          "milestone": "host-reboot",
+          "x": 91,
+          "y": 76
+        }
+      ]
+    }
+  },
+  "artifact_type": "agents-of-empires.match",
+  "events": [
+    {
+      "elapsed_ms": 0,
+      "from": "preparing",
+      "kind": "match_state_changed",
+      "schema_version": 1,
+      "sequence": 0,
+      "to": "running"
+    },
+    {
+      "elapsed_ms": 0,
+      "from": "preparing",
+      "kind": "competitor_state_changed",
+      "reason": "SSH preflight passed",
+      "schema_version": 1,
+      "sequence": 1,
+      "territory": "surge-one",
+      "to": "building"
+    },
+    {
+      "elapsed_ms": 0,
+      "from": "preparing",
+      "kind": "competitor_state_changed",
+      "reason": "SSH preflight passed",
+      "schema_version": 1,
+      "sequence": 2,
+      "territory": "surge-three",
+      "to": "building"
+    },
+    {
+      "elapsed_ms": 0,
+      "from": "preparing",
+      "kind": "competitor_state_changed",
+      "reason": "SSH preflight passed",
+      "schema_version": 1,
+      "sequence": 3,
+      "territory": "surge-two",
+      "to": "building"
+    },
+    {
+      "agent": "surge-one-agent",
+      "class": "surge-engineer",
+      "elapsed_ms": 0,
+      "kind": "territory_registered",
+      "schema_version": 1,
+      "sequence": 4,
+      "territory": "surge-one"
+    },
+    {
+      "agent": "surge-two-agent",
+      "class": "surge-engineer",
+      "elapsed_ms": 0,
+      "kind": "territory_registered",
+      "schema_version": 1,
+      "sequence": 5,
+      "territory": "surge-two"
+    },
+    {
+      "agent": "surge-three-agent",
+      "class": "surge-engineer",
+      "elapsed_ms": 0,
+      "kind": "territory_registered",
+      "schema_version": 1,
+      "sequence": 6,
+      "territory": "surge-three"
+    },
+    {
+      "agent": "surge-one-agent",
+      "elapsed_ms": 0,
+      "kind": "agent_started",
+      "model": "oracle",
+      "schema_version": 1,
+      "sequence": 7,
+      "territory": "surge-one"
+    },
+    {
+      "agent": "surge-two-agent",
+      "elapsed_ms": 0,
+      "kind": "agent_started",
+      "model": "oracle",
+      "schema_version": 1,
+      "sequence": 8,
+      "territory": "surge-two"
+    },
+    {
+      "agent": "surge-three-agent",
+      "elapsed_ms": 0,
+      "kind": "agent_started",
+      "model": "oracle",
+      "schema_version": 1,
+      "sequence": 9,
+      "territory": "surge-three"
+    },
+    {
+      "elapsed_ms": 2001,
+      "from": "building",
+      "kind": "competitor_state_changed",
+      "reason": "milestone verification began",
+      "schema_version": 1,
+      "sequence": 10,
+      "territory": "surge-one",
+      "to": "verifying"
+    },
+    {
+      "elapsed_ms": 2001,
+      "kind": "milestone_evaluation_started",
+      "milestone": "baseline-ready",
+      "schema_version": 1,
+      "sequence": 11,
+      "territory": "surge-one"
+    },
+    {
+      "elapsed_ms": 2001,
+      "from": "building",
+      "kind": "competitor_state_changed",
+      "reason": "milestone verification began",
+      "schema_version": 1,
+      "sequence": 12,
+      "territory": "surge-two",
+      "to": "verifying"
+    },
+    {
+      "elapsed_ms": 2001,
+      "kind": "milestone_evaluation_started",
+      "milestone": "baseline-ready",
+      "schema_version": 1,
+      "sequence": 13,
+      "territory": "surge-two"
+    },
+    {
+      "elapsed_ms": 2001,
+      "from": "building",
+      "kind": "competitor_state_changed",
+      "reason": "milestone verification began",
+      "schema_version": 1,
+      "sequence": 14,
+      "territory": "surge-three",
+      "to": "verifying"
+    },
+    {
+      "elapsed_ms": 2001,
+      "kind": "milestone_evaluation_started",
+      "milestone": "baseline-ready",
+      "schema_version": 1,
+      "sequence": 15,
+      "territory": "surge-three"
+    },
+    {
+      "elapsed_ms": 2082,
+      "evidence": {
+        "health": "ready",
+        "historical_records": 3
+      },
+      "kind": "milestone_passed",
+      "milestone": "baseline-ready",
+      "points": 5,
+      "schema_version": 1,
+      "sequence": 16,
+      "territory": "surge-one"
+    },
+    {
+      "elapsed_ms": 2082,
+      "evidence": {
+        "health": "ready",
+        "historical_records": 3
+      },
+      "kind": "milestone_passed",
+      "milestone": "baseline-ready",
+      "points": 5,
+      "schema_version": 1,
+      "sequence": 17,
+      "territory": "surge-two"
+    },
+    {
+      "elapsed_ms": 2082,
+      "evidence": {
+        "health": "ready",
+        "historical_records": 3
+      },
+      "kind": "milestone_passed",
+      "milestone": "baseline-ready",
+      "points": 5,
+      "schema_version": 1,
+      "sequence": 18,
+      "territory": "surge-three"
+    },
+    {
+      "elapsed_ms": 2082,
+      "kind": "milestone_evaluation_started",
+      "milestone": "priority-first-surge",
+      "schema_version": 1,
+      "sequence": 19,
+      "territory": "surge-one"
+    },
+    {
+      "elapsed_ms": 2082,
+      "kind": "milestone_evaluation_started",
+      "milestone": "priority-first-surge",
+      "schema_version": 1,
+      "sequence": 20,
+      "territory": "surge-two"
+    },
+    {
+      "elapsed_ms": 2082,
+      "kind": "milestone_evaluation_started",
+      "milestone": "priority-first-surge",
+      "schema_version": 1,
+      "sequence": 21,
+      "territory": "surge-three"
+    },
+    {
+      "elapsed_ms": 2277,
+      "evidence": {
+        "optional_pressure": 8,
+        "record": "surge-2a2562c47bced24d",
+        "value": "priority-b75fa5f3696b60eb69bff38f"
+      },
+      "kind": "milestone_passed",
+      "milestone": "priority-first-surge",
+      "points": 20,
+      "schema_version": 1,
+      "sequence": 22,
+      "territory": "surge-one"
+    },
+    {
+      "elapsed_ms": 2277,
+      "evidence": {
+        "optional_pressure": 8,
+        "record": "surge-35a434ae6be6d415",
+        "value": "priority-c8270b531f8044fed62c959e"
+      },
+      "kind": "milestone_passed",
+      "milestone": "priority-first-surge",
+      "points": 20,
+      "schema_version": 1,
+      "sequence": 23,
+      "territory": "surge-two"
+    },
+    {
+      "elapsed_ms": 2277,
+      "evidence": {
+        "optional_pressure": 8,
+        "record": "surge-b3e3d7afe98a67e8",
+        "value": "priority-beb67f2f9c94836eaa98335d"
+      },
+      "kind": "milestone_passed",
+      "milestone": "priority-first-surge",
+      "points": 20,
+      "schema_version": 1,
+      "sequence": 24,
+      "territory": "surge-three"
+    },
+    {
+      "elapsed_ms": 2277,
+      "kind": "milestone_evaluation_started",
+      "milestone": "bounded-optional",
+      "schema_version": 1,
+      "sequence": 25,
+      "territory": "surge-one"
+    },
+    {
+      "elapsed_ms": 2277,
+      "kind": "milestone_evaluation_started",
+      "milestone": "bounded-optional",
+      "schema_version": 1,
+      "sequence": 26,
+      "territory": "surge-two"
+    },
+    {
+      "elapsed_ms": 2277,
+      "kind": "milestone_evaluation_started",
+      "milestone": "bounded-optional",
+      "schema_version": 1,
+      "sequence": 27,
+      "territory": "surge-three"
+    },
+    {
+      "elapsed_ms": 3569,
+      "evidence": {
+        "bounded": true,
+        "requests": 16,
+        "served": 4,
+        "shed": 12
+      },
+      "kind": "milestone_passed",
+      "milestone": "bounded-optional",
+      "points": 15,
+      "schema_version": 1,
+      "sequence": 28,
+      "territory": "surge-one"
+    },
+    {
+      "elapsed_ms": 3569,
+      "evidence": {
+        "bounded": true,
+        "requests": 16,
+        "served": 4,
+        "shed": 12
+      },
+      "kind": "milestone_passed",
+      "milestone": "bounded-optional",
+      "points": 15,
+      "schema_version": 1,
+      "sequence": 29,
+      "territory": "surge-two"
+    },
+    {
+      "elapsed_ms": 3569,
+      "evidence": {
+        "bounded": true,
+        "requests": 16,
+        "served": 5,
+        "shed": 11
+      },
+      "kind": "milestone_passed",
+      "milestone": "bounded-optional",
+      "points": 15,
+      "schema_version": 1,
+      "sequence": 30,
+      "territory": "surge-three"
+    },
+    {
+      "elapsed_ms": 3569,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-peak",
+      "schema_version": 1,
+      "sequence": 31,
+      "territory": "surge-one"
+    },
+    {
+      "elapsed_ms": 3569,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-peak",
+      "schema_version": 1,
+      "sequence": 32,
+      "territory": "surge-two"
+    },
+    {
+      "elapsed_ms": 3569,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-peak",
+      "schema_version": 1,
+      "sequence": 33,
+      "territory": "surge-three"
+    },
+    {
+      "elapsed_ms": 3862,
+      "evidence": {
+        "peak_optional_pressure": 24,
+        "records": [
+          {
+            "id": "peak-1-725a467e09a7",
+            "value": "accepted-1-00503b059957648be6d6"
+          },
+          {
+            "id": "peak-2-2a4ab4125935",
+            "value": "accepted-2-63edfb7cf6fa7c4571fe"
+          },
+          {
+            "id": "peak-3-d3c847b4782b",
+            "value": "accepted-3-fcdc8267dab1e04b64f9"
+          },
+          {
+            "id": "peak-4-adc70d8a1ba2",
+            "value": "accepted-4-2f90b62ac2711cee21ee"
+          }
+        ],
+        "recoverable": true
+      },
+      "kind": "milestone_passed",
+      "milestone": "recover-peak",
+      "points": 25,
+      "schema_version": 1,
+      "sequence": 34,
+      "territory": "surge-one"
+    },
+    {
+      "elapsed_ms": 3862,
+      "evidence": {
+        "peak_optional_pressure": 24,
+        "records": [
+          {
+            "id": "peak-1-85d30d372ac5",
+            "value": "accepted-1-88954d72168f15b41d33"
+          },
+          {
+            "id": "peak-2-cee2cb739475",
+            "value": "accepted-2-027f6614597889a54bb2"
+          },
+          {
+            "id": "peak-3-0a4e97d9595b",
+            "value": "accepted-3-693d9eb121e2843d0d04"
+          },
+          {
+            "id": "peak-4-532731f2a52c",
+            "value": "accepted-4-c016a401076d0959020e"
+          }
+        ],
+        "recoverable": true
+      },
+      "kind": "milestone_passed",
+      "milestone": "recover-peak",
+      "points": 25,
+      "schema_version": 1,
+      "sequence": 35,
+      "territory": "surge-two"
+    },
+    {
+      "elapsed_ms": 3862,
+      "evidence": {
+        "peak_optional_pressure": 24,
+        "records": [
+          {
+            "id": "peak-1-1fcfa8311170",
+            "value": "accepted-1-7b4ab92a382901032a21"
+          },
+          {
+            "id": "peak-2-8715f1b44cbe",
+            "value": "accepted-2-20d7518fe3409f47d816"
+          },
+          {
+            "id": "peak-3-6a84f147b2d9",
+            "value": "accepted-3-588582a559e6e48e04b5"
+          },
+          {
+            "id": "peak-4-85f04aa9b467",
+            "value": "accepted-4-3c9fb8f0604b801ac7e9"
+          }
+        ],
+        "recoverable": true
+      },
+      "kind": "milestone_passed",
+      "milestone": "recover-peak",
+      "points": 25,
+      "schema_version": 1,
+      "sequence": 36,
+      "territory": "surge-three"
+    },
+    {
+      "elapsed_ms": 3862,
+      "kind": "milestone_evaluation_started",
+      "milestone": "restart-under-load",
+      "schema_version": 1,
+      "sequence": 37,
+      "territory": "surge-one"
+    },
+    {
+      "elapsed_ms": 3862,
+      "kind": "milestone_evaluation_started",
+      "milestone": "restart-under-load",
+      "schema_version": 1,
+      "sequence": 38,
+      "territory": "surge-two"
+    },
+    {
+      "elapsed_ms": 3862,
+      "kind": "milestone_evaluation_started",
+      "milestone": "restart-under-load",
+      "schema_version": 1,
+      "sequence": 39,
+      "territory": "surge-three"
+    },
+    {
+      "elapsed_ms": 4697,
+      "evidence": {
+        "record": "restart-80ae96cd0029f7bf",
+        "restart_under_load": true,
+        "value": "durable-085f712ec7760f5bdb7cdcbd"
+      },
+      "kind": "milestone_passed",
+      "milestone": "restart-under-load",
+      "points": 15,
+      "schema_version": 1,
+      "sequence": 40,
+      "territory": "surge-one"
+    },
+    {
+      "elapsed_ms": 4697,
+      "evidence": {
+        "record": "restart-5dd9e098400f38aa",
+        "restart_under_load": true,
+        "value": "durable-c03419b1c95686019a80ac1e"
+      },
+      "kind": "milestone_passed",
+      "milestone": "restart-under-load",
+      "points": 15,
+      "schema_version": 1,
+      "sequence": 41,
+      "territory": "surge-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "Connection closed by 127.0.0.1 port 26004",
+      "elapsed_ms": 4697,
+      "kind": "milestone_failed",
+      "milestone": "restart-under-load",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 42,
+      "territory": "surge-three"
+    },
+    {
+      "elapsed_ms": 4697,
+      "kind": "milestone_evaluation_started",
+      "milestone": "host-reboot",
+      "schema_version": 1,
+      "sequence": 43,
+      "territory": "surge-one"
+    },
+    {
+      "elapsed_ms": 4697,
+      "kind": "milestone_evaluation_started",
+      "milestone": "host-reboot",
+      "schema_version": 1,
+      "sequence": 44,
+      "territory": "surge-two"
+    },
+    {
+      "elapsed_ms": 20699,
+      "evidence": {
+        "historical_records": 3,
+        "reboot": true,
+        "record": "restart-80ae96cd0029f7bf",
+        "value": "durable-085f712ec7760f5bdb7cdcbd"
+      },
+      "kind": "milestone_passed",
+      "milestone": "host-reboot",
+      "points": 20,
+      "schema_version": 1,
+      "sequence": 45,
+      "territory": "surge-one"
+    },
+    {
+      "elapsed_ms": 20699,
+      "from": "verifying",
+      "kind": "competitor_state_changed",
+      "reason": "completion milestone passed",
+      "schema_version": 1,
+      "sequence": 46,
+      "territory": "surge-one",
+      "to": "durable"
+    },
+    {
+      "elapsed_ms": 20699,
+      "kind": "durable_deployment_completed",
+      "schema_version": 1,
+      "sequence": 47,
+      "territory": "surge-one"
+    },
+    {
+      "elapsed_ms": 20699,
+      "from": "running",
+      "kind": "match_state_changed",
+      "schema_version": 1,
+      "sequence": 48,
+      "to": "finished"
+    },
+    {
+      "elapsed_ms": 20699,
+      "kind": "match_finished",
+      "reason": "first durable deployment",
+      "schema_version": 1,
+      "sequence": 49,
+      "winner": "surge-one"
+    },
+    {
+      "elapsed_ms": 20699,
+      "kind": "post_match_drain_started",
+      "pending_agents": 3,
+      "schema_version": 1,
+      "sequence": 50,
+      "timeout_ms": 30000
+    },
+    {
+      "agent": "surge-two-agent",
+      "detail": "oracle bounded optional load and protected durable priority traffic",
+      "elapsed_ms": 20699,
+      "kind": "agent_finished",
+      "schema_version": 1,
+      "sequence": 51,
+      "source": "player",
+      "success": true
+    },
+    {
+      "agent": "surge-two-agent",
+      "cost_microusd": null,
+      "elapsed_ms": 20699,
+      "input_tokens": null,
+      "kind": "usage_charged",
+      "output_tokens": null,
+      "resource_units": 1,
+      "schema_version": 1,
+      "sequence": 52
+    },
+    {
+      "agent": "surge-three-agent",
+      "detail": "oracle bounded optional load and protected durable priority traffic",
+      "elapsed_ms": 20699,
+      "kind": "agent_finished",
+      "schema_version": 1,
+      "sequence": 53,
+      "source": "player",
+      "success": true
+    },
+    {
+      "agent": "surge-three-agent",
+      "cost_microusd": null,
+      "elapsed_ms": 20699,
+      "input_tokens": null,
+      "kind": "usage_charged",
+      "output_tokens": null,
+      "resource_units": 1,
+      "schema_version": 1,
+      "sequence": 54
+    },
+    {
+      "agent": "surge-one-agent",
+      "detail": "oracle bounded optional load and protected durable priority traffic",
+      "elapsed_ms": 20699,
+      "kind": "agent_finished",
+      "schema_version": 1,
+      "sequence": 55,
+      "source": "player",
+      "success": true
+    },
+    {
+      "agent": "surge-one-agent",
+      "cost_microusd": null,
+      "elapsed_ms": 20699,
+      "input_tokens": null,
+      "kind": "usage_charged",
+      "output_tokens": null,
+      "resource_units": 1,
+      "schema_version": 1,
+      "sequence": 56
+    },
+    {
+      "captured_agents": 3,
+      "elapsed_ms": 20699,
+      "kind": "post_match_drain_finished",
+      "schema_version": 1,
+      "sequence": 57,
+      "terminated_agents": 0
+    }
+  ],
+  "match": {
+    "fog_of_war": true,
+    "listed": true,
+    "name": "traffic-surge-oracle-smoke",
+    "slug": "traffic-surge-oracle-smoke"
+  },
+  "provenance": {
+    "adapter_sha256": {
+      "oracle-surge": "ad1bc5952b31c800446cca3f17ca45e13aad8f117efbe1be47e1443bbd166a60"
+    },
+    "arena_id": "traffic-surge",
+    "arena_mode": "buildrace",
+    "compatibility_key": "f46708aea5fa59e9f538856075ef857c3dbf8143f266ebd73821311cb17a34f5",
+    "controller_version": "20260816.0.1",
+    "manifest_sha256": "10f070828b04293942b08ee39c1880bce43d19cca88576616f91c82d64ae28fe",
+    "player_artifacts_sha256": {},
+    "player_brief_sha256": "a670aa5373be9a20ffc1d52efa710b60b145bebc1d8bfd73cdafe475d9c2d8c1",
+    "schema_version": 1,
+    "source_revision": "7a121a24de385f7cd213a7e2e9b691216bb39fc8",
+    "verifier_sha256": "d54bee559061fc2a388d6c95b8d2ce27719d7c21dcb6646201e608b8dca1d27c"
+  },
+  "schema_version": 1,
+  "visualization": {
+    "links": [
+      {
+        "from": "priority",
+        "kind": "traffic",
+        "label": "writes",
+        "to": "service"
+      },
+      {
+        "from": "optional",
+        "kind": "traffic",
+        "label": "surge",
+        "to": "service"
+      },
+      {
+        "from": "service",
+        "kind": "traffic",
+        "label": "prioritize",
+        "to": "admission"
+      },
+      {
+        "from": "admission",
+        "kind": "traffic",
+        "label": "durable",
+        "to": "ledger"
+      },
+      {
+        "from": "supervisor",
+        "kind": "lifecycle",
+        "label": null,
+        "to": "service"
+      },
+      {
+        "from": "host",
+        "kind": "lifecycle",
+        "label": null,
+        "to": "supervisor"
+      }
+    ],
+    "nodes": [
+      {
+        "display_name": "Priority Traffic",
+        "id": "priority",
+        "kind": "client",
+        "milestone": null,
+        "x": 7,
+        "y": 22
+      },
+      {
+        "display_name": "Optional Surge",
+        "id": "optional",
+        "kind": "client",
+        "milestone": "bounded-optional",
+        "x": 7,
+        "y": 76
+      },
+      {
+        "display_name": "Surge Service",
+        "id": "service",
+        "kind": "service",
+        "milestone": "baseline-ready",
+        "x": 39,
+        "y": 48
+      },
+      {
+        "display_name": "Load Boundary",
+        "id": "admission",
+        "kind": "proxy",
+        "milestone": "priority-first-surge",
+        "x": 66,
+        "y": 22
+      },
+      {
+        "display_name": "Priority Ledger",
+        "id": "ledger",
+        "kind": "database",
+        "milestone": "recover-peak",
+        "x": 91,
+        "y": 48
+      },
+      {
+        "display_name": "Service Unit",
+        "id": "supervisor",
+        "kind": "service",
+        "milestone": "restart-under-load",
+        "x": 65,
+        "y": 76
+      },
+      {
+        "display_name": "NixOS Host",
+        "id": "host",
+        "kind": "host",
+        "milestone": "host-reboot",
+        "x": 91,
+        "y": 76
+      }
+    ]
+  },
+  "world": {
+    "agents": {
+      "surge-one-agent": {
+        "cost_microusd": 0,
+        "failure_source": "player",
+        "input_tokens": 0,
+        "model": "oracle",
+        "output_tokens": 0,
+        "resource_units_used": 1,
+        "running": false,
+        "successful": true,
+        "terminal_detail": "oracle bounded optional load and protected durable priority traffic",
+        "terminal_state": "completed",
+        "territory": "surge-one"
+      },
+      "surge-three-agent": {
+        "cost_microusd": 0,
+        "failure_source": "player",
+        "input_tokens": 0,
+        "model": "oracle",
+        "output_tokens": 0,
+        "resource_units_used": 1,
+        "running": false,
+        "successful": true,
+        "terminal_detail": "oracle bounded optional load and protected durable priority traffic",
+        "terminal_state": "completed",
+        "territory": "surge-three"
+      },
+      "surge-two-agent": {
+        "cost_microusd": 0,
+        "failure_source": "player",
+        "input_tokens": 0,
+        "model": "oracle",
+        "output_tokens": 0,
+        "resource_units_used": 1,
+        "running": false,
+        "successful": true,
+        "terminal_detail": "oracle bounded optional load and protected durable priority traffic",
+        "terminal_state": "completed",
+        "territory": "surge-two"
+      }
+    },
+    "elapsed_ms": 20699,
+    "finish_reason": "first durable deployment",
+    "infrastructure_failures": 0,
+    "last_sequence": 57,
+    "match_state": "finished",
+    "territories": {
+      "surge-one": {
+        "agent": "surge-one-agent",
+        "class": "surge-engineer",
+        "competitor_state": "durable",
+        "durable_at_ms": 20699,
+        "elimination_detail": null,
+        "elimination_source": null,
+        "last_health": null,
+        "milestone_points": 100,
+        "milestones": {
+          "baseline-ready": {
+            "evaluating": false,
+            "evidence": {
+              "health": "ready",
+              "historical_records": 3
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 5
+          },
+          "bounded-optional": {
+            "evaluating": false,
+            "evidence": {
+              "bounded": true,
+              "requests": 16,
+              "served": 4,
+              "shed": 12
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 15
+          },
+          "host-reboot": {
+            "evaluating": false,
+            "evidence": {
+              "historical_records": 3,
+              "reboot": true,
+              "record": "restart-80ae96cd0029f7bf",
+              "value": "durable-085f712ec7760f5bdb7cdcbd"
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 20
+          },
+          "priority-first-surge": {
+            "evaluating": false,
+            "evidence": {
+              "optional_pressure": 8,
+              "record": "surge-2a2562c47bced24d",
+              "value": "priority-b75fa5f3696b60eb69bff38f"
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 20
+          },
+          "recover-peak": {
+            "evaluating": false,
+            "evidence": {
+              "peak_optional_pressure": 24,
+              "records": [
+                {
+                  "id": "peak-1-725a467e09a7",
+                  "value": "accepted-1-00503b059957648be6d6"
+                },
+                {
+                  "id": "peak-2-2a4ab4125935",
+                  "value": "accepted-2-63edfb7cf6fa7c4571fe"
+                },
+                {
+                  "id": "peak-3-d3c847b4782b",
+                  "value": "accepted-3-fcdc8267dab1e04b64f9"
+                },
+                {
+                  "id": "peak-4-adc70d8a1ba2",
+                  "value": "accepted-4-2f90b62ac2711cee21ee"
+                }
+              ],
+              "recoverable": true
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 25
+          },
+          "restart-under-load": {
+            "evaluating": false,
+            "evidence": {
+              "record": "restart-80ae96cd0029f7bf",
+              "restart_under_load": true,
+              "value": "durable-085f712ec7760f5bdb7cdcbd"
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 15
+          }
+        },
+        "resources": 0,
+        "state": "provisioning"
+      },
+      "surge-three": {
+        "agent": "surge-three-agent",
+        "class": "surge-engineer",
+        "competitor_state": "verifying",
+        "durable_at_ms": null,
+        "elimination_detail": null,
+        "elimination_source": null,
+        "last_health": null,
+        "milestone_points": 65,
+        "milestones": {
+          "baseline-ready": {
+            "evaluating": false,
+            "evidence": {
+              "health": "ready",
+              "historical_records": 3
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 5
+          },
+          "bounded-optional": {
+            "evaluating": false,
+            "evidence": {
+              "bounded": true,
+              "requests": 16,
+              "served": 5,
+              "shed": 11
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 15
+          },
+          "priority-first-surge": {
+            "evaluating": false,
+            "evidence": {
+              "optional_pressure": 8,
+              "record": "surge-b3e3d7afe98a67e8",
+              "value": "priority-beb67f2f9c94836eaa98335d"
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 20
+          },
+          "recover-peak": {
+            "evaluating": false,
+            "evidence": {
+              "peak_optional_pressure": 24,
+              "records": [
+                {
+                  "id": "peak-1-1fcfa8311170",
+                  "value": "accepted-1-7b4ab92a382901032a21"
+                },
+                {
+                  "id": "peak-2-8715f1b44cbe",
+                  "value": "accepted-2-20d7518fe3409f47d816"
+                },
+                {
+                  "id": "peak-3-6a84f147b2d9",
+                  "value": "accepted-3-588582a559e6e48e04b5"
+                },
+                {
+                  "id": "peak-4-85f04aa9b467",
+                  "value": "accepted-4-3c9fb8f0604b801ac7e9"
+                }
+              ],
+              "recoverable": true
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 25
+          },
+          "restart-under-load": {
+            "evaluating": false,
+            "evidence": null,
+            "failure_category": "verification_failed",
+            "failure_detail": "Connection closed by 127.0.0.1 port 26004",
+            "passed": false,
+            "points": 0
+          }
+        },
+        "resources": 0,
+        "state": "provisioning"
+      },
+      "surge-two": {
+        "agent": "surge-two-agent",
+        "class": "surge-engineer",
+        "competitor_state": "verifying",
+        "durable_at_ms": null,
+        "elimination_detail": null,
+        "elimination_source": null,
+        "last_health": null,
+        "milestone_points": 80,
+        "milestones": {
+          "baseline-ready": {
+            "evaluating": false,
+            "evidence": {
+              "health": "ready",
+              "historical_records": 3
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 5
+          },
+          "bounded-optional": {
+            "evaluating": false,
+            "evidence": {
+              "bounded": true,
+              "requests": 16,
+              "served": 4,
+              "shed": 12
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 15
+          },
+          "host-reboot": {
+            "evaluating": true,
+            "evidence": null,
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": false,
+            "points": 0
+          },
+          "priority-first-surge": {
+            "evaluating": false,
+            "evidence": {
+              "optional_pressure": 8,
+              "record": "surge-35a434ae6be6d415",
+              "value": "priority-c8270b531f8044fed62c959e"
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 20
+          },
+          "recover-peak": {
+            "evaluating": false,
+            "evidence": {
+              "peak_optional_pressure": 24,
+              "records": [
+                {
+                  "id": "peak-1-85d30d372ac5",
+                  "value": "accepted-1-88954d72168f15b41d33"
+                },
+                {
+                  "id": "peak-2-cee2cb739475",
+                  "value": "accepted-2-027f6614597889a54bb2"
+                },
+                {
+                  "id": "peak-3-0a4e97d9595b",
+                  "value": "accepted-3-693d9eb121e2843d0d04"
+                },
+                {
+                  "id": "peak-4-532731f2a52c",
+                  "value": "accepted-4-c016a401076d0959020e"
+                }
+              ],
+              "recoverable": true
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 25
+          },
+          "restart-under-load": {
+            "evaluating": false,
+            "evidence": {
+              "record": "restart-5dd9e098400f38aa",
+              "restart_under_load": true,
+              "value": "durable-c03419b1c95686019a80ac1e"
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 15
+          }
+        },
+        "resources": 0,
+        "state": "provisioning"
+      }
+    },
+    "winner": "surge-one"
+  }
+}

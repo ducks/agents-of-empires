@@ -1,0 +1,1593 @@
+{
+  "analyses": {
+    "deepseek": {
+      "actions": [
+        {
+          "command": "ls -la /opt/rollout/ /var/lib/rollout/ 2>&1; echo \"---SERVICES---\"; systemctl status rollout-v1.service rollout-v2.service rollout-proxy.service --no-pager 2>&1",
+          "description": "Inspect rollout directories and service status",
+          "duration_ms": 103,
+          "index": 0,
+          "kind": "validation",
+          "output_excerpt": "/opt/rollout/:\ntotal 8\ndrwxr-xr-x 2 root root 4096 Sep 10 15:42 .\ndrwxr-xr-x 3 root root 4096 Sep 10 15:42 ..\n\n/var/lib/rollout/:\ntotal 24\ndrwxr-xr-x 2 root root  4096 Sep 10 15:42 .\ndrwxr-xr-x 9 root root  4096 Sep 10 15:42 ..\n-rw-r--r-- 1 root root 12288 Sep 10 15:42 records.sq…",
+          "started_after_ms": 1584,
+          "success": false,
+          "tool_id": "call_00_xxqsIAJaya0bWnywXcu55625"
+        },
+        {
+          "command": "echo \"=== v1 unit ===\"; cat /etc/systemd/system/rollout-v1.service 2>&1; echo \"=== v2 unit ===\"; cat /etc/systemd/system/rollout-v2.service 2>&1; echo \"=== proxy unit ===\"; cat /etc/systemd/system/rollout-proxy.service 2>&1",
+          "description": "Read systemd unit files",
+          "duration_ms": 58,
+          "index": 1,
+          "kind": "discovery",
+          "output_excerpt": "=== v1 unit ===\n[Unit]\nAfter=rollout-seed.service\nDescription=Existing rollout v1 service\nRequires=rollout-seed.service\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE=/nix/store/c59mcax29xrwyfdqs308wkmn2srnmzkn-glibc-locales-2.42-67/lib/locale/locale-archive\"\nEnvironment=\"PATH=/nix/store…",
+          "started_after_ms": 1687,
+          "success": true,
+          "tool_id": "call_01_OjYTX6J7Gx1BagJlb8sn9519"
+        },
+        {
+          "command": "echo \"=== PROXY SOURCE ===\"; cat /nix/store/08ib8hkpsxizx3zrsv266idphl0r1hgb-rollout-proxy.py; echo; echo \"=== V1 SOURCE ===\"; cat /nix/store/13qi755lbgrlrh6c5jqjdlpf1f7nvffv-rollout-v1.py",
+          "description": "Read proxy and v1 source",
+          "duration_ms": 36,
+          "index": 2,
+          "kind": "discovery",
+          "output_excerpt": "=== PROXY SOURCE ===\nimport http.client\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n\nUPSTREAM = \"/var/lib/rollout/upstream\"\n\nclass Handler(BaseHTTPRequestHandler):\n    def forward(self):\n        try:\n            with open(UPSTREAM) as source:\n             …",
+          "started_after_ms": 4046,
+          "success": true,
+          "tool_id": "call_00_iqIdni361OdAJUKvGJaQ6635"
+        },
+        {
+          "command": "echo \"=== upstream ===\"; cat /var/lib/rollout/upstream; echo; echo \"=== seed service ===\"; cat /etc/systemd/system/rollout-seed.service 2>&1; echo \"=== records schema ===\"; sqlite3 /var/lib/rollout/records.sqlite3 \".schema\" 2>&1; echo \"=== records ===\"; sqlite3 /var/lib/rollout/records.sqlite3 \"SELECT * FROM records;\" 2>&1",
+          "description": "Check upstream file, seed service, and records db",
+          "duration_ms": 70,
+          "index": 3,
+          "kind": "mutation",
+          "output_excerpt": "=== upstream ===\n8081\n\n=== seed service ===\n[Unit]\nBefore=rollout-v1.service rollout-v2.service rollout-proxy.service\nDescription=Seed live v1 state\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE=/nix/store/c59mcax29xrwyfdqs308wkmn2srnmzkn-glibc-locales-2.42-67/lib/locale/locale-archive\"…",
+          "started_after_ms": 4082,
+          "success": true,
+          "tool_id": "call_01_BkYmM7mAlUMyYVGbVe928517"
+        },
+        {
+          "command": "cat /nix/store/44ql83wxi6z28pk20x4179khgs5i5anf-unit-script-rollout-seed-start/bin/rollout-seed-start 2>&1",
+          "description": "Read seed script",
+          "duration_ms": 25,
+          "index": 4,
+          "kind": "discovery",
+          "output_excerpt": "#!/nix/store/byi2zpy2bgcf3dr6y0l8m50rmjj8z7q1-bash-5.3p15/bin/bash\nset -e\n\ninstall -d -m 0755 /var/lib/rollout /opt/rollout\nif [[ ! -e /var/lib/rollout/upstream ]]; then\n  printf '8081\\n' > /var/lib/rollout/upstream\nfi\n/nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bi…",
+          "started_after_ms": 8682,
+          "success": true,
+          "tool_id": "call_00_zchSGlSDBl43o5olEet34280"
+        },
+        {
+          "command": "echo \"=== all rollout units ===\"; ls -la /etc/systemd/system/ | grep -i rollout; echo \"=== is-enabled ===\"; systemctl is-enabled rollout-v1.service rollout-v2.service rollout-proxy.service rollout-seed.service 2>&1; echo \"=== listening ports ===\"; ss -tlnp 2>/dev/null | grep -E '8080|8081|8082' || netstat -tlnp 2>/dev/null | grep -E '8080|8081|8082'",
+          "description": "List rollout units and listening ports",
+          "duration_ms": 201,
+          "index": 5,
+          "kind": "validation",
+          "output_excerpt": "=== all rollout units ===\nlrwxrwxrwx  1 root root      92 Jan  1  1970 rollout-proxy.service -> /nix/store/zs0l8ds3rl62nabiwjfgz8bykpp6z6kn-unit-rollout-proxy.service/rollout-proxy.service\nlrwxrwxrwx  1 root root      90 Jan  1  1970 rollout-seed.service -> /nix/store/0ky46lp0ljm…",
+          "started_after_ms": 8708,
+          "success": true,
+          "tool_id": "call_01_uiaU5Fm1C1B0J54G4NHc8290"
+        }
+      ],
+      "agent": "deepseek",
+      "analyzer": "aoe-controller/20260816.0.1",
+      "architecture": {
+        "persistent_paths": [
+          "/etc/systemd/system",
+          "/etc/systemd/system/rollout-proxy.service",
+          "/etc/systemd/system/rollout-seed.service",
+          "/etc/systemd/system/rollout-v1.service",
+          "/etc/systemd/system/rollout-v2.service",
+          "/opt/rollout",
+          "/var/lib/rollout",
+          "/var/lib/rollout/records.sqlite3",
+          "/var/lib/rollout/upstream"
+        ],
+        "service_units": [
+          "etc/systemd/system/rollout-proxy.service",
+          "etc/systemd/system/rollout-seed.service",
+          "etc/systemd/system/rollout-v1.service",
+          "etc/systemd/system/rollout-v2.service",
+          "rollout-proxy.service",
+          "rollout-seed.service",
+          "rollout-v1.service",
+          "rollout-v2.service"
+        ],
+        "technologies": [
+          "Python",
+          "SQLite",
+          "systemd"
+        ]
+      },
+      "metrics": {
+        "discoveries": 3,
+        "first_mutation_after_ms": 4082,
+        "last_observed_after_ms": 8909,
+        "lifecycle_actions": 0,
+        "mutations": 1,
+        "tool_calls": 6,
+        "tool_errors": 1,
+        "validations": 2
+      },
+      "model": "deepseek/deepseek-v4.1-flash",
+      "outcome": "error",
+      "schema_version": 1,
+      "source_sha256": "d7cc7bbccc01af926831d464b1d1c233b7d15c77e576827bf69b131ba479d3dd",
+      "territory": "rollout-three"
+    },
+    "glm": {
+      "actions": [
+        {
+          "command": "ls -la /opt/rollout/ 2>/dev/null; echo \"---\"; ls -la /var/lib/rollout/ 2>/dev/null; echo \"---\"; cat /var/lib/rollout/upstream 2>/dev/null; echo \"---\"; systemctl status rollout-v1.service rollout-proxy.service rollout-v2.service --no-pager 2>&1 | head -50",
+          "description": "Inspect rollout service state and files",
+          "duration_ms": 90,
+          "index": 0,
+          "kind": "validation",
+          "output_excerpt": "total 8\ndrwxr-xr-x 2 root root 4096 Sep 10 15:42 .\ndrwxr-xr-x 3 root root 4096 Sep 10 15:42 ..\n---\ntotal 24\ndrwxr-xr-x 2 root root  4096 Sep 10 15:42 .\ndrwxr-xr-x 9 root root  4096 Sep 10 15:42 ..\n-rw-r--r-- 1 root root 12288 Sep 10 15:42 records.sqlite3\n-rw-r--r-- 1 root root   …",
+          "started_after_ms": 2297,
+          "success": true,
+          "tool_id": "call_bc5420765c2345fd8f85bc15"
+        },
+        {
+          "command": "cat /etc/systemd/system/rollout-v1.service /etc/systemd/system/rollout-v2.service /etc/systemd/system/rollout-proxy.service",
+          "description": "Read systemd unit files",
+          "duration_ms": 24,
+          "index": 1,
+          "kind": "discovery",
+          "output_excerpt": "[Unit]\nAfter=rollout-seed.service\nDescription=Existing rollout v1 service\nRequires=rollout-seed.service\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE=/nix/store/c59mcax29xrwyfdqs308wkmn2srnmzkn-glibc-locales-2.42-67/lib/locale/locale-archive\"\nEnvironment=\"PATH=/nix/store/97d5ygrvqj55f4n…",
+          "started_after_ms": 6685,
+          "success": true,
+          "tool_id": "call_ae967c85137146279b6794d3"
+        },
+        {
+          "command": "cat /nix/store/13qi755lbgrlrh6c5jqjdlpf1f7nvffv-rollout-v1.py; echo \"=== PROXY ===\"; cat /nix/store/08ib8hkpsxizx3zrsv266idphl0r1hgb-rollout-proxy.py",
+          "description": "Read v1 and proxy source code",
+          "duration_ms": 48,
+          "index": 2,
+          "kind": "discovery",
+          "output_excerpt": "import sqlite3\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n\nDB = \"/var/lib/rollout/records.sqlite3\"\n\ndef database():\n    connection = sqlite3.connect(DB, timeout=10)\n    connection.execute(\"CREATE TABLE IF NOT EXISTS records (id TEXT PRIMARY KEY, value TEX…",
+          "started_after_ms": 6710,
+          "success": true,
+          "tool_id": "call_7661ddcfb2374a8899c10ccc"
+        },
+        {
+          "command": "command -v sqlite3 || python3 -c \"\nimport sqlite3\nc = sqlite3.connect('/var/lib/rollout/records.sqlite3')\nprint(c.execute(\\\"select name, sql from sqlite_master\\\").fetchall())\nprint(c.execute(\\\"select * from records limit 10\\\").fetchall())\n\"",
+          "description": "Inspect sqlite schema and records",
+          "duration_ms": 24,
+          "index": 3,
+          "kind": "mutation",
+          "output_excerpt": "/run/current-system/sw/bin/sqlite3",
+          "started_after_ms": 6758,
+          "success": true,
+          "tool_id": "call_51b9d67a2ede4ba3af1b946b"
+        },
+        {
+          "command": "sqlite3 /var/lib/rollout/records.sqlite3 \".schema\" \"select id, value from records;\"",
+          "description": "Dump existing records",
+          "duration_ms": 58,
+          "index": 4,
+          "kind": "mutation",
+          "output_excerpt": "CREATE TABLE records (id TEXT PRIMARY KEY, value TEXT NOT NULL);\ncustomer-alpha-73c|alpha-original\ncustomer-beta-a19|beta-original",
+          "started_after_ms": 19362,
+          "success": true,
+          "tool_id": "call_97f6c0771288403787471a53"
+        },
+        {
+          "command": "echo \"health: $(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/health) body=$(curl -s http://127.0.0.1:8080/health)\"; echo \"version: $(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/version) body=$(curl -s http://127.0.0.1:8080/version)\"",
+          "description": "Baseline public endpoint health and version",
+          "duration_ms": 205,
+          "index": 5,
+          "kind": "validation",
+          "output_excerpt": "health: 200 body=ready\nversion: 200 body=v1",
+          "started_after_ms": 19421,
+          "success": true,
+          "tool_id": "call_a96639f39208411286d8d0aa"
+        },
+        {
+          "command": "Write /opt/rollout/v2.py",
+          "description": null,
+          "duration_ms": 0,
+          "index": 6,
+          "kind": "mutation",
+          "output_excerpt": "Successfully wrote to /opt/rollout/v2.py",
+          "started_after_ms": 27618,
+          "success": true,
+          "tool_id": "call_1d42e1addd3045bbafd8c430"
+        },
+        {
+          "command": "systemctl reset-failed rollout-v2.service && systemctl start rollout-v2.service && sleep 1 && systemctl is-active rollout-v2.service",
+          "description": "Start rollout-v2 service",
+          "duration_ms": 1088,
+          "index": 7,
+          "kind": "lifecycle",
+          "output_excerpt": "active",
+          "started_after_ms": 29472,
+          "success": true,
+          "tool_id": "call_b71904cfad764b2cb9d76d87"
+        },
+        {
+          "command": "echo \"health: $(curl -s -w '|%{http_code}' http://127.0.0.1:8082/health)\"; echo \"version: $(curl -s -w '|%{http_code}' http://127.0.0.1:8082/version)\"; echo \"alpha: $(curl -s -w '|%{http_code}' http://127.0.0.1:8082/records/customer-alpha-73c)\"; echo \"beta: $(curl -s -w '|%{http_code}' http://127.0.0.1:8082/records/customer-beta-a19)\"; echo \"absent: $(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8082/records/no-such-id)\"",
+          "description": "Verify v2 directly on port 8082",
+          "duration_ms": 4335,
+          "index": 8,
+          "kind": "validation",
+          "output_excerpt": "health: ready|200\nversion: v2|200\nalpha: alpha-original|200\nbeta: beta-original|200\nabsent: 404",
+          "started_after_ms": 34346,
+          "success": true,
+          "tool_id": "call_4bf9e7ab012c41e896b32af1"
+        },
+        {
+          "command": "curl -s -o /dev/null -w 'put:%{http_code} ' -X PUT --data-binary 'test-payload-Δ' http://127.0.0.1:8082/records/__cutover_probe__; curl -s -w '|%{http_code}\\n' http://127.0.0.1:8082/records/__cutover_probe__; sqlite3 /var/lib/rollout/records.sqlite3 \"delete from records where id='__cutover_probe__';\" && echo \"probe removed\"",
+          "description": "Test v2 PUT/GET round-trip then clean up",
+          "duration_ms": 130,
+          "index": 9,
+          "kind": "mutation",
+          "output_excerpt": "put:204 test-payload-Δ|200\nprobe removed",
+          "started_after_ms": 46114,
+          "success": true,
+          "tool_id": "call_3b5816c498c54b5daa4c27b8"
+        },
+        {
+          "command": "cat > /tmp/cutover-monitor.sh <<'EOF'\n#!/bin/bash\nLOG=/tmp/cutover-monitor.log\n: > \"$LOG\"\nfails=0; total=0\nend=$((SECONDS+20))\nwhile [ $SECONDS -lt $end ]; do\n  for path in /health /version /records/customer-alpha-73c /records/customer-beta-a19; do\n    body=$(curl -s --max-time 2 \"http://127.0.0.1:8080$path\")\n    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 \"http://127.0.0.1:8080$path\")\n    total=$((total+1))\n    case \"$path:$code:$body\" in\n      \"/health:200:ready\"|\"/version:200:v1\"|\"/version:200:v2\"|\"/records/customer-alpha-73c:200:alpha-original\"|\"/records/customer-beta-a19:200:beta-original\") ;;\n      *) fails=$((fails+1)); echo \"FAIL $path code=$code body=$body at $(date +…",
+          "description": "Create zero-downtime monitor script",
+          "duration_ms": 36,
+          "index": 10,
+          "kind": "mutation",
+          "output_excerpt": null,
+          "started_after_ms": 56392,
+          "success": true,
+          "tool_id": "call_0a70fbc588554372811e7209"
+        },
+        {
+          "command": "/tmp/cutover-monitor.sh",
+          "description": "Run public endpoint monitor during cutover",
+          "duration_ms": 0,
+          "index": 11,
+          "kind": "discovery",
+          "output_excerpt": "Tool Bash failed: Background jobs require an interactive session. Run this Bash command in the foreground instead.",
+          "started_after_ms": 57567,
+          "success": false,
+          "tool_id": "call_557f5b9b7f1a48c0b453c938"
+        },
+        {
+          "command": "nohup /tmp/cutover-monitor.sh >/dev/null 2>&1 & disown; echo \"monitor pid $!\"; sleep 2; tail -5 /tmp/cutover-monitor.log",
+          "description": "Launch monitor detached via nohup",
+          "duration_ms": 2050,
+          "index": 12,
+          "kind": "discovery",
+          "output_excerpt": "monitor pid 8732\n\ntail: cannot open '/tmp/cutover-monitor.log' for reading: No such file or directory\n\nExit code: exit status: 1",
+          "started_after_ms": 59446,
+          "success": false,
+          "tool_id": "call_6b5e93c4a85e46d2b6c2bc86"
+        },
+        {
+          "command": "ps aux | grep -F cutover-monitor | grep -v grep; ls -la /tmp/cutover-monitor.*",
+          "description": "Check monitor process and log existence",
+          "duration_ms": 88,
+          "index": 13,
+          "kind": "discovery",
+          "output_excerpt": "-rwxr-xr-x 1 root root 747 Sep 10 15:43 /tmp/cutover-monitor.sh",
+          "started_after_ms": 69942,
+          "success": true,
+          "tool_id": "call_f08d4cdb22a04f758acea9d8"
+        },
+        {
+          "command": "cat > /tmp/cutover-monitor.sh <<'EOF'\n#!/bin/bash\nLOG=/tmp/cutover-monitor.log\n: > \"$LOG\"\nfails=0; total=0\ncheck() {\n  local path=\"$1\" expect=\"$2\"\n  local out code body\n  out=$(curl -s -w '\\n%{http_code}' --max-time 2 \"http://127.0.0.1:8080$path\")\n  code=\"${out##*$'\\n'}\"; body=\"${out%$'\\n'*}\"\n  total=$((total+1))\n  if [ \"$code\" = \"200\" ] && [ \"$body\" = \"$expect\" ]; then return 0; fi\n  fails=$((fails+1)); echo \"FAIL $path code=$code body=$body at $(date +%s.%N)\" >> \"$LOG\"\n}\nfor i in $(seq 1 60); do\n  check /health ready\n  check /records/customer-alpha-73c alpha-original\n  check /records/customer-beta-a19 beta-original\n  if [ \"$i\" -eq 20 ]; then\n    printf '8082' > /var/lib/rollout/upstream.tm…",
+          "description": "Run monitored atomic cutover from v1 to v2",
+          "duration_ms": 102,
+          "index": 14,
+          "kind": "mutation",
+          "output_excerpt": "=== LOG ===\n\nsh: /tmp/cutover-monitor.sh: /bin/bash: bad interpreter: No such file or directory\ncat: /tmp/cutover-monitor.log: No such file or directory\n\nExit code: exit status: 1",
+          "started_after_ms": 80153,
+          "success": false,
+          "tool_id": "call_18d9650dffbe485383e769cd"
+        },
+        {
+          "command": "command -v bash sh; ls /bin/ 2>/dev/null | head; ls /run/current-system/sw/bin/ | head -30",
+          "description": "Locate bash and available shells",
+          "duration_ms": 89,
+          "index": 15,
+          "kind": "discovery",
+          "output_excerpt": "/run/current-system/sw/bin/bash\n/run/current-system/sw/bin/sh\nsh\n[\naccessdb\naddpart\nagetty\napropos\narpd\narping\narptables\narptables-nft\narptables-nft-restore\narptables-nft-save\narptables-restore\narptables-save\narptables-translate\nattr\nawk\nb2sum\nbadblocks\nbase32\nbase64\nbasename\nbas…",
+          "started_after_ms": 82299,
+          "success": true,
+          "tool_id": "call_c94dcfdd59294a18bf57bf28"
+        },
+        {
+          "command": "sed -i '1s|.*|#!/run/current-system/sw/bin/bash|' /tmp/cutover-monitor.sh && /tmp/cutover-monitor.sh; echo \"=== LOG ===\"; cat /tmp/cutover-monitor.log",
+          "description": "Run monitored atomic cutover from v1 to v2",
+          "duration_ms": 55712,
+          "index": 16,
+          "kind": "mutation",
+          "output_excerpt": "=== LOG ===\nFAIL /records/customer-alpha-73c code=000 body= at 1789055048.299639061\nFAIL /records/customer-beta-a19 code=000 body= at 1789055050.408314581\nFAIL /version code=000 body= at 1789055052.513339151\nFAIL /health code=000 body= at 1789055057.926808408\nFAIL /records/custom…",
+          "started_after_ms": 83934,
+          "success": true,
+          "tool_id": "call_06964384d5414de58e17b9b1"
+        }
+      ],
+      "agent": "glm",
+      "analyzer": "aoe-controller/20260816.0.1",
+      "architecture": {
+        "persistent_paths": [
+          "/etc/systemd/system/rollout-proxy.service",
+          "/etc/systemd/system/rollout-v1.service",
+          "/etc/systemd/system/rollout-v2.service",
+          "/opt/rollout",
+          "/opt/rollout/v2.py",
+          "/var/lib/rollout",
+          "/var/lib/rollout/records.sqlite3",
+          "/var/lib/rollout/upstream",
+          "/var/lib/rollout/upstream.tmp"
+        ],
+        "service_units": [
+          "etc/systemd/system/rollout-proxy.service",
+          "etc/systemd/system/rollout-v1.service",
+          "etc/systemd/system/rollout-v2.service",
+          "rollout-proxy.service",
+          "rollout-v1.service",
+          "rollout-v2.service"
+        ],
+        "technologies": [
+          "Python",
+          "SQLite",
+          "systemd"
+        ]
+      },
+      "metrics": {
+        "discoveries": 6,
+        "first_mutation_after_ms": 6758,
+        "last_observed_after_ms": 139646,
+        "lifecycle_actions": 1,
+        "mutations": 7,
+        "tool_calls": 17,
+        "tool_errors": 3,
+        "validations": 3
+      },
+      "model": "z-ai/glm-5.3",
+      "outcome": "running",
+      "schema_version": 1,
+      "source_sha256": "33ee4f3e528bbc456a529a08d9daed79663adc4390614cf7d898790e7fb55bf3",
+      "territory": "rollout-two"
+    },
+    "luna": {
+      "actions": [
+        {
+          "command": "systemctl status --no-pager rollout-v1.service rollout-v2.service rollout-proxy.service; printf '\\n--- upstream ---\\n'; stat /var/lib/rollout/upstream; printf 'value='; tr -d '\\n' </var/lib/rollout/upstream; printf '\\n'",
+          "description": "Inspect rollout service status and upstream",
+          "duration_ms": 93,
+          "index": 1,
+          "kind": "validation",
+          "output_excerpt": "● rollout-v1.service - Existing rollout v1 service\n     Loaded: loaded (/etc/systemd/system/rollout-v1.service; enabled; preset: ignored)\n     Active: active (running) since Thu 2026-09-10 15:42:34 UTC; 15s ago\n Invocation: a30683eccbdf4253b6a8f86cba510043\n   Main PID: 553 (pytho…",
+          "started_after_ms": 7641,
+          "success": true,
+          "tool_id": "call_PT3bWJ09Eo4WLwdkWnhmOldP"
+        },
+        {
+          "command": "Glob {\"include_build_dirs\":true,\"include_hidden\":true,\"path\":\"/opt/rollout\",\"pattern\":\"**/*\"}",
+          "description": null,
+          "duration_ms": 0,
+          "index": 2,
+          "kind": "discovery",
+          "output_excerpt": "No matches found",
+          "started_after_ms": 7734,
+          "success": true,
+          "tool_id": "call_VxayxRLfpHNJmUyG4Ah0jpS3"
+        },
+        {
+          "command": "ls -la /var/lib/rollout; sqlite3 /var/lib/rollout/records.sqlite3 '.schema' 2>&1; printf '\\n--- records ---\\n'; sqlite3 /var/lib/rollout/records.sqlite3 'select quote(id), length(body) from records order by id;' 2>&1",
+          "description": "Inspect rollout database and state",
+          "duration_ms": 58,
+          "index": 3,
+          "kind": "mutation",
+          "output_excerpt": "total 24\ndrwxr-xr-x 2 root root  4096 Sep 10 15:42 .\ndrwxr-xr-x 9 root root  4096 Sep 10 15:42 ..\n-rw-r--r-- 1 root root 12288 Sep 10 15:42 records.sqlite3\n-rw-r--r-- 1 root root     5 Sep 10 15:42 upstream\nCREATE TABLE records (id TEXT PRIMARY KEY, value TEXT NOT NULL);\n\n--- rec…",
+          "started_after_ms": 7734,
+          "success": false,
+          "tool_id": "call_pusiGx4QE2Wn2gKD8iL6O0WI"
+        },
+        {
+          "command": "ss -ltnp | grep -E ':(8080|8081|8082)\\b' || true; printf '\\n--- units ---\\n'; systemctl cat rollout-v1.service rollout-v2.service rollout-proxy.service",
+          "description": "Inspect listeners and unit definitions",
+          "duration_ms": 115,
+          "index": 4,
+          "kind": "validation",
+          "output_excerpt": "LISTEN 0      5          127.0.0.1:8081       0.0.0.0:*    users:((\"python\",pid=553,fd=3))\nLISTEN 0      5            0.0.0.0:8080       0.0.0.0:*    users:((\"python\",pid=554,fd=3))\n\n--- units ---\n# /etc/systemd/system/rollout-v1.service -> /nix/store/rcrgmhnjq004n1y7kzpbn6mp5mxf…",
+          "started_after_ms": 7793,
+          "success": true,
+          "tool_id": "call_lFhqKdRyOMPMrtN3X8yMvvGN"
+        },
+        {
+          "command": "Read /opt/rollout/v2.py",
+          "description": null,
+          "duration_ms": 0,
+          "index": 5,
+          "kind": "discovery",
+          "output_excerpt": "File does not exist: /opt/rollout/v2.py",
+          "started_after_ms": 11076,
+          "success": false,
+          "tool_id": "call_Ma2BehAceLac3IPSvFU0KBQj"
+        },
+        {
+          "command": "Read /nix/store/13qi755lbgrlrh6c5jqjdlpf1f7nvffv-rollout-v1.py",
+          "description": null,
+          "duration_ms": 0,
+          "index": 6,
+          "kind": "discovery",
+          "output_excerpt": "1\timport sqlite3\n2\tfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n3\t\n4\tDB = \"/var/lib/rollout/records.sqlite3\"\n5\t\n6\tdef database():\n7\t    connection = sqlite3.connect(DB, timeout=10)\n8\t    connection.execute(\"CREATE TABLE IF NOT EXISTS records (id TEXT PRIMAR…",
+          "started_after_ms": 11077,
+          "success": true,
+          "tool_id": "call_vBkyAS7eszSdhJqaWeCuz3T4"
+        },
+        {
+          "command": "Read /nix/store/08ib8hkpsxizx3zrsv266idphl0r1hgb-rollout-proxy.py",
+          "description": null,
+          "duration_ms": 0,
+          "index": 7,
+          "kind": "discovery",
+          "output_excerpt": "1\timport http.client\n2\tfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n3\t\n4\tUPSTREAM = \"/var/lib/rollout/upstream\"\n5\t\n6\tclass Handler(BaseHTTPRequestHandler):\n7\t    def forward(self):\n8\t        try:\n9\t            with open(UPSTREAM) as source:\n10\t             …",
+          "started_after_ms": 11077,
+          "success": true,
+          "tool_id": "call_QsYObz08E2XhhvE2J8t7tzLm"
+        },
+        {
+          "command": "journalctl -u rollout-v2.service -n 80 --no-pager; printf '\\n--- data ---\\n'; sqlite3 /var/lib/rollout/records.sqlite3 'select quote(id), quote(value), length(value) from records order by id;'",
+          "description": "Inspect v2 failure and existing records",
+          "duration_ms": 35,
+          "index": 8,
+          "kind": "mutation",
+          "output_excerpt": "Sep 10 15:42:34 rollout-one systemd[1]: Started Agent-built rollout v2 slot.\nSep 10 15:42:34 rollout-one python[556]: /nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python: can't open file '/opt/rollout/v2.py': [Errno 2] No such file or directory\nSep 10 15:42:34 r…",
+          "started_after_ms": 11077,
+          "success": true,
+          "tool_id": "call_yo48dfsjoQ2wAc78IMN0K34X"
+        },
+        {
+          "command": "Write /opt/rollout/v2.py",
+          "description": null,
+          "duration_ms": 0,
+          "index": 9,
+          "kind": "mutation",
+          "output_excerpt": "Successfully wrote to /opt/rollout/v2.py",
+          "started_after_ms": 21758,
+          "success": true,
+          "tool_id": "call_sHatvR5pbiqvAKCRBWnj0gxN"
+        },
+        {
+          "command": "set -eu\npython3 -m py_compile /opt/rollout/v2.py\nsystemctl reset-failed rollout-v2.service\nsystemctl start rollout-v2.service\nsystemctl enable rollout-v2.service\nsystemctl is-active rollout-v2.service\nsystemctl is-enabled rollout-v2.service\nss -ltnp | grep -E ':8082\\b'",
+          "description": "Validate and start v2 service",
+          "duration_ms": 1164,
+          "index": 11,
+          "kind": "lifecycle",
+          "output_excerpt": "active\nenabled\nLISTEN 0      5          127.0.0.1:8082       0.0.0.0:*    users:((\"python\",pid=3447,fd=3))",
+          "started_after_ms": 27290,
+          "success": true,
+          "tool_id": "call_Yh7qflS5hMxur9Ai3JicdL5u"
+        },
+        {
+          "command": "set -eu\ncheck() {\n  expected_status=$1 expected_body=$2 url=$3\n  tmp=$(mktemp)\n  status=$(curl --noproxy '*' -sS -o \"$tmp\" -w '%{http_code}' \"$url\")\n  test \"$status\" = \"$expected_status\"\n  test \"$(cat \"$tmp\")\" = \"$expected_body\"\n  rm -f \"$tmp\"\n}\ncheck 200 ready http://127.0.0.1:8082/health\ncheck 200 v2 http://127.0.0.1:8082/version\ncheck 200 alpha-original http://127.0.0.1:8082/records/customer-alpha-73c\ncheck 200 beta-original http://127.0.0.1:8082/records/customer-beta-a19\ncheck 404 '' http://127.0.0.1:8082/records/does-not-exist-preflight\nid=rollout-v2-preflight\nbody='UTF-8 snowman ☃ and newline\nexact bytes'\nstatus=$(printf '%s' \"$body\" | curl --noproxy '*' -sS -o /tmp/rollout-v2-put-resp…",
+          "description": "Verify v2 contract before cutover",
+          "duration_ms": 349,
+          "index": 12,
+          "kind": "mutation",
+          "output_excerpt": "v2 pre-cutover checks passed",
+          "started_after_ms": 38898,
+          "success": true,
+          "tool_id": "call_itXHfEFndf4PgWQ3aTMSrHXT"
+        },
+        {
+          "command": "set -eu\nfor pair in 'health ready' 'version v1' 'records/customer-alpha-73c alpha-original' 'records/customer-beta-a19 beta-original'; do\n  set -- $pair\n  tmp=$(mktemp)\n  status=$(curl --noproxy '*' -sS -o \"$tmp\" -w '%{http_code}' \"http://127.0.0.1:8080/$1\")\n  test \"$status\" = 200\n  test \"$(cat \"$tmp\")\" = \"$2\"\n  rm -f \"$tmp\"\ndone\nprintf 'public v1 pre-cutover checks passed\\n'",
+          "description": "Confirm public v1 remains healthy before cutover",
+          "duration_ms": 171,
+          "index": 13,
+          "kind": "mutation",
+          "output_excerpt": "public v1 pre-cutover checks passed",
+          "started_after_ms": 42908,
+          "success": true,
+          "tool_id": "call_JZ80zUgJpGjMWlKoddhYD64O"
+        },
+        {
+          "command": "systemctl is-active rollout-v1.service rollout-proxy.service rollout-v2.service; printf 'pids: '; systemctl show -p MainPID --value rollout-v1.service rollout-proxy.service rollout-v2.service | tr '\\n' ' '; printf '\\n'",
+          "description": "Confirm all rollout slots are healthy",
+          "duration_ms": 58,
+          "index": 14,
+          "kind": "validation",
+          "output_excerpt": "active\nactive\nactive\npids: 553  554  3447",
+          "started_after_ms": 43080,
+          "success": true,
+          "tool_id": "call_18G486UE6qvK402KSppP7WCK"
+        },
+        {
+          "command": "set -eu\nstop=/tmp/rollout-cutover-stop.$$\nfailure=/tmp/rollout-cutover-failure.$$\nrm -f \"$stop\" \"$failure\"\nmonitor() {\n  while [ ! -e \"$stop\" ]; do\n    for spec in 'health|ready' 'records/customer-alpha-73c|alpha-original' 'records/customer-beta-a19|beta-original'; do\n      endpoint=${spec%%|*}\n      expected=${spec#*|}\n      response=$(mktemp)\n      status=$(curl --noproxy '*' --max-time 1 -sS -o \"$response\" -w '%{http_code}' \"http://127.0.0.1:8080/$endpoint\" 2>/dev/null || printf '000')\n      if [ \"$status\" != 200 ] || [ \"$(cat \"$response\")\" != \"$expected\" ]; then\n        printf '%s status=%s body=%q\\n' \"$endpoint\" \"$status\" \"$(cat \"$response\")\" >> \"$failure\"\n      fi\n      rm -f \"$respons…",
+          "description": "Atomically switch stable proxy traffic to v2",
+          "duration_ms": 943,
+          "index": 16,
+          "kind": "mutation",
+          "output_excerpt": "atomic cutover completed with v1 pid=553 and proxy pid=554",
+          "started_after_ms": 61479,
+          "success": true,
+          "tool_id": "call_VwF2KT5K6X8CuyTiGGR4Wmgm"
+        },
+        {
+          "command": "set -eu\ncheck() {\n  expected_status=$1 expected_body=$2 url=$3\n  tmp=$(mktemp)\n  status=$(curl --noproxy '*' -sS -o \"$tmp\" -w '%{http_code}' \"$url\")\n  test \"$status\" = \"$expected_status\"\n  test \"$(cat \"$tmp\")\" = \"$expected_body\"\n  rm -f \"$tmp\"\n}\ncheck 200 ready http://127.0.0.1:8080/health\ncheck 200 v2 http://127.0.0.1:8080/version\ncheck 200 alpha-original http://127.0.0.1:8080/records/customer-alpha-73c\ncheck 200 beta-original http://127.0.0.1:8080/records/customer-beta-a19\ncheck 404 '' http://127.0.0.1:8080/records/does-not-exist-postcutover\nid=rollout-v2-public-preflight\nbody='public UTF-8 payload ☃'\nstatus=$(printf '%s' \"$body\" | curl --noproxy '*' -sS -o /tmp/rollout-public-put-response…",
+          "description": "Verify public v2 contract and preserved records",
+          "duration_ms": 335,
+          "index": 18,
+          "kind": "mutation",
+          "output_excerpt": "Parse error in 2nd command line argument: no such column: \":\" - should this be a string literal in single-quotes?\n  select quote(id)||\":\"||quote(value) from records order by id;\n                    ^--- error here\n\nExit code: exit status: 1",
+          "started_after_ms": 85560,
+          "success": false,
+          "tool_id": "call_GZNjl0d8LPXIGGm4TUJqdE5I"
+        },
+        {
+          "command": "set -eu\ncheck() {\n  expected_status=$1 expected_body=$2 url=$3\n  tmp=$(mktemp)\n  status=$(curl --noproxy '*' -sS -o \"$tmp\" -w '%{http_code}' \"$url\")\n  test \"$status\" = \"$expected_status\"\n  test \"$(cat \"$tmp\")\" = \"$expected_body\"\n  rm -f \"$tmp\"\n}\ncheck 200 ready http://127.0.0.1:8080/health\ncheck 200 v2 http://127.0.0.1:8080/version\ncheck 200 alpha-original http://127.0.0.1:8080/records/customer-alpha-73c\ncheck 200 beta-original http://127.0.0.1:8080/records/customer-beta-a19\ncheck 404 '' http://127.0.0.1:8080/records/does-not-exist-postcutover\ncheck 404 '' http://127.0.0.1:8080/records/rollout-v2-public-preflight\ntest \"$(sqlite3 /var/lib/rollout/records.sqlite3 'select quote(id)||char(58)||q…",
+          "description": "Recheck public v2 contract and preserved records",
+          "duration_ms": 235,
+          "index": 19,
+          "kind": "mutation",
+          "output_excerpt": "public v2 contract and record-preservation checks passed",
+          "started_after_ms": 89775,
+          "success": true,
+          "tool_id": "call_zBG2rA4IikesrjJMeK4tFrV2"
+        }
+      ],
+      "agent": "luna",
+      "analyzer": "aoe-controller/20260816.0.1",
+      "architecture": {
+        "persistent_paths": [
+          "/opt/rollout/v2.py",
+          "/var/lib/rollout",
+          "/var/lib/rollout/records.sqlite3",
+          "/var/lib/rollout/upstream"
+        ],
+        "service_units": [
+          "rollout-proxy.service",
+          "rollout-v1.service",
+          "rollout-v2.service"
+        ],
+        "technologies": [
+          "Python",
+          "SQLite",
+          "systemd"
+        ]
+      },
+      "metrics": {
+        "discoveries": 4,
+        "first_mutation_after_ms": 7734,
+        "last_observed_after_ms": 90010,
+        "lifecycle_actions": 1,
+        "mutations": 8,
+        "tool_calls": 16,
+        "tool_errors": 3,
+        "validations": 3
+      },
+      "model": "openai/gpt-5.6-luna",
+      "outcome": "running",
+      "schema_version": 1,
+      "source_sha256": "e6967c03b45c8a38ef3485dbe806f033e5679a2161f65ed4dc7b8b081af7afd4",
+      "territory": "rollout-one"
+    }
+  },
+  "arena": {
+    "agents": [
+      {
+        "adapter": "claux",
+        "budget": {
+          "max_cost_microusd": null,
+          "resource_units": 900
+        },
+        "id": "luna",
+        "model": "openai/gpt-5.6-luna",
+        "reasoning_effort": "high",
+        "territory": "rollout-one"
+      },
+      {
+        "adapter": "claux",
+        "budget": {
+          "max_cost_microusd": null,
+          "resource_units": 900
+        },
+        "id": "deepseek",
+        "model": "deepseek/deepseek-v4.1-flash",
+        "reasoning_effort": "high",
+        "territory": "rollout-three"
+      },
+      {
+        "adapter": "claux",
+        "budget": {
+          "max_cost_microusd": null,
+          "resource_units": 900
+        },
+        "id": "glm",
+        "model": "z-ai/glm-5.3",
+        "reasoning_effort": "high",
+        "territory": "rollout-two"
+      }
+    ],
+    "arena": {
+      "category": "service-delivery",
+      "display_name": "Zero-Downtime Rollout",
+      "id": "zero-downtime-rollout",
+      "mode": "build_race"
+    },
+    "build": {
+      "completion_milestone": "host-reboot",
+      "milestones": [
+        {
+          "depends_on": [],
+          "display_name": "Live v1 Baseline",
+          "id": "baseline-ready",
+          "operation": "observe",
+          "points": 5,
+          "required": true,
+          "timeout_seconds": 5,
+          "verifier": "verify/baseline-ready.sh"
+        },
+        {
+          "depends_on": [
+            "baseline-ready"
+          ],
+          "display_name": "Uninterrupted v2 Cutover",
+          "id": "uninterrupted-cutover",
+          "operation": "observe",
+          "points": 45,
+          "required": true,
+          "timeout_seconds": 120,
+          "verifier": "verify/uninterrupted-cutover.sh"
+        },
+        {
+          "depends_on": [
+            "uninterrupted-cutover"
+          ],
+          "display_name": "Write Through v2",
+          "id": "write-new",
+          "operation": "observe",
+          "points": 15,
+          "required": true,
+          "timeout_seconds": 10,
+          "verifier": "verify/write-new.sh"
+        },
+        {
+          "depends_on": [
+            "write-new"
+          ],
+          "display_name": "v2 Service Restart",
+          "id": "v2-restart",
+          "operation": "observe",
+          "points": 15,
+          "required": true,
+          "timeout_seconds": 20,
+          "verifier": "verify/v2-restart.sh"
+        },
+        {
+          "depends_on": [
+            "v2-restart"
+          ],
+          "display_name": "Host Reboot",
+          "id": "host-reboot",
+          "operation": "host_reboot",
+          "points": 20,
+          "required": true,
+          "timeout_seconds": 40,
+          "verifier": "verify/host-reboot.sh"
+        }
+      ],
+      "stop_on_first_durable": true
+    },
+    "classes": [
+      {
+        "display_name": "Rollout Engineer",
+        "id": "rollout-engineer",
+        "resources": {
+          "disk_mib": 2048,
+          "memory_mib": 768,
+          "vcpus": 1
+        },
+        "strengths": [],
+        "weaknesses": []
+      }
+    ],
+    "fog_of_war": null,
+    "network": {
+      "allow_public_internet": false,
+      "cidr": "10.80.0.0/24"
+    },
+    "rules": {
+      "duration_seconds": 900,
+      "healthy_resources_per_tick": 0,
+      "minimum_territories": 3,
+      "tick_ms": 250
+    },
+    "schema_version": 1,
+    "territories": [
+      {
+        "class": "rollout-engineer",
+        "id": "rollout-one",
+        "nixos_config": "./arenas/zero-downtime-rollout#nixosConfigurations.rollout-one.config.system.build.vm",
+        "service": {
+          "expected_body": "ready",
+          "expected_status": 200,
+          "health": {
+            "consecutive_failures": 2,
+            "poll_interval_ms": 250,
+            "recovery_window_seconds": 30
+          },
+          "path": "/health",
+          "port": 8080
+        }
+      },
+      {
+        "class": "rollout-engineer",
+        "id": "rollout-two",
+        "nixos_config": "./arenas/zero-downtime-rollout#nixosConfigurations.rollout-two.config.system.build.vm",
+        "service": {
+          "expected_body": "ready",
+          "expected_status": 200,
+          "health": {
+            "consecutive_failures": 2,
+            "poll_interval_ms": 250,
+            "recovery_window_seconds": 30
+          },
+          "path": "/health",
+          "port": 8080
+        }
+      },
+      {
+        "class": "rollout-engineer",
+        "id": "rollout-three",
+        "nixos_config": "./arenas/zero-downtime-rollout#nixosConfigurations.rollout-three.config.system.build.vm",
+        "service": {
+          "expected_body": "ready",
+          "expected_status": 200,
+          "health": {
+            "consecutive_failures": 2,
+            "poll_interval_ms": 250,
+            "recovery_window_seconds": 30
+          },
+          "path": "/health",
+          "port": 8080
+        }
+      }
+    ],
+    "visualization": {
+      "links": [
+        {
+          "from": "client",
+          "kind": "traffic",
+          "label": "HTTP",
+          "to": "proxy"
+        },
+        {
+          "from": "proxy",
+          "kind": "traffic",
+          "label": "cutover",
+          "to": "v2"
+        },
+        {
+          "from": "v2",
+          "kind": "storage",
+          "label": null,
+          "to": "state"
+        },
+        {
+          "from": "unit",
+          "kind": "lifecycle",
+          "label": null,
+          "to": "v2"
+        },
+        {
+          "from": "host",
+          "kind": "lifecycle",
+          "label": null,
+          "to": "unit"
+        }
+      ],
+      "nodes": [
+        {
+          "display_name": "Client",
+          "id": "client",
+          "kind": "client",
+          "milestone": null,
+          "x": 7,
+          "y": 24
+        },
+        {
+          "display_name": "Live Proxy",
+          "id": "proxy",
+          "kind": "proxy",
+          "milestone": "baseline-ready",
+          "x": 31,
+          "y": 24
+        },
+        {
+          "display_name": "Version 2",
+          "id": "v2",
+          "kind": "service",
+          "milestone": "uninterrupted-cutover",
+          "x": 58,
+          "y": 24
+        },
+        {
+          "display_name": "State Store",
+          "id": "state",
+          "kind": "database",
+          "milestone": "write-new",
+          "x": 84,
+          "y": 24
+        },
+        {
+          "display_name": "v2 Unit",
+          "id": "unit",
+          "kind": "service",
+          "milestone": "v2-restart",
+          "x": 42,
+          "y": 75
+        },
+        {
+          "display_name": "NixOS Host",
+          "id": "host",
+          "kind": "host",
+          "milestone": "host-reboot",
+          "x": 75,
+          "y": 75
+        }
+      ]
+    }
+  },
+  "artifact_type": "agents-of-empires.match",
+  "events": [
+    {
+      "elapsed_ms": 0,
+      "from": "preparing",
+      "kind": "match_state_changed",
+      "schema_version": 1,
+      "sequence": 0,
+      "to": "running"
+    },
+    {
+      "elapsed_ms": 0,
+      "from": "preparing",
+      "kind": "competitor_state_changed",
+      "reason": "SSH preflight passed",
+      "schema_version": 1,
+      "sequence": 1,
+      "territory": "rollout-one",
+      "to": "building"
+    },
+    {
+      "elapsed_ms": 0,
+      "from": "preparing",
+      "kind": "competitor_state_changed",
+      "reason": "SSH preflight passed",
+      "schema_version": 1,
+      "sequence": 2,
+      "territory": "rollout-three",
+      "to": "building"
+    },
+    {
+      "elapsed_ms": 0,
+      "from": "preparing",
+      "kind": "competitor_state_changed",
+      "reason": "SSH preflight passed",
+      "schema_version": 1,
+      "sequence": 3,
+      "territory": "rollout-two",
+      "to": "building"
+    },
+    {
+      "agent": "luna",
+      "class": "rollout-engineer",
+      "elapsed_ms": 0,
+      "kind": "territory_registered",
+      "schema_version": 1,
+      "sequence": 4,
+      "territory": "rollout-one"
+    },
+    {
+      "agent": "glm",
+      "class": "rollout-engineer",
+      "elapsed_ms": 0,
+      "kind": "territory_registered",
+      "schema_version": 1,
+      "sequence": 5,
+      "territory": "rollout-two"
+    },
+    {
+      "agent": "deepseek",
+      "class": "rollout-engineer",
+      "elapsed_ms": 0,
+      "kind": "territory_registered",
+      "schema_version": 1,
+      "sequence": 6,
+      "territory": "rollout-three"
+    },
+    {
+      "agent": "luna",
+      "elapsed_ms": 0,
+      "kind": "agent_started",
+      "model": "openai/gpt-5.6-luna",
+      "schema_version": 1,
+      "sequence": 7,
+      "territory": "rollout-one"
+    },
+    {
+      "agent": "deepseek",
+      "elapsed_ms": 0,
+      "kind": "agent_started",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "schema_version": 1,
+      "sequence": 8,
+      "territory": "rollout-three"
+    },
+    {
+      "agent": "glm",
+      "elapsed_ms": 0,
+      "kind": "agent_started",
+      "model": "z-ai/glm-5.3",
+      "schema_version": 1,
+      "sequence": 9,
+      "territory": "rollout-two"
+    },
+    {
+      "elapsed_ms": 251,
+      "from": "building",
+      "kind": "competitor_state_changed",
+      "reason": "milestone verification began",
+      "schema_version": 1,
+      "sequence": 10,
+      "territory": "rollout-one",
+      "to": "verifying"
+    },
+    {
+      "elapsed_ms": 251,
+      "kind": "milestone_evaluation_started",
+      "milestone": "baseline-ready",
+      "schema_version": 1,
+      "sequence": 11,
+      "territory": "rollout-one"
+    },
+    {
+      "elapsed_ms": 251,
+      "from": "building",
+      "kind": "competitor_state_changed",
+      "reason": "milestone verification began",
+      "schema_version": 1,
+      "sequence": 12,
+      "territory": "rollout-two",
+      "to": "verifying"
+    },
+    {
+      "elapsed_ms": 251,
+      "kind": "milestone_evaluation_started",
+      "milestone": "baseline-ready",
+      "schema_version": 1,
+      "sequence": 13,
+      "territory": "rollout-two"
+    },
+    {
+      "elapsed_ms": 251,
+      "from": "building",
+      "kind": "competitor_state_changed",
+      "reason": "milestone verification began",
+      "schema_version": 1,
+      "sequence": 14,
+      "territory": "rollout-three",
+      "to": "verifying"
+    },
+    {
+      "elapsed_ms": 251,
+      "kind": "milestone_evaluation_started",
+      "milestone": "baseline-ready",
+      "schema_version": 1,
+      "sequence": 15,
+      "territory": "rollout-three"
+    },
+    {
+      "elapsed_ms": 346,
+      "evidence": {
+        "baseline": "v1",
+        "records": [
+          "customer-alpha-73c",
+          "customer-beta-a19"
+        ]
+      },
+      "kind": "milestone_passed",
+      "milestone": "baseline-ready",
+      "points": 5,
+      "schema_version": 1,
+      "sequence": 16,
+      "territory": "rollout-three"
+    },
+    {
+      "elapsed_ms": 346,
+      "evidence": {
+        "baseline": "v1",
+        "records": [
+          "customer-alpha-73c",
+          "customer-beta-a19"
+        ]
+      },
+      "kind": "milestone_passed",
+      "milestone": "baseline-ready",
+      "points": 5,
+      "schema_version": 1,
+      "sequence": 17,
+      "territory": "rollout-two"
+    },
+    {
+      "elapsed_ms": 355,
+      "evidence": {
+        "baseline": "v1",
+        "records": [
+          "customer-alpha-73c",
+          "customer-beta-a19"
+        ]
+      },
+      "kind": "milestone_passed",
+      "milestone": "baseline-ready",
+      "points": 5,
+      "schema_version": 1,
+      "sequence": 18,
+      "territory": "rollout-one"
+    },
+    {
+      "elapsed_ms": 355,
+      "kind": "milestone_evaluation_started",
+      "milestone": "uninterrupted-cutover",
+      "schema_version": 1,
+      "sequence": 19,
+      "territory": "rollout-one"
+    },
+    {
+      "elapsed_ms": 355,
+      "kind": "milestone_evaluation_started",
+      "milestone": "uninterrupted-cutover",
+      "schema_version": 1,
+      "sequence": 20,
+      "territory": "rollout-two"
+    },
+    {
+      "elapsed_ms": 356,
+      "kind": "milestone_evaluation_started",
+      "milestone": "uninterrupted-cutover",
+      "schema_version": 1,
+      "sequence": 21,
+      "territory": "rollout-three"
+    },
+    {
+      "elapsed_ms": 67392,
+      "evidence": {
+        "samples": 684,
+        "uninterrupted": true,
+        "version": "v2"
+      },
+      "kind": "milestone_passed",
+      "milestone": "uninterrupted-cutover",
+      "points": 45,
+      "schema_version": 1,
+      "sequence": 22,
+      "territory": "rollout-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "public endpoint never cut over to v2",
+      "elapsed_ms": 101508,
+      "kind": "milestone_failed",
+      "milestone": "uninterrupted-cutover",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 23,
+      "territory": "rollout-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "public endpoint never cut over to v2",
+      "elapsed_ms": 101508,
+      "kind": "milestone_failed",
+      "milestone": "uninterrupted-cutover",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 24,
+      "territory": "rollout-two"
+    },
+    {
+      "elapsed_ms": 101508,
+      "kind": "milestone_evaluation_started",
+      "milestone": "write-new",
+      "schema_version": 1,
+      "sequence": 25,
+      "territory": "rollout-one"
+    },
+    {
+      "elapsed_ms": 101597,
+      "evidence": {
+        "record": "rollout-b494f488b52a321b",
+        "value": "opaque-46831a05500348d93d1d49d3"
+      },
+      "kind": "milestone_passed",
+      "milestone": "write-new",
+      "points": 15,
+      "schema_version": 1,
+      "sequence": 26,
+      "territory": "rollout-one"
+    },
+    {
+      "elapsed_ms": 101597,
+      "kind": "milestone_evaluation_started",
+      "milestone": "v2-restart",
+      "schema_version": 1,
+      "sequence": 27,
+      "territory": "rollout-one"
+    },
+    {
+      "elapsed_ms": 102427,
+      "evidence": {
+        "record": "rollout-b494f488b52a321b",
+        "v2_restart": true,
+        "value": "opaque-46831a05500348d93d1d49d3"
+      },
+      "kind": "milestone_passed",
+      "milestone": "v2-restart",
+      "points": 15,
+      "schema_version": 1,
+      "sequence": 28,
+      "territory": "rollout-one"
+    },
+    {
+      "elapsed_ms": 102427,
+      "kind": "milestone_evaluation_started",
+      "milestone": "host-reboot",
+      "schema_version": 1,
+      "sequence": 29,
+      "territory": "rollout-one"
+    },
+    {
+      "elapsed_ms": 116019,
+      "evidence": {
+        "reboot": true,
+        "record": "rollout-b494f488b52a321b",
+        "value": "opaque-46831a05500348d93d1d49d3",
+        "version": "v2"
+      },
+      "kind": "milestone_passed",
+      "milestone": "host-reboot",
+      "points": 20,
+      "schema_version": 1,
+      "sequence": 30,
+      "territory": "rollout-one"
+    },
+    {
+      "elapsed_ms": 116019,
+      "from": "verifying",
+      "kind": "competitor_state_changed",
+      "reason": "completion milestone passed",
+      "schema_version": 1,
+      "sequence": 31,
+      "territory": "rollout-one",
+      "to": "durable"
+    },
+    {
+      "elapsed_ms": 116019,
+      "kind": "durable_deployment_completed",
+      "schema_version": 1,
+      "sequence": 32,
+      "territory": "rollout-one"
+    },
+    {
+      "elapsed_ms": 116019,
+      "from": "running",
+      "kind": "match_state_changed",
+      "schema_version": 1,
+      "sequence": 33,
+      "to": "finished"
+    },
+    {
+      "elapsed_ms": 116019,
+      "kind": "match_finished",
+      "reason": "first durable deployment",
+      "schema_version": 1,
+      "sequence": 34,
+      "winner": "rollout-one"
+    },
+    {
+      "agent": "deepseek",
+      "cost_microusd": 9266,
+      "elapsed_ms": 116024,
+      "input_tokens": 18417,
+      "kind": "usage_charged",
+      "output_tokens": 3069,
+      "resource_units": 1,
+      "schema_version": 1,
+      "sequence": 35
+    },
+    {
+      "agent": "glm",
+      "cost_microusd": 55059,
+      "elapsed_ms": 116024,
+      "input_tokens": 22322,
+      "kind": "usage_charged",
+      "output_tokens": 3988,
+      "resource_units": 1,
+      "schema_version": 1,
+      "sequence": 36
+    },
+    {
+      "agent": "luna",
+      "cost_microusd": 15185,
+      "elapsed_ms": 116024,
+      "input_tokens": 39,
+      "kind": "usage_charged",
+      "output_tokens": 7896,
+      "resource_units": 1,
+      "schema_version": 1,
+      "sequence": 37
+    },
+    {
+      "elapsed_ms": 116024,
+      "kind": "post_match_drain_started",
+      "pending_agents": 3,
+      "schema_version": 1,
+      "sequence": 38,
+      "timeout_ms": 30000
+    },
+    {
+      "agent": "deepseek",
+      "detail": "Claux reported rate_limited (exit status 11): openrouter API error (429 Too Many Requests) for model 'deepseek/deepseek-v4.1-flash': Provider returned error. Retry later or choose another model/provider",
+      "elapsed_ms": 116024,
+      "kind": "agent_finished",
+      "schema_version": 1,
+      "sequence": 39,
+      "source": "provider",
+      "success": false
+    },
+    {
+      "agent": "deepseek",
+      "cost_microusd": 0,
+      "elapsed_ms": 116024,
+      "input_tokens": 0,
+      "kind": "usage_charged",
+      "output_tokens": 0,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 40
+    },
+    {
+      "agent": "luna",
+      "detail": "agent session was interrupted by the referee's host reboot",
+      "elapsed_ms": 116024,
+      "kind": "agent_interrupted",
+      "schema_version": 1,
+      "sequence": 41,
+      "source": "arena"
+    },
+    {
+      "agent": "luna",
+      "cost_microusd": 0,
+      "elapsed_ms": 116024,
+      "input_tokens": 0,
+      "kind": "usage_charged",
+      "output_tokens": 0,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 42
+    },
+    {
+      "agent": "glm",
+      "elapsed_ms": 116024,
+      "kind": "agent_outraced",
+      "reason": "rollout-one reached durable first; build ended at the frozen clock",
+      "schema_version": 1,
+      "sequence": 43
+    },
+    {
+      "captured_agents": 2,
+      "elapsed_ms": 116024,
+      "kind": "post_match_drain_finished",
+      "schema_version": 1,
+      "sequence": 44,
+      "terminated_agents": 1
+    }
+  ],
+  "match": {
+    "fog_of_war": false,
+    "listed": false,
+    "name": "infra-weekly · 2026-W37-fixed-20260910-153524 · round 2 heat 1 · attempt 2",
+    "slug": "season-infra-weekly-2026-W37-fixed-20260910-153524-r2-h1-a2"
+  },
+  "provenance": {
+    "adapter_sha256": {
+      "claux": "d05839f7b6622f0123f52eb00b7c3e675a3691948900d93ce65fee01b2a9e2d2"
+    },
+    "arena_id": "zero-downtime-rollout",
+    "arena_mode": "buildrace",
+    "compatibility_key": "8b3407ef885148e02f8174e898a68a34ec93c39a8a61aa6e8ea97a3bb98fb4f7",
+    "controller_version": "20260816.0.1",
+    "manifest_sha256": "2fab28a72324a5c6296cd485c7635a976190398bd964959bf3528195e8897541",
+    "player_artifacts_sha256": {},
+    "player_brief_sha256": null,
+    "schema_version": 1,
+    "source_revision": "b8ce1d258adb7defe3e41e4678a9dec3569ee355",
+    "verifier_sha256": "4636814c82b63339f4cf33242dd6a7b73a8482de7ef9ee28b592beefce45925f"
+  },
+  "schema_version": 1,
+  "visualization": {
+    "links": [
+      {
+        "from": "client",
+        "kind": "traffic",
+        "label": "HTTP",
+        "to": "proxy"
+      },
+      {
+        "from": "proxy",
+        "kind": "traffic",
+        "label": "cutover",
+        "to": "v2"
+      },
+      {
+        "from": "v2",
+        "kind": "storage",
+        "label": null,
+        "to": "state"
+      },
+      {
+        "from": "unit",
+        "kind": "lifecycle",
+        "label": null,
+        "to": "v2"
+      },
+      {
+        "from": "host",
+        "kind": "lifecycle",
+        "label": null,
+        "to": "unit"
+      }
+    ],
+    "nodes": [
+      {
+        "display_name": "Client",
+        "id": "client",
+        "kind": "client",
+        "milestone": null,
+        "x": 7,
+        "y": 24
+      },
+      {
+        "display_name": "Live Proxy",
+        "id": "proxy",
+        "kind": "proxy",
+        "milestone": "baseline-ready",
+        "x": 31,
+        "y": 24
+      },
+      {
+        "display_name": "Version 2",
+        "id": "v2",
+        "kind": "service",
+        "milestone": "uninterrupted-cutover",
+        "x": 58,
+        "y": 24
+      },
+      {
+        "display_name": "State Store",
+        "id": "state",
+        "kind": "database",
+        "milestone": "write-new",
+        "x": 84,
+        "y": 24
+      },
+      {
+        "display_name": "v2 Unit",
+        "id": "unit",
+        "kind": "service",
+        "milestone": "v2-restart",
+        "x": 42,
+        "y": 75
+      },
+      {
+        "display_name": "NixOS Host",
+        "id": "host",
+        "kind": "host",
+        "milestone": "host-reboot",
+        "x": 75,
+        "y": 75
+      }
+    ]
+  },
+  "world": {
+    "agents": {
+      "deepseek": {
+        "cost_microusd": 9266,
+        "failure_source": "provider",
+        "input_tokens": 18417,
+        "model": "deepseek/deepseek-v4.1-flash",
+        "output_tokens": 3069,
+        "resource_units_used": 1,
+        "running": false,
+        "successful": false,
+        "terminal_detail": "Claux reported rate_limited (exit status 11): openrouter API error (429 Too Many Requests) for model 'deepseek/deepseek-v4.1-flash': Provider returned error. Retry later or choose another model/provider",
+        "terminal_state": "failed",
+        "territory": "rollout-three"
+      },
+      "glm": {
+        "cost_microusd": 55059,
+        "failure_source": "player",
+        "input_tokens": 22322,
+        "model": "z-ai/glm-5.3",
+        "output_tokens": 3988,
+        "resource_units_used": 1,
+        "running": false,
+        "successful": false,
+        "terminal_detail": "rollout-one reached durable first; build ended at the frozen clock",
+        "terminal_state": "incomplete",
+        "territory": "rollout-two"
+      },
+      "luna": {
+        "cost_microusd": 15185,
+        "failure_source": "arena",
+        "input_tokens": 39,
+        "model": "openai/gpt-5.6-luna",
+        "output_tokens": 7896,
+        "resource_units_used": 1,
+        "running": false,
+        "successful": null,
+        "terminal_detail": "agent session was interrupted by the referee's host reboot",
+        "terminal_state": "interrupted",
+        "territory": "rollout-one"
+      }
+    },
+    "elapsed_ms": 116024,
+    "finish_reason": "first durable deployment",
+    "infrastructure_failures": 0,
+    "last_sequence": 44,
+    "match_state": "finished",
+    "territories": {
+      "rollout-one": {
+        "agent": "luna",
+        "class": "rollout-engineer",
+        "competitor_state": "durable",
+        "durable_at_ms": 116019,
+        "elimination_detail": null,
+        "elimination_source": null,
+        "last_health": null,
+        "milestone_points": 100,
+        "milestones": {
+          "baseline-ready": {
+            "evaluating": false,
+            "evidence": {
+              "baseline": "v1",
+              "records": [
+                "customer-alpha-73c",
+                "customer-beta-a19"
+              ]
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 5
+          },
+          "host-reboot": {
+            "evaluating": false,
+            "evidence": {
+              "reboot": true,
+              "record": "rollout-b494f488b52a321b",
+              "value": "opaque-46831a05500348d93d1d49d3",
+              "version": "v2"
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 20
+          },
+          "uninterrupted-cutover": {
+            "evaluating": false,
+            "evidence": {
+              "samples": 684,
+              "uninterrupted": true,
+              "version": "v2"
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 45
+          },
+          "v2-restart": {
+            "evaluating": false,
+            "evidence": {
+              "record": "rollout-b494f488b52a321b",
+              "v2_restart": true,
+              "value": "opaque-46831a05500348d93d1d49d3"
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 15
+          },
+          "write-new": {
+            "evaluating": false,
+            "evidence": {
+              "record": "rollout-b494f488b52a321b",
+              "value": "opaque-46831a05500348d93d1d49d3"
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 15
+          }
+        },
+        "resources": 0,
+        "state": "provisioning"
+      },
+      "rollout-three": {
+        "agent": "deepseek",
+        "class": "rollout-engineer",
+        "competitor_state": "verifying",
+        "durable_at_ms": null,
+        "elimination_detail": null,
+        "elimination_source": null,
+        "last_health": null,
+        "milestone_points": 5,
+        "milestones": {
+          "baseline-ready": {
+            "evaluating": false,
+            "evidence": {
+              "baseline": "v1",
+              "records": [
+                "customer-alpha-73c",
+                "customer-beta-a19"
+              ]
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 5
+          },
+          "uninterrupted-cutover": {
+            "evaluating": false,
+            "evidence": null,
+            "failure_category": "verification_failed",
+            "failure_detail": "public endpoint never cut over to v2",
+            "passed": false,
+            "points": 0
+          }
+        },
+        "resources": 0,
+        "state": "provisioning"
+      },
+      "rollout-two": {
+        "agent": "glm",
+        "class": "rollout-engineer",
+        "competitor_state": "verifying",
+        "durable_at_ms": null,
+        "elimination_detail": null,
+        "elimination_source": null,
+        "last_health": null,
+        "milestone_points": 5,
+        "milestones": {
+          "baseline-ready": {
+            "evaluating": false,
+            "evidence": {
+              "baseline": "v1",
+              "records": [
+                "customer-alpha-73c",
+                "customer-beta-a19"
+              ]
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 5
+          },
+          "uninterrupted-cutover": {
+            "evaluating": false,
+            "evidence": null,
+            "failure_category": "verification_failed",
+            "failure_detail": "public endpoint never cut over to v2",
+            "passed": false,
+            "points": 0
+          }
+        },
+        "resources": 0,
+        "state": "provisioning"
+      }
+    },
+    "winner": "rollout-one"
+  }
+}

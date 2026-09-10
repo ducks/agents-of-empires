@@ -1,0 +1,179 @@
+{
+  "schema_version": 2,
+  "model": "deepseek/deepseek-v4.1-flash",
+  "outcome": {
+    "status": "running"
+  },
+  "usage": {
+    "input_tokens": 2773,
+    "output_tokens": 889,
+    "cache_read_tokens": 7040,
+    "cache_creation_tokens": 0,
+    "cost_usd": 0.00194094
+  },
+  "messages": [
+    {
+      "role": "user",
+      "content": "Recover the stateful primary failure in the contract appended below. Preserve customer data and prevent split brain. Speed matters, but only a durable, fenced topology can win.\n\n\nThe controller-owned referee is the only authority on completion. Do not stop after merely describing the work. Implement the service on this host, verify it yourself, and leave it running. You have no access to referee evidence or other competitors.\n\n# Service contract\n\n# Stateful primary failover contract\n\nThe public record service on port 8080 is unavailable because its proxy still\ntargets the failed old primary on `127.0.0.1:8081`. A healthy read-only replica\nis running on `127.0.0.1:8082`. Existing customer state is stored in\n`/var/lib/failover/records.sqlite3` and must not be discarded or replaced.\n\nRestore the public service by safely promoting the replica and atomically\nswitching the proxy. The replica reads its role from\n`/var/lib/failover/replica.role` on every request. It accepts writes only when\nthat file contains `primary`. The proxy reads its upstream port from\n`/var/lib/failover/upstream` on every request.\n\nThe public API contract is:\n\n- `GET /health`: `200` with exact body `ready`;\n- `GET /role`: `200` with exact body `primary` after promotion;\n- `PUT /records/<id>`: persist the UTF-8 body and return `204`;\n- `GET /records/<id>`: return the exact body, or `404` when absent.\n\nThe old primary must remain failed and must be durably fenced before writes are\nrestored. Preserve `/var/lib/failover/primary.failed`, create\n`/var/lib/failover/primary.fenced`, and do not make port 8081 listen again.\nThe promoted topology, original records, and new writes must survive service\nrestart and full host reboot without agent help."
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "reasoning",
+          "text": "Let me start by exploring the environment to understand what's there.\n\nLet me look at the filesystem, the service files, etc.",
+          "details": [
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "Let me start by exploring the environment to understand what's there.\n\nLet me look at the filesystem, the service files, etc.",
+              "type": "reasoning.text"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": "I'll start by investigating the current state of the host, the service, and the failover files."
+        },
+        {
+          "type": "tool_use",
+          "id": "call_00_HMGJW4zrb1tjkV2IgsiI5665",
+          "name": "Bash",
+          "input": {
+            "command": "echo \"=== /var/lib/failover ===\"; ls -la /var/lib/failover/ 2>&1; echo; echo \"=== role file ===\"; cat /var/lib/failover/replica.role 2>&1; echo; echo \"=== upstream ===\"; cat /var/lib/failover/upstream 2>&1; echo; echo \"=== primary.failed ===\"; ls -la /var/lib/failover/primary.failed 2>&1; cat /var/lib/failover/primary.failed 2>&1; echo; echo \"=== processes ===\"; ps aux 2>&1 | head -50",
+            "description": "Inspect failover dir and processes"
+          }
+        },
+        {
+          "type": "tool_use",
+          "id": "call_01_ybQIwvvVX9XnY0U9YBYf0778",
+          "name": "Bash",
+          "input": {
+            "command": "echo \"=== listening ports ===\"; (ss -ltnp 2>/dev/null || netstat -ltnp 2>/dev/null) | head -40; echo; echo \"=== curl 8080 ===\"; curl -s -m 3 -i http://127.0.0.1:8080/health 2>&1 | head -20; echo; echo \"=== curl 8081 ===\"; curl -s -m 3 -i http://127.0.0.1:8081/health 2>&1 | head -20; echo; echo \"=== curl 8082 ===\"; curl -s -m 3 -i http://127.0.0.1:8082/health 2>&1 | head -20",
+            "description": "Check ports and probe services"
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "call_00_HMGJW4zrb1tjkV2IgsiI5665",
+          "content": "=== /var/lib/failover ===\ntotal 28\ndrwxr-xr-x 2 root root  4096 Sep 10 15:38 .\ndrwxr-xr-x 9 root root  4096 Sep 10 15:38 ..\n-rw-r--r-- 1 root root     0 Sep 10 15:38 primary.failed\n-rw-r--r-- 1 root root 12288 Sep 10 15:38 records.sqlite3\n-rw-r--r-- 1 root root     8 Sep 10 15:38 replica.role\n-rw-r--r-- 1 root root     5 Sep 10 15:38 upstream\n\n=== role file ===\nreplica\n\n=== upstream ===\n8081\n\n=== primary.failed ===\n-rw-r--r-- 1 root root 0 Sep 10 15:38 /var/lib/failover/primary.failed\n\n=== processes ===\nUSER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND\nroot           1  6.6  1.6  19060 11724 ?        Ss   15:37   0:01 /run/current-system/systemd/lib/systemd/systemd --switched-root --system --deserialize=46\nroot           2  0.0  0.0      0     0 ?        S    15:37   0:00 [kthreadd]\nroot           3  0.0  0.0      0     0 ?        S    15:37   0:00 [pool_workqueue_release]\nroot           4  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-rcu_gp]\nroot           5  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-sync_wq]\nroot           6  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-kvfree_rcu_reclaim]\nroot           7  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-slub_flushwq]\nroot           8  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-netns]\nroot           9  0.0  0.0      0     0 ?        I    15:37   0:00 [kworker/0:0-events]\nroot          10  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/0:0H-events_highpri]\nroot          11  0.0  0.0      0     0 ?        I    15:37   0:00 [kworker/0:1-events]\nroot          12  0.0  0.0      0     0 ?        I    15:37   0:00 [kworker/u4:0-events_unbound]\nroot          13  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-mm_percpu_wq]\nroot          14  1.5  0.0      0     0 ?        I    15:37   0:00 [kworker/u4:1-events_unbound]\nroot          15  0.0  0.0      0     0 ?        S    15:37   0:00 [ksoftirqd/0]\nroot          16  0.0  0.0      0     0 ?        I    15:37   0:00 [rcu_preempt]\nroot          17  0.0  0.0      0     0 ?        S    15:37   0:00 [rcu_exp_par_gp_kthread_worker/0]\nroot          18  0.0  0.0      0     0 ?        S    15:37   0:00 [rcu_exp_gp_kthread_worker]\nroot          19  0.0  0.0      0     0 ?        S    15:37   0:00 [migration/0]\nroot          20  0.0  0.0      0     0 ?        S    15:37   0:00 [idle_inject/0]\nroot          21  0.0  0.0      0     0 ?        S    15:37   0:00 [cpuhp/0]\nroot          22  0.0  0.0      0     0 ?        S    15:37   0:00 [kdevtmpfs]\nroot          23  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-inet_frag_wq]\nroot          24  0.0  0.0      0     0 ?        I    15:37   0:00 [rcu_tasks_kthread]\nroot          25  0.0  0.0      0     0 ?        I    15:37   0:00 [rcu_tasks_rude_kthread]\nroot          26  0.0  0.0      0     0 ?        I    15:37   0:00 [rcu_tasks_trace_kthread]\nroot          27  0.0  0.0      0     0 ?        S    15:37   0:00 [kauditd]\nroot          28  0.0  0.0      0     0 ?        S    15:37   0:00 [khungtaskd]\nroot          29  0.0  0.0      0     0 ?        S    15:37   0:00 [oom_reaper]\nroot          30  0.0  0.0      0     0 ?        I    15:37   0:00 [kworker/u4:2-events_unbound]\nroot          31  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-writeback]\nroot          32  0.0  0.0      0     0 ?        S    15:37   0:00 [kcompactd0]\nroot          33  0.0  0.0      0     0 ?        SN   15:37   0:00 [ksmd]\nroot          34  0.0  0.0      0     0 ?        SN   15:37   0:00 [khugepaged]\nroot          35  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-kblockd]\nroot          36  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-blkcg_punt_bio]\nroot          37  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-kintegrityd]\nroot          38  0.0  0.0      0     0 ?        S    15:37   0:00 [irq/9-acpi]\nroot          39  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-tpm_dev_wq]\nroot          40  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-devfreq_wq]\nroot          41  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-quota_events_unbound]\nroot          42  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/0:1H-kblockd]\nroot          43  0.0  0.0      0     0 ?        S    15:37   0:00 [kswapd0]\nroot          44  0.0  0.0      0     0 ?        I    15:37   0:00 [kdamond.0]\nroot          45  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-kthrotld]\nroot          46  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-mld]\nroot          47  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-ipv6_addrconf]\nroot          48  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-kstrp]\nroot          49  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/u5:0]\n"
+        },
+        {
+          "type": "tool_result",
+          "tool_use_id": "call_01_ybQIwvvVX9XnY0U9YBYf0778",
+          "content": "=== listening ports ===\nState  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess\nLISTEN 0      4096         0.0.0.0:5355       0.0.0.0:*    users:((\"systemd-resolve\",pid=297,fd=14))\nLISTEN 0      5          127.0.0.1:8082       0.0.0.0:*    users:((\"python\",pid=553,fd=3))\nLISTEN 0      128          0.0.0.0:22         0.0.0.0:*    users:((\"sshd\",pid=579,fd=6))\nLISTEN 0      5            0.0.0.0:8080       0.0.0.0:*    users:((\"python\",pid=552,fd=3))\nLISTEN 0      4096   127.0.0.53%lo:53         0.0.0.0:*    users:((\"systemd-resolve\",pid=297,fd=23))\nLISTEN 0      128        127.0.0.1:18010      0.0.0.0:*    users:((\"sshd-session\",pid=617,fd=10))\nLISTEN 0      4096      127.0.0.54:53         0.0.0.0:*    users:((\"systemd-resolve\",pid=297,fd=25))\nLISTEN 0      4096            [::]:5355          [::]:*    users:((\"systemd-resolve\",pid=297,fd=16))\nLISTEN 0      128             [::]:22            [::]:*    users:((\"sshd\",pid=579,fd=7))\n\n=== curl 8080 ===\nHTTP/1.0 502 Bad Gateway\r\nServer: BaseHTTP/0.6 Python/3.14.7\r\nDate: Thu, 10 Sep 2026 15:38:12 GMT\r\nContent-Length: 0\r\n\r\n\n=== curl 8081 ===\n\n=== curl 8082 ===\nHTTP/1.0 200 OK\r\nServer: BaseHTTP/0.6 Python/3.14.7\r\nDate: Thu, 10 Sep 2026 15:38:12 GMT\r\nContent-Length: 5\r\n\r\nready"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "reasoning",
+          "text": "Let me find the service code. Let me look for the python processes and their scripts.",
+          "details": [
+            {
+              "format": "unknown",
+              "index": 0,
+              "text": "Let me find the service code. Let me look for the python processes and their scripts.",
+              "type": "reasoning.text"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": "Let me find the service source code and the process details."
+        },
+        {
+          "type": "tool_use",
+          "id": "call_00_M4hdrIqbXTkfnJy2xrkn3220",
+          "name": "Bash",
+          "input": {
+            "command": "echo \"=== pid 552 (proxy 8080) ===\"; cat /proc/552/cmdline | tr '\\0' ' '; echo; ls -la /proc/552/cwd 2>&1; echo; echo \"=== pid 553 (replica 8082) ===\"; cat /proc/553/cmdline | tr '\\0' ' '; echo; ls -la /proc/553/cwd 2>&1; echo; echo \"=== env of 552 ===\"; tr '\\0' '\\n' < /proc/552/environ 2>&1 | head -30; echo \"=== env of 553 ===\"; tr '\\0' '\\n' < /proc/553/environ 2>&1 | head -30",
+            "description": "Inspect python service processes"
+          }
+        },
+        {
+          "type": "tool_use",
+          "id": "call_01_tAcIGjaXbQRHOuzGBhU19819",
+          "name": "Bash",
+          "input": {
+            "command": "echo \"=== find service files ===\"; ls -la /root/ 2>&1; echo; find / -iname '*.py' -path '*failover*' 2>/dev/null; find / -iname '*proxy*' -not -path '/proc/*' -not -path '/sys/*' 2>/dev/null | head; echo; echo \"=== systemd units ===\"; ls -la /etc/systemd/system/ 2>&1; ls -la /run/current-system/systemd/system/ 2>/dev/null | grep -i -E 'fail|proxy|record' ",
+            "description": "Find service source and units"
+          }
+        }
+      ]
+    }
+  ],
+  "tool_trace": [
+    {
+      "id": "call_00_HMGJW4zrb1tjkV2IgsiI5665",
+      "name": "Bash",
+      "input": {
+        "command": "echo \"=== /var/lib/failover ===\"; ls -la /var/lib/failover/ 2>&1; echo; echo \"=== role file ===\"; cat /var/lib/failover/replica.role 2>&1; echo; echo \"=== upstream ===\"; cat /var/lib/failover/upstream 2>&1; echo; echo \"=== primary.failed ===\"; ls -la /var/lib/failover/primary.failed 2>&1; cat /var/lib/failover/primary.failed 2>&1; echo; echo \"=== processes ===\"; ps aux 2>&1 | head -50",
+        "description": "Inspect failover dir and processes"
+      },
+      "output": "=== /var/lib/failover ===\ntotal 28\ndrwxr-xr-x 2 root root  4096 Sep 10 15:38 .\ndrwxr-xr-x 9 root root  4096 Sep 10 15:38 ..\n-rw-r--r-- 1 root root     0 Sep 10 15:38 primary.failed\n-rw-r--r-- 1 root root 12288 Sep 10 15:38 records.sqlite3\n-rw-r--r-- 1 root root     8 Sep 10 15:38 replica.role\n-rw-r--r-- 1 root root     5 Sep 10 15:38 upstream\n\n=== role file ===\nreplica\n\n=== upstream ===\n8081\n\n=== primary.failed ===\n-rw-r--r-- 1 root root 0 Sep 10 15:38 /var/lib/failover/primary.failed\n\n=== processes ===\nUSER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND\nroot           1  6.6  1.6  19060 11724 ?        Ss   15:37   0:01 /run/current-system/systemd/lib/systemd/systemd --switched-root --system --deserialize=46\nroot           2  0.0  0.0      0     0 ?        S    15:37   0:00 [kthreadd]\nroot           3  0.0  0.0      0     0 ?        S    15:37   0:00 [pool_workqueue_release]\nroot           4  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-rcu_gp]\nroot           5  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-sync_wq]\nroot           6  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-kvfree_rcu_reclaim]\nroot           7  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-slub_flushwq]\nroot           8  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-netns]\nroot           9  0.0  0.0      0     0 ?        I    15:37   0:00 [kworker/0:0-events]\nroot          10  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/0:0H-events_highpri]\nroot          11  0.0  0.0      0     0 ?        I    15:37   0:00 [kworker/0:1-events]\nroot          12  0.0  0.0      0     0 ?        I    15:37   0:00 [kworker/u4:0-events_unbound]\nroot          13  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-mm_percpu_wq]\nroot          14  1.5  0.0      0     0 ?        I    15:37   0:00 [kworker/u4:1-events_unbound]\nroot          15  0.0  0.0      0     0 ?        S    15:37   0:00 [ksoftirqd/0]\nroot          16  0.0  0.0      0     0 ?        I    15:37   0:00 [rcu_preempt]\nroot          17  0.0  0.0      0     0 ?        S    15:37   0:00 [rcu_exp_par_gp_kthread_worker/0]\nroot          18  0.0  0.0      0     0 ?        S    15:37   0:00 [rcu_exp_gp_kthread_worker]\nroot          19  0.0  0.0      0     0 ?        S    15:37   0:00 [migration/0]\nroot          20  0.0  0.0      0     0 ?        S    15:37   0:00 [idle_inject/0]\nroot          21  0.0  0.0      0     0 ?        S    15:37   0:00 [cpuhp/0]\nroot          22  0.0  0.0      0     0 ?        S    15:37   0:00 [kdevtmpfs]\nroot          23  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-inet_frag_wq]\nroot          24  0.0  0.0      0     0 ?        I    15:37   0:00 [rcu_tasks_kthread]\nroot          25  0.0  0.0      0     0 ?        I    15:37   0:00 [rcu_tasks_rude_kthread]\nroot          26  0.0  0.0      0     0 ?        I    15:37   0:00 [rcu_tasks_trace_kthread]\nroot          27  0.0  0.0      0     0 ?        S    15:37   0:00 [kauditd]\nroot          28  0.0  0.0      0     0 ?        S    15:37   0:00 [khungtaskd]\nroot          29  0.0  0.0      0     0 ?        S    15:37   0:00 [oom_reaper]\nroot          30  0.0  0.0      0     0 ?        I    15:37   0:00 [kworker/u4:2-events_unbound]\nroot          31  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-writeback]\nroot          32  0.0  0.0      0     0 ?        S    15:37   0:00 [kcompactd0]\nroot          33  0.0  0.0      0     0 ?        SN   15:37   0:00 [ksmd]\nroot          34  0.0  0.0      0     0 ?        SN   15:37   0:00 [khugepaged]\nroot          35  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-kblockd]\nroot          36  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-blkcg_punt_bio]\nroot          37  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-kintegrityd]\nroot          38  0.0  0.0      0     0 ?        S    15:37   0:00 [irq/9-acpi]\nroot          39  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-tpm_dev_wq]\nroot          40  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-devfreq_wq]\nroot          41  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-quota_events_unbound]\nroot          42  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/0:1H-kblockd]\nroot          43  0.0  0.0      0     0 ?        S    15:37   0:00 [kswapd0]\nroot          44  0.0  0.0      0     0 ?        I    15:37   0:00 [kdamond.0]\nroot          45  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-kthrotld]\nroot          46  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-mld]\nroot          47  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-ipv6_addrconf]\nroot          48  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/R-kstrp]\nroot          49  0.0  0.0      0     0 ?        I<   15:37   0:00 [kworker/u5:0]\n",
+      "is_error": false,
+      "read_only": false,
+      "started_after_ms": 2882,
+      "duration_ms": 127
+    },
+    {
+      "id": "call_01_ybQIwvvVX9XnY0U9YBYf0778",
+      "name": "Bash",
+      "input": {
+        "command": "echo \"=== listening ports ===\"; (ss -ltnp 2>/dev/null || netstat -ltnp 2>/dev/null) | head -40; echo; echo \"=== curl 8080 ===\"; curl -s -m 3 -i http://127.0.0.1:8080/health 2>&1 | head -20; echo; echo \"=== curl 8081 ===\"; curl -s -m 3 -i http://127.0.0.1:8081/health 2>&1 | head -20; echo; echo \"=== curl 8082 ===\"; curl -s -m 3 -i http://127.0.0.1:8082/health 2>&1 | head -20",
+        "description": "Check ports and probe services"
+      },
+      "output": "=== listening ports ===\nState  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess\nLISTEN 0      4096         0.0.0.0:5355       0.0.0.0:*    users:((\"systemd-resolve\",pid=297,fd=14))\nLISTEN 0      5          127.0.0.1:8082       0.0.0.0:*    users:((\"python\",pid=553,fd=3))\nLISTEN 0      128          0.0.0.0:22         0.0.0.0:*    users:((\"sshd\",pid=579,fd=6))\nLISTEN 0      5            0.0.0.0:8080       0.0.0.0:*    users:((\"python\",pid=552,fd=3))\nLISTEN 0      4096   127.0.0.53%lo:53         0.0.0.0:*    users:((\"systemd-resolve\",pid=297,fd=23))\nLISTEN 0      128        127.0.0.1:18010      0.0.0.0:*    users:((\"sshd-session\",pid=617,fd=10))\nLISTEN 0      4096      127.0.0.54:53         0.0.0.0:*    users:((\"systemd-resolve\",pid=297,fd=25))\nLISTEN 0      4096            [::]:5355          [::]:*    users:((\"systemd-resolve\",pid=297,fd=16))\nLISTEN 0      128             [::]:22            [::]:*    users:((\"sshd\",pid=579,fd=7))\n\n=== curl 8080 ===\nHTTP/1.0 502 Bad Gateway\r\nServer: BaseHTTP/0.6 Python/3.14.7\r\nDate: Thu, 10 Sep 2026 15:38:12 GMT\r\nContent-Length: 0\r\n\r\n\n=== curl 8081 ===\n\n=== curl 8082 ===\nHTTP/1.0 200 OK\r\nServer: BaseHTTP/0.6 Python/3.14.7\r\nDate: Thu, 10 Sep 2026 15:38:12 GMT\r\nContent-Length: 5\r\n\r\nready",
+      "is_error": false,
+      "read_only": false,
+      "started_after_ms": 3010,
+      "duration_ms": 92
+    }
+  ],
+  "timing": {
+    "total_duration_ms": 7639,
+    "model_rounds": [
+      {
+        "index": 1,
+        "started_after_ms": 0,
+        "duration_ms": 2881,
+        "status": "completed",
+        "usage": {
+          "input_tokens": 220,
+          "output_tokens": 460,
+          "cache_read_tokens": 3200,
+          "cache_creation_tokens": 0,
+          "cost_usd": 0.0006372
+        }
+      },
+      {
+        "index": 2,
+        "started_after_ms": 3185,
+        "duration_ms": 761,
+        "status": "retry",
+        "failure": "unavailable"
+      },
+      {
+        "index": 3,
+        "started_after_ms": 5037,
+        "duration_ms": 2602,
+        "status": "completed",
+        "usage": {
+          "input_tokens": 2553,
+          "output_tokens": 429,
+          "cache_read_tokens": 3840,
+          "cache_creation_tokens": 0,
+          "cost_usd": 0.00130374
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,155 @@
+{
+  "schema_version": 1,
+  "analyzer": "aoe-controller/20260816.0.1",
+  "source_sha256": "721ed16d1e24ea2271a5a013d2d790e8aa2670c6f2fa0abc09db5cc2d6f7b79c",
+  "agent": "glm",
+  "territory": "rollout-two",
+  "model": "z-ai/glm-5.3",
+  "outcome": "running",
+  "metrics": {
+    "tool_calls": 10,
+    "tool_errors": 0,
+    "discoveries": 5,
+    "mutations": 1,
+    "lifecycle_actions": 1,
+    "validations": 3,
+    "first_mutation_after_ms": 92998,
+    "last_observed_after_ms": 131575
+  },
+  "architecture": {
+    "technologies": [
+      "Python",
+      "SQLite",
+      "systemd"
+    ],
+    "service_units": [
+      "etc/systemd/system/rollout-seed.service",
+      "etc/systemd/system/rollout-v2.service",
+      "rollout-proxy.service",
+      "rollout-seed.service",
+      "rollout-v1.service",
+      "rollout-v2.service"
+    ],
+    "persistent_paths": [
+      "/etc/systemd/system/rollout-seed.service",
+      "/etc/systemd/system/rollout-v2.service",
+      "/opt/rollout",
+      "/opt/rollout/v2.py",
+      "/var/lib/rollout",
+      "/var/lib/rollout/records.sqlite3",
+      "/var/lib/rollout/upstream"
+    ]
+  },
+  "actions": [
+    {
+      "index": 0,
+      "tool_id": "call_56fc3b0598de49b18bda8bb2",
+      "kind": "validation",
+      "started_after_ms": 15398,
+      "duration_ms": 117,
+      "description": "Check status of the three rollout services",
+      "command": "systemctl status rollout-v1.service rollout-v2.service rollout-proxy.service --no-pager 2>&1 | head -60",
+      "success": true,
+      "output_excerpt": "● rollout-v1.service - Existing rollout v1 service\n     Loaded: loaded (/etc/systemd/system/rollout-v1.service; enabled; preset: ignored)\n     Active: active (running) since Thu 2026-09-10 15:39:44 UTC; 22s ago\n Invocation: 060f431af6c747e587a625ad4c024ff2\n   Main PID: 553 (pytho…"
+    },
+    {
+      "index": 1,
+      "tool_id": "call_2c520381ebf04d66ae5aea12",
+      "kind": "discovery",
+      "started_after_ms": 15515,
+      "duration_ms": 35,
+      "description": "List rollout files and current upstream setting",
+      "command": "ls -la /opt/rollout/ /var/lib/rollout/ 2>&1; echo '---'; cat /var/lib/rollout/upstream 2>&1",
+      "success": true,
+      "output_excerpt": "/opt/rollout/:\ntotal 8\ndrwxr-xr-x 2 root root 4096 Sep 10 15:39 .\ndrwxr-xr-x 3 root root 4096 Sep 10 15:39 ..\n\n/var/lib/rollout/:\ntotal 24\ndrwxr-xr-x 2 root root  4096 Sep 10 15:39 .\ndrwxr-xr-x 9 root root  4096 Sep 10 15:39 ..\n-rw-r--r-- 1 root root 12288 Sep 10 15:39 records.sq…"
+    },
+    {
+      "index": 2,
+      "tool_id": "call_5059028e533a43a48e1571cb",
+      "kind": "discovery",
+      "started_after_ms": 20691,
+      "duration_ms": 56,
+      "description": "Read v1 service source code",
+      "command": "cat /nix/store/13qi755lbgrlrh6c5jqjdlpf1f7nvffv-rollout-v1.py",
+      "success": true,
+      "output_excerpt": "import sqlite3\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n\nDB = \"/var/lib/rollout/records.sqlite3\"\n\ndef database():\n    connection = sqlite3.connect(DB, timeout=10)\n    connection.execute(\"CREATE TABLE IF NOT EXISTS records (id TEXT PRIMARY KEY, value TEX…"
+    },
+    {
+      "index": 3,
+      "tool_id": "call_ee58e6de58fa4e24a99d33b5",
+      "kind": "discovery",
+      "started_after_ms": 20747,
+      "duration_ms": 25,
+      "description": "Read proxy source code",
+      "command": "cat /nix/store/08ib8hkpsxizx3zrsv266idphl0r1hgb-rollout-proxy.py",
+      "success": true,
+      "output_excerpt": "import http.client\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n\nUPSTREAM = \"/var/lib/rollout/upstream\"\n\nclass Handler(BaseHTTPRequestHandler):\n    def forward(self):\n        try:\n            with open(UPSTREAM) as source:\n                port = int(source.…"
+    },
+    {
+      "index": 4,
+      "tool_id": "call_2b7bcff1aade435898e2d7b2",
+      "kind": "discovery",
+      "started_after_ms": 20773,
+      "duration_ms": 80,
+      "description": "Show v2 unit file and database schema",
+      "command": "cat /etc/systemd/system/rollout-v2.service; echo '---'; python3 -c \"\nimport sqlite3\nc = sqlite3.connect('/var/lib/rollout/records.sqlite3')\nprint(c.execute('select sql from sqlite_master').fetchall())\nprint(c.execute('select count(*) from records').fetchall() if True else '')\n\"",
+      "success": true,
+      "output_excerpt": "[Unit]\nAfter=rollout-seed.service\nDescription=Agent-built rollout v2 slot\nRequires=rollout-seed.service\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE=/nix/store/c59mcax29xrwyfdqs308wkmn2srnmzkn-glibc-locales-2.42-67/lib/locale/locale-archive\"\nEnvironment=\"PATH=/nix/store/97d5ygrvqj55f4n…"
+    },
+    {
+      "index": 5,
+      "tool_id": "call_81154dc3b3144b9592d34346",
+      "kind": "validation",
+      "started_after_ms": 84672,
+      "duration_ms": 85,
+      "description": "Check seed service status and unit file",
+      "command": "systemctl status rollout-seed.service --no-pager 2>&1; echo '---'; cat /etc/systemd/system/rollout-seed.service",
+      "success": true,
+      "output_excerpt": "● rollout-seed.service - Seed live v1 state\n     Loaded: loaded (/etc/systemd/system/rollout-seed.service; enabled; preset: ignored)\n     Active: active (exited) since Thu 2026-09-10 15:39:44 UTC; 1min 31s ago\n Invocation: 42ef4d34ea944ef6a097e4275fec78f3\n    Process: 505 ExecSta…"
+    },
+    {
+      "index": 6,
+      "tool_id": "call_217e982822aa471db217b9ff",
+      "kind": "discovery",
+      "started_after_ms": 84757,
+      "duration_ms": 70,
+      "description": "Dump existing records read-only",
+      "command": "python3 -c \"\nimport sqlite3\nc = sqlite3.connect('file:/var/lib/rollout/records.sqlite3?mode=ro', uri=True)\nfor r in c.execute('select id, value from records'):\n    print(repr(r))\n\"",
+      "success": true,
+      "output_excerpt": "('customer-alpha-73c', 'alpha-original')\n('customer-beta-a19', 'beta-original')"
+    },
+    {
+      "index": 7,
+      "tool_id": "call_04e46b2f5aa14e619fbb76fe",
+      "kind": "mutation",
+      "started_after_ms": 92998,
+      "duration_ms": 0,
+      "description": null,
+      "command": "Write /opt/rollout/v2.py",
+      "success": true,
+      "output_excerpt": "Successfully wrote to /opt/rollout/v2.py"
+    },
+    {
+      "index": 8,
+      "tool_id": "call_4b65e62ee5164b6c936f9906",
+      "kind": "lifecycle",
+      "started_after_ms": 94712,
+      "duration_ms": 1169,
+      "description": "Reset start limit and start v2 service",
+      "command": "systemctl reset-failed rollout-v2.service && systemctl start rollout-v2.service && sleep 1 && systemctl status rollout-v2.service --no-pager | head -12",
+      "success": true,
+      "output_excerpt": "● rollout-v2.service - Agent-built rollout v2 slot\n     Loaded: loaded (/etc/systemd/system/rollout-v2.service; enabled; preset: ignored)\n     Active: active (running) since Thu 2026-09-10 15:41:26 UTC; 1s ago\n Invocation: a927f601f537452eb8f01e9fc1633cf4\n   Main PID: 7780 (pytho…"
+    },
+    {
+      "index": 9,
+      "tool_id": "call_35a3617cb5f34773b233107d",
+      "kind": "validation",
+      "started_after_ms": 101428,
+      "duration_ms": 30147,
+      "description": "Verify v2 directly and public endpoint pre-cutover",
+      "command": "set -e\necho \"v2 direct health:    $(curl -s http://127.0.0.1:8082/health)\"\necho \"v2 direct version:   $(curl -s http://127.0.0.1:8082/version)\"\necho \"v2 alpha:            $(curl -s http://127.0.0.1:8082/records/customer-alpha-73c)\"\necho \"v2 beta:             $(curl -s http://127.0.0.1:8082/records/customer-beta-a19)\"\necho \"v2 absent->404:      $(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8082/records/nope)\"\necho \"public on v1 health: $(curl -s http://127.0.0.1:8080/health)\"\necho \"public on v1 ver:    $(curl -s http://127.0.0.1:8080/version)\"\necho \"public on v1 alpha:  $(curl -s http://127.0.0.1:8080/records/customer-alpha-73c)\"\necho \"public on v1 beta:   $(curl -s http://127.0.0…",
+      "success": true,
+      "output_excerpt": "v2 direct health:    ready\nv2 direct version:   v2\nv2 alpha:            alpha-original\nv2 beta:             beta-original\nv2 absent->404:      404\npublic on v1 health: ready\npublic on v1 ver:    v1\npublic on v1 alpha:  alpha-original\npublic on v1 beta:   beta-original"
+    }
+  ]
+}

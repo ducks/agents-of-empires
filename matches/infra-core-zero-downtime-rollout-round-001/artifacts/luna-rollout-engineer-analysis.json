@@ -1,20 +1,20 @@
 {
   "schema_version": 1,
   "analyzer": "aoe-controller/20260816.0.1",
-  "source_sha256": "758a7e90f1bb951d95d4c304f76911e83cfb9a45825b37f848e78cf9f98eaa8f",
+  "source_sha256": "e7ec6c16b1090792beabade069225681763ac8750ade89cf8a829e0267f5204b",
   "agent": "luna-rollout-engineer",
   "territory": "rollout-two",
   "model": "openai/gpt-5.6-luna",
-  "outcome": "completed",
+  "outcome": "running",
   "metrics": {
     "tool_calls": 15,
     "tool_errors": 1,
-    "discoveries": 8,
-    "mutations": 2,
-    "lifecycle_actions": 1,
+    "discoveries": 5,
+    "mutations": 4,
+    "lifecycle_actions": 2,
     "validations": 4,
-    "first_mutation_after_ms": 20278,
-    "last_observed_after_ms": 60347
+    "first_mutation_after_ms": 7538,
+    "last_observed_after_ms": 57892
   },
   "architecture": {
     "technologies": [
@@ -24,10 +24,12 @@
     ],
     "service_units": [
       "rollout-proxy.service",
+      "rollout-seed.service",
       "rollout-v1.service",
       "rollout-v2.service"
     ],
     "persistent_paths": [
+      "/etc/systemd/system",
       "/opt/rollout",
       "/opt/rollout/v2.py",
       "/var/lib/rollout",
@@ -38,31 +40,20 @@
   "actions": [
     {
       "index": 1,
-      "tool_id": "call_e3cy0C4WFLbOL8VDD8J5Apus",
+      "tool_id": "call_kj7CEG2t3eI4Qgb2lMZy4qvS",
       "kind": "validation",
-      "started_after_ms": 5812,
-      "duration_ms": 102,
-      "description": "Inspect rollout service status and state files",
-      "command": "systemctl status --no-pager rollout-proxy.service rollout-v1.service rollout-v2.service; printf '\\n--- upstream ---\\n'; stat /var/lib/rollout/upstream; printf 'value='; cat /var/lib/rollout/upstream; printf '\\n--- files ---\\n'; ls -l /opt/rollout /var/lib/rollout",
+      "started_after_ms": 7475,
+      "duration_ms": 63,
+      "description": "Inspect rollout service status and unit definitions",
+      "command": "systemctl status --no-pager rollout-proxy.service rollout-v1.service rollout-v2.service || true; printf '\\n--- units ---\\n'; systemctl cat rollout-proxy.service rollout-v1.service rollout-v2.service || true",
       "success": true,
-      "output_excerpt": "● rollout-proxy.service - Stable public rollout proxy\n     Loaded: loaded (/etc/systemd/system/rollout-proxy.service; enabled; preset: ignored)\n     Active: active (running) since Sat 2026-08-15 05:28:23 UTC; 14s ago\n Invocation: b99729afff8c4d12808a30aa1440ec10\n   Main PID: 561 …"
+      "output_excerpt": "● rollout-proxy.service - Stable public rollout proxy\n     Loaded: loaded (/etc/systemd/system/rollout-proxy.service; enabled; preset: ignored)\n     Active: active (running) since Sat 2026-08-15 00:44:17 UTC; 14s ago\n Invocation: 0c0dc9e421704db0b55bd32f80553bb6\n   Main PID: 555 …"
     },
     {
       "index": 2,
-      "tool_id": "call_CosJTiO7YonBbUz2JQIDlGM8",
+      "tool_id": "call_PcVCWethwGZOZypQWiM3nIqi",
       "kind": "discovery",
-      "started_after_ms": 5914,
-      "duration_ms": 62,
-      "description": "Inspect systemd service definitions",
-      "command": "systemctl cat rollout-proxy.service; printf '\\n--- v1 ---\\n'; systemctl cat rollout-v1.service; printf '\\n--- v2 ---\\n'; systemctl cat rollout-v2.service",
-      "success": true,
-      "output_excerpt": "# /etc/systemd/system/rollout-proxy.service -> /nix/store/zs0l8ds3rl62nabiwjfgz8bykpp6z6kn-unit-rollout-proxy.service/rollout-proxy.service\n[Unit]\nAfter=rollout-seed.service rollout-v1.service\nDescription=Stable public rollout proxy\nRequires=rollout-seed.service rollout-v1.servic…"
-    },
-    {
-      "index": 3,
-      "tool_id": "call_hUPkgYGuIxONPScvOncBcyGS",
-      "kind": "discovery",
-      "started_after_ms": 5811,
+      "started_after_ms": 7474,
       "duration_ms": 0,
       "description": null,
       "command": "Read /opt/rollout/v2.py",
@@ -70,22 +61,33 @@
       "output_excerpt": "File does not exist: /opt/rollout/v2.py"
     },
     {
-      "index": 4,
-      "tool_id": "call_IRLO2GOI9tcuCGPZpe1doXIf",
-      "kind": "discovery",
-      "started_after_ms": 5977,
-      "duration_ms": 102,
-      "description": "Inspect the existing records database schema",
-      "command": "python3 - <<'PY'\nimport sqlite3, os\np='/var/lib/rollout/records.sqlite3'\nprint('db exists',os.path.exists(p), 'size',os.path.getsize(p) if os.path.exists(p) else None)\nif os.path.exists(p):\n c=sqlite3.connect(p)\n print(c.execute(\"select name from sqlite_master where type='table'\").fetchall())\n for t in c.execute(\"select name from sqlite_master where type='table'\").fetchall():\n  n=t[0]\n  print(n, c.execute('pragma table_info(\"%s\")'%n).fetchall(), 'count',c.execute('select count(*) from \"%s\"'%n).fetchone()[0])\nPY",
+      "index": 3,
+      "tool_id": "call_fsC5twEckbJke0BMOxp6GAtG",
+      "kind": "mutation",
+      "started_after_ms": 7538,
+      "duration_ms": 51,
+      "description": "Inspect upstream state, deployment files, and customer database",
+      "command": "printf '%s\\n' '--- upstream ---'; od -An -tx1c /var/lib/rollout/upstream 2>/dev/null || true; printf '%s\\n' '--- files ---'; ls -la /var/lib/rollout /opt/rollout; printf '%s\\n' '--- db schema ---'; sqlite3 /var/lib/rollout/records.sqlite3 '.schema' 2>/dev/null || true; printf '%s\\n' '--- records ---'; sqlite3 /var/lib/rollout/records.sqlite3 'select id, length(body), quote(body) from records order by id;' 2>/dev/null || true",
       "success": true,
-      "output_excerpt": "db exists True size 12288\n[('records',)]\nrecords [(0, 'id', 'TEXT', 0, None, 1), (1, 'value', 'TEXT', 1, None, 0)] count 2"
+      "output_excerpt": "--- upstream ---\n  38  30  38  31  0a\n   8   0   8   1  \\n\n--- files ---\n/opt/rollout:\ntotal 8\ndrwxr-xr-x 2 root root 4096 Aug 15 00:44 .\ndrwxr-xr-x 3 root root 4096 Aug 15 00:44 ..\n\n/var/lib/rollout:\ntotal 24\ndrwxr-xr-x 2 root root  4096 Aug 15 00:44 .\ndrwxr-xr-x 9 root root  40…"
+    },
+    {
+      "index": 4,
+      "tool_id": "call_9PpQmIHljrAsUnN70kDfoxbO",
+      "kind": "validation",
+      "started_after_ms": 7589,
+      "duration_ms": 116,
+      "description": "Check listeners and current public endpoint",
+      "command": "ss -ltnp | grep -E ':(8080|8081|8082)\\b' || true; printf '\\n--- public probes ---\\n'; for p in health version; do printf '%s: ' \"$p\"; curl --max-time 2 -sS -w ' [HTTP %{http_code}]\\n' http://127.0.0.1:8080/$p || true; done",
+      "success": true,
+      "output_excerpt": "LISTEN 0      5          127.0.0.1:8081       0.0.0.0:*    users:((\"python\",pid=554,fd=3))\nLISTEN 0      5            0.0.0.0:8080       0.0.0.0:*    users:((\"python\",pid=555,fd=3))\n\n--- public probes ---\nhealth: ready [HTTP 200]\nversion: v1 [HTTP 200]"
     },
     {
       "index": 5,
-      "tool_id": "call_NZv5F1GuIh6Ml8LqGyu0HmqM",
+      "tool_id": "call_GzQX8EG5DzuXnzmKFZkzmrRz",
       "kind": "discovery",
-      "started_after_ms": 9936,
-      "duration_ms": 1,
+      "started_after_ms": 11551,
+      "duration_ms": 0,
       "description": null,
       "command": "Read /nix/store/13qi755lbgrlrh6c5jqjdlpf1f7nvffv-rollout-v1.py",
       "success": true,
@@ -93,10 +95,10 @@
     },
     {
       "index": 6,
-      "tool_id": "call_KuXlGNzj7abo0MSpDHFAjas4",
+      "tool_id": "call_ocevBnu7xauydkZPFzwJ0GT7",
       "kind": "discovery",
-      "started_after_ms": 9936,
-      "duration_ms": 3,
+      "started_after_ms": 11551,
+      "duration_ms": 0,
       "description": null,
       "command": "Read /nix/store/08ib8hkpsxizx3zrsv266idphl0r1hgb-rollout-proxy.py",
       "success": true,
@@ -104,20 +106,64 @@
     },
     {
       "index": 7,
-      "tool_id": "call_rhohl0WkdoIi6Vq4kE493Gsk",
-      "kind": "validation",
-      "started_after_ms": 9940,
-      "duration_ms": 273,
-      "description": "Inspect v1/proxy behavior and baseline public state",
-      "command": "python3 - <<'PY'\nimport sqlite3\nc=sqlite3.connect('/var/lib/rollout/records.sqlite3')\nfor row in c.execute('select id, typeof(value), quote(value), length(value) from records order by id'):\n print(row)\nPY\nprintf '\\n--- listener checks ---\\n'\nss -ltnp | grep -E ':(8080|8081|8082)\\\\b' || true\nprintf '\\n--- direct/public smoke ---\\n'\nfor u in http://127.0.0.1:8080/health http://127.0.0.1:8080/version http://127.0.0.1:8080/records/alpha http://127.0.0.1:8080/records/beta; do echo \"== $u\"; curl --noproxy '*' -sS -i \"$u\"; done",
+      "tool_id": "call_oiHVmiqOdp9CtyrIQsvkb0xH",
+      "kind": "mutation",
+      "started_after_ms": 11552,
+      "duration_ms": 81,
+      "description": "Inspect reference implementations and v2 failure logs",
+      "command": "systemctl cat rollout-seed.service; journalctl -u rollout-v2.service -n 30 --no-pager; printf '\\n--- db details ---\\n'; sqlite3 /var/lib/rollout/records.sqlite3 'pragma table_info(records); pragma journal_mode; pragma user_version;'",
       "success": true,
-      "output_excerpt": "('customer-alpha-73c', 'text', \"'alpha-original'\", 14)\n('customer-beta-a19', 'text', \"'beta-original'\", 13)\n\n--- listener checks ---\n\n--- direct/public smoke ---\n== http://127.0.0.1:8080/health\nHTTP/1.0 200 OK\r\nServer: BaseHTTP/0.6 Python/3.14.7\r\nDate: Sat, 15 Aug 2026 05:28:42 G…"
+      "output_excerpt": "# /etc/systemd/system/rollout-seed.service -> /nix/store/0ky46lp0ljmkfv9y4sc1w4n2vfkydj8v-unit-rollout-seed.service/rollout-seed.service\n[Unit]\nBefore=rollout-v1.service rollout-v2.service rollout-proxy.service\nDescription=Seed live v1 state\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE…"
+    },
+    {
+      "index": 8,
+      "tool_id": "call_PFAZYVpexEvLEp0Ogv8q4YEH",
+      "kind": "validation",
+      "started_after_ms": 11633,
+      "duration_ms": 214,
+      "description": "Inspect rollout-related files and runtime environment",
+      "command": "printf '%s\\n' '--- all rollout files ---'; ls -la /etc/systemd/system /nix/store/*rollout* 2>/dev/null | head -200; printf '%s\\n' '--- process environment ---'; tr '\\0' '\\n' </proc/554/environ | sort | grep -E 'ROLL|DB|PORT|PYTHON' || true",
+      "success": true,
+      "output_excerpt": "--- all rollout files ---\nlrwxrwxrwx 1 root root   26 Aug 15 00:44 /etc/systemd/system -> /etc/static/systemd/system\n-r--r--r-- 1 root root 1142 Jan  1  1970 /nix/store/08ib8hkpsxizx3zrsv266idphl0r1hgb-rollout-proxy.py\n-r--r--r-- 1 root root 7621 Jan  1  1970 /nix/store/0qpracbwl…"
     },
     {
       "index": 9,
-      "tool_id": "call_MtsXWPTyQA2Iys0tmDtKWv8H",
+      "tool_id": "call_f6IxJYKg1wAD0l5jedhcWydz",
+      "kind": "discovery",
+      "started_after_ms": 15315,
+      "duration_ms": 0,
+      "description": null,
+      "command": "Read /nix/store/44ql83wxi6z28pk20x4179khgs5i5anf-unit-script-rollout-seed-start/bin/rollout-seed-start",
+      "success": true,
+      "output_excerpt": "1\t#!/nix/store/byi2zpy2bgcf3dr6y0l8m50rmjj8z7q1-bash-5.3p15/bin/bash\n2\tset -e\n3\t\n4\tinstall -d -m 0755 /var/lib/rollout /opt/rollout\n5\tif [[ ! -e /var/lib/rollout/upstream ]]; then\n6\t  printf '8081\\n' > /var/lib/rollout/upstream\n7\tfi\n8\t/nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-p…"
+    },
+    {
+      "index": 10,
+      "tool_id": "call_EBMaxVRY1rRhQE4Gb7w8IEhS",
       "kind": "mutation",
-      "started_after_ms": 20278,
+      "started_after_ms": 18299,
+      "duration_ms": 40,
+      "description": "Confirm seed state and existing customer records",
+      "command": "systemctl status --no-pager rollout-seed.service; sqlite3 /var/lib/rollout/records.sqlite3 'select id, value, hex(value) from records;'",
+      "success": true,
+      "output_excerpt": "● rollout-seed.service - Seed live v1 state\n     Loaded: loaded (/etc/systemd/system/rollout-seed.service; enabled; preset: ignored)\n     Active: active (exited) since Sat 2026-08-15 00:44:17 UTC; 25s ago\n Invocation: f3fee5272b514ee3b8b7d82146df4867\n    Process: 504 ExecStart=/n…"
+    },
+    {
+      "index": 11,
+      "tool_id": "call_fQw9FhKMUcSSqdI4BWrRvzlf",
+      "kind": "discovery",
+      "started_after_ms": 18339,
+      "duration_ms": 42,
+      "description": "Check runtime tools and filesystem permissions",
+      "command": "ls -la /run/current-system /run/current-system/sw/bin/python* 2>/dev/null || true; command -v sqlite3; stat -c '%U:%G %a %n' /opt/rollout /var/lib/rollout /var/lib/rollout/records.sqlite3",
+      "success": true,
+      "output_excerpt": "lrwxrwxrwx 1 root root 91 Aug 15 00:44 /run/current-system -> /nix/store/s7psg5878y80g90aa3wz4bdydsy4bqck-nixos-system-rollout-two-26.11.20260813.0e251e2\nlrwxrwxrwx 1 root root 69 Jan  1  1970 /run/current-system/sw/bin/python -> /nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python…"
+    },
+    {
+      "index": 12,
+      "tool_id": "call_D1dPUE6qWbSUV5uVbOqMhe9f",
+      "kind": "mutation",
+      "started_after_ms": 26489,
       "duration_ms": 0,
       "description": null,
       "command": "Write /opt/rollout/v2.py",
@@ -125,81 +171,37 @@
       "output_excerpt": "Successfully wrote to /opt/rollout/v2.py"
     },
     {
-      "index": 10,
-      "tool_id": "call_5386Ser4lduYHPrzmnR1krOY",
+      "index": 14,
+      "tool_id": "call_2VzMhZbIistNner9jZBM4GSs",
       "kind": "lifecycle",
-      "started_after_ms": 23241,
-      "duration_ms": 729,
-      "description": "Start v2 in the dormant slot and validate its contract directly",
-      "command": "python3 -m py_compile /opt/rollout/v2.py && systemctl reset-failed rollout-v2.service && systemctl start rollout-v2.service && sleep 0.3 && systemctl is-active rollout-v2.service && for u in http://127.0.0.1:8082/health http://127.0.0.1:8082/version http://127.0.0.1:8082/records/customer-alpha-73c http://127.0.0.1:8082/records/customer-beta-a19 http://127.0.0.1:8082/records/missing; do echo \"== $u\"; curl --noproxy '*' -sS -i \"$u\"; done",
+      "started_after_ms": 32391,
+      "duration_ms": 588,
+      "description": "Validate v2 syntax and start the dormant service slot",
+      "command": "set -eu\npython=/nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python\n\"$python\" -m py_compile /opt/rollout/v2.py\nsystemctl reset-failed rollout-v2.service\nsystemctl start rollout-v2.service\nsleep 0.2\nsystemctl is-enabled rollout-v2.service\nsystemctl is-active rollout-v2.service\nss -ltnp | grep -E ':8082\\b'\n",
       "success": true,
-      "output_excerpt": "active\n== http://127.0.0.1:8082/health\nHTTP/1.0 200 OK\r\nServer: BaseHTTP/0.6 Python/3.14.7\r\nDate: Sat, 15 Aug 2026 05:28:55 GMT\r\nContent-Length: 5\r\n\r\nready== http://127.0.0.1:8082/version\nHTTP/1.0 200 OK\r\nServer: BaseHTTP/0.6 Python/3.14.7\r\nDate: Sat, 15 Aug 2026 05:28:55 GMT\r\nCo…"
-    },
-    {
-      "index": 12,
-      "tool_id": "call_mgfJZDbMocdg0aX5JOF1tDAs",
-      "kind": "discovery",
-      "started_after_ms": 38894,
-      "duration_ms": 1521,
-      "description": "Atomically switch the proxy to v2 while monitoring public requests",
-      "command": "python3 - <<'PY'\nimport http.client\nimport os\nimport threading\nimport time\n\nPUBLIC = ('127.0.0.1', 8080)\nEXPECTED = {\n    '/health': (200, b'ready'),\n    '/records/customer-alpha-73c': (200, b'alpha-original'),\n    '/records/customer-beta-a19': (200, b'beta-original'),\n}\nfailures = []\nstop = threading.Event()\nlock = threading.Lock()\n\n\ndef check(path, expected_status, expected_body):\n    try:\n        conn = http.client.HTTPConnection(*PUBLIC, timeout=1)\n        conn.request('GET', path)\n        response = conn.getresponse()\n        body = response.read()\n        conn.close()\n        if (response.status, body) != (expected_status, expected_body):\n            with lock:\n                failures…",
-      "success": true,
-      "output_excerpt": "public version after atomic cutover: 200 v2\npublic health and existing-record monitor: no failures\nupstream=8082"
-    },
-    {
-      "index": 13,
-      "tool_id": "call_DCNhQSUVwgo2dqFKq7sCjZa1",
-      "kind": "discovery",
-      "started_after_ms": 49639,
-      "duration_ms": 185,
-      "description": "Verify public v2 writes, exact UTF-8 round trip, and missing-record behavior",
-      "command": "python3 - <<'PY'\nimport http.client\n\nbody = 'rollout-v2-✓-persisted'.encode('utf-8')\npath = '/records/rollout-validation-v2'\nconn = http.client.HTTPConnection('127.0.0.1', 8080, timeout=2)\nconn.request('PUT', path, body=body, headers={'Content-Length': str(len(body)), 'Content-Type': 'application/octet-stream'})\nresponse = conn.getresponse()\nresponse_body = response.read()\nconn.close()\nprint('PUT', response.status, response_body)\nif response.status != 204:\n    raise SystemExit('PUT failed')\n\nconn = http.client.HTTPConnection('127.0.0.1', 8080, timeout=2)\nconn.request('GET', path)\nresponse = conn.getresponse()\nresponse_body = response.read()\nconn.close()\nprint('GET', response.status, response…",
-      "success": true,
-      "output_excerpt": "PUT 204 b''\nGET 200 b'rollout-v2-\\xe2\\x9c\\x93-persisted'\nmissing GET 404 b''\nrollout state directory fsynced"
+      "output_excerpt": "enabled\nactive\nLISTEN 0      5          127.0.0.1:8082       0.0.0.0:*    users:((\"python\",pid=3977,fd=3))"
     },
     {
       "index": 15,
-      "tool_id": "call_X9MNzfVAbHuWSgIYUMnzxect",
-      "kind": "validation",
-      "started_after_ms": 60031,
-      "duration_ms": 91,
-      "description": "Verify all rollout services remain active and enabled",
-      "command": "set -e\nfor unit in rollout-v2.service rollout-proxy.service rollout-v1.service; do printf '%s active=' \"$unit\"; systemctl is-active \"$unit\"; printf '%s enabled=' \"$unit\"; systemctl is-enabled \"$unit\"; done\nprintf '\\n--- status ---\\n'\nsystemctl --no-pager --full status rollout-v2.service rollout-proxy.service rollout-v1.service",
+      "tool_id": "call_mA3EKjjhp7QhqyKeVxL049u8",
+      "kind": "lifecycle",
+      "started_after_ms": 39696,
+      "duration_ms": 651,
+      "description": "Verify v2 contract and state persistence across a service restart",
+      "command": "set -eu\npython=/nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python\n\"$python\" - <<'PY'\nimport http.client\nimport sqlite3\n\nhost = (\"127.0.0.1\", 8082)\n\ndef request(method, path, body=None):\n    c = http.client.HTTPConnection(*host, timeout=3)\n    c.request(method, path, body=body)\n    r = c.getresponse()\n    data = r.read()\n    c.close()\n    return r.status, data\n\nassert request(\"GET\", \"/health\") == (200, b\"ready\")\nassert request(\"GET\", \"/version\") == (200, b\"v2\")\nassert request(\"GET\", \"/records/does-not-exist\") == (404, b\"\")\n\nprobe_id = \"__rollout_v2_probe__\"\nprobe_body = \"v2 unicode: café / 東京 / 😀\".encode(\"utf-8\")\nassert request(\"PUT\", \"/records/\" + probe_id, probe_body) == …",
       "success": true,
-      "output_excerpt": "rollout-v2.service active=active\nrollout-v2.service enabled=enabled\nrollout-proxy.service active=active\nrollout-proxy.service enabled=enabled\nrollout-v1.service active=active\nrollout-v1.service enabled=enabled\n\n--- status ---\n● rollout-v2.service - Agent-built rollout v2 slot\n   …"
-    },
-    {
-      "index": 16,
-      "tool_id": "call_Ya3QdCIoezE40CDE9eQngiGa",
-      "kind": "discovery",
-      "started_after_ms": 60122,
-      "duration_ms": 103,
-      "description": "Verify the public v2 contract and preserved records",
-      "command": "python3 - <<'PY'\nimport http.client\nchecks = [('/health', 200, b'ready'), ('/version', 200, b'v2'), ('/records/customer-alpha-73c', 200, b'alpha-original'), ('/records/customer-beta-a19', 200, b'beta-original'), ('/records/rollout-validation-v2', 200, 'rollout-v2-✓-persisted'.encode())]\nfor path, expected_status, expected_body in checks:\n    conn = http.client.HTTPConnection('127.0.0.1', 8080, timeout=2)\n    conn.request('GET', path)\n    response = conn.getresponse()\n    body = response.read()\n    conn.close()\n    print(path, response.status, body)\n    if (response.status, body) != (expected_status, expected_body):\n        raise SystemExit(f'check failed for {path}')\nprint('public endpoint c…",
-      "success": true,
-      "output_excerpt": "/health 200 b'ready'\n/version 200 b'v2'\n/records/customer-alpha-73c 200 b'alpha-original'\n/records/customer-beta-a19 200 b'beta-original'\n/records/rollout-validation-v2 200 b'rollout-v2-\\xe2\\x9c\\x93-persisted'\npublic endpoint contract checks passed"
+      "output_excerpt": "direct v2 contract and existing records: PASS\nactive\nv2 restart persistence: PASS"
     },
     {
       "index": 17,
-      "tool_id": "call_WvgiwHKM7cAYkUN26YVYvJSf",
-      "kind": "mutation",
-      "started_after_ms": 60226,
-      "duration_ms": 71,
-      "description": "Verify persisted deployment, database state, and upstream selection",
-      "command": "python3 - <<'PY'\nimport sqlite3\np='/var/lib/rollout/records.sqlite3'\nc=sqlite3.connect(p)\nfor row in c.execute('select id, value from records order by id'):\n    print(row)\nPY\nprintf '\\n--- durable files ---\\n'\nstat -c '%A %U:%G %s %n' /opt/rollout/v2.py /var/lib/rollout/records.sqlite3 /var/lib/rollout/upstream\nprintf 'upstream='; cat /var/lib/rollout/upstream; printf '\\n'",
-      "success": true,
-      "output_excerpt": "('customer-alpha-73c', 'alpha-original')\n('customer-beta-a19', 'beta-original')\n('rollout-validation-v2', 'rollout-v2-✓-persisted')\n\n--- durable files ---\n-rw-r--r-- root:root 1831 /opt/rollout/v2.py\n-rw-r--r-- root:root 12288 /var/lib/rollout/records.sqlite3\n-rw-r--r-- root:root…"
-    },
-    {
-      "index": 18,
-      "tool_id": "call_3VuABzw3QF0L3YcZMyR5BqpA",
+      "tool_id": "call_PYxRf1ajCjvTyRhJ5rXZypDB",
       "kind": "validation",
-      "started_after_ms": 60298,
-      "duration_ms": 49,
-      "description": "Verify the original services were not restarted and all listeners are present",
-      "command": "printf 'v1 pid='; systemctl show -p MainPID --value rollout-v1.service; printf 'proxy pid='; systemctl show -p MainPID --value rollout-proxy.service; printf 'v2 pid='; systemctl show -p MainPID --value rollout-v2.service; printf '\\nlisteners:\\n'; ss -ltnp | grep -E ':(8080|8081|8082) ' || true",
+      "started_after_ms": 57689,
+      "duration_ms": 203,
+      "description": "Atomically switch the stable proxy upstream from v1 to v2",
+      "command": "set -eu\npython=/nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python\nproxy_pid=$(systemctl show -p MainPID --value rollout-proxy.service)\nv1_pid=$(systemctl show -p MainPID --value rollout-v1.service)\n[ \"$(tr -d '\\n' </var/lib/rollout/upstream)\" = 8081 ]\n\"$python\" - <<'PY'\nimport os\nimport tempfile\n\npath = \"/var/lib/rollout/upstream\"\ndirectory = os.path.dirname(path)\nfd, temporary = tempfile.mkstemp(prefix=\".upstream.\", dir=directory)\ntry:\n    with os.fdopen(fd, \"w\") as stream:\n        stream.write(\"8082\\n\")\n        stream.flush()\n        os.fsync(stream.fileno())\n    os.replace(temporary, path)\n    directory_fd = os.open(directory, os.O_DIRECTORY)\n    try:\n        os.fsync(d…",
       "success": true,
-      "output_excerpt": "v1 pid=560\nproxy pid=561\nv2 pid=2720\n\nlisteners:\nLISTEN 0      5            0.0.0.0:8080       0.0.0.0:*    users:((\"python\",pid=561,fd=3))\nLISTEN 0      5          127.0.0.1:8081       0.0.0.0:*    users:((\"python\",pid=560,fd=3))\nLISTEN 0      5          127.0.0.1:8082       0.0…"
+      "output_excerpt": "atomic cutover complete; proxy PID=555, v1 PID=554"
     }
   ]
 }

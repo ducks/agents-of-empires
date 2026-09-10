@@ -1,0 +1,1332 @@
+{
+  "analyses": {},
+  "arena": {
+    "agents": [
+      {
+        "adapter": "oracle-blueprint",
+        "budget": {
+          "max_cost_microusd": null,
+          "resource_units": 1
+        },
+        "id": "blueprint-one-agent",
+        "model": "oracle",
+        "reasoning_effort": "default",
+        "territory": "blueprint-one"
+      },
+      {
+        "adapter": "oracle-blueprint",
+        "budget": {
+          "max_cost_microusd": null,
+          "resource_units": 1
+        },
+        "id": "blueprint-two-agent",
+        "model": "oracle",
+        "reasoning_effort": "default",
+        "territory": "blueprint-two"
+      },
+      {
+        "adapter": "oracle-blueprint",
+        "budget": {
+          "max_cost_microusd": null,
+          "resource_units": 1
+        },
+        "id": "blueprint-three-agent",
+        "model": "oracle",
+        "reasoning_effort": "default",
+        "territory": "blueprint-three"
+      }
+    ],
+    "arena": {
+      "category": "architecture-implementation",
+      "display_name": "Blueprint Build",
+      "id": "blueprint-build",
+      "mode": "build_race"
+    },
+    "build": {
+      "completion_milestone": "host-reboot",
+      "milestones": [
+        {
+          "depends_on": [],
+          "display_name": "Gateway Ready",
+          "id": "gateway-ready",
+          "operation": "observe",
+          "points": 10,
+          "required": true,
+          "timeout_seconds": 8,
+          "verifier": "verify/gateway-ready.sh"
+        },
+        {
+          "depends_on": [
+            "gateway-ready"
+          ],
+          "display_name": "Accept While Worker Stopped",
+          "id": "accept-under-stop",
+          "operation": "observe",
+          "points": 20,
+          "required": true,
+          "timeout_seconds": 20,
+          "verifier": "verify/accept-under-stop.sh"
+        },
+        {
+          "depends_on": [
+            "accept-under-stop"
+          ],
+          "display_name": "Recover Queued Work",
+          "id": "recover-blueprint",
+          "operation": "observe",
+          "points": 25,
+          "required": true,
+          "timeout_seconds": 35,
+          "verifier": "verify/recover-blueprint.sh"
+        },
+        {
+          "depends_on": [
+            "recover-blueprint"
+          ],
+          "display_name": "Independent Service Restart",
+          "id": "service-restart",
+          "operation": "observe",
+          "points": 20,
+          "required": true,
+          "timeout_seconds": 25,
+          "verifier": "verify/service-restart.sh"
+        },
+        {
+          "depends_on": [
+            "service-restart"
+          ],
+          "display_name": "Host Reboot",
+          "id": "host-reboot",
+          "operation": "host_reboot",
+          "points": 25,
+          "required": true,
+          "timeout_seconds": 40,
+          "verifier": "verify/host-reboot.sh"
+        }
+      ],
+      "stop_on_first_durable": true
+    },
+    "classes": [
+      {
+        "display_name": "Blueprint Builder",
+        "id": "blueprint-builder",
+        "resources": {
+          "disk_mib": 2048,
+          "memory_mib": 768,
+          "vcpus": 1
+        },
+        "strengths": [],
+        "weaknesses": []
+      }
+    ],
+    "fog_of_war": {
+      "guest_leak_audit": {
+        "forbidden_strings": [
+          "accept-under-stop.sh",
+          "recover-blueprint.sh",
+          "controller-owned blueprint evidence",
+          "blueprint oracle"
+        ],
+        "scan_paths": [
+          "/etc",
+          "/opt",
+          "/root",
+          "/var/lib"
+        ]
+      },
+      "hide_topology_until_observed": true,
+      "player_artifacts": [
+        "blueprint.png"
+      ],
+      "player_brief": "brief.md"
+    },
+    "network": {
+      "allow_public_internet": false,
+      "cidr": "10.84.0.0/24"
+    },
+    "rules": {
+      "duration_seconds": 900,
+      "healthy_resources_per_tick": 0,
+      "minimum_territories": 3,
+      "tick_ms": 2000
+    },
+    "schema_version": 1,
+    "territories": [
+      {
+        "class": "blueprint-builder",
+        "id": "blueprint-one",
+        "nixos_config": ".#nixosConfigurations.blueprint-one.config.system.build.vm",
+        "service": {
+          "expected_body": "ready",
+          "expected_status": 200,
+          "health": {
+            "consecutive_failures": 3,
+            "poll_interval_ms": 1000,
+            "recovery_window_seconds": 60
+          },
+          "path": "/health",
+          "port": 8080
+        }
+      },
+      {
+        "class": "blueprint-builder",
+        "id": "blueprint-two",
+        "nixos_config": ".#nixosConfigurations.blueprint-two.config.system.build.vm",
+        "service": {
+          "expected_body": "ready",
+          "expected_status": 200,
+          "health": {
+            "consecutive_failures": 3,
+            "poll_interval_ms": 1000,
+            "recovery_window_seconds": 60
+          },
+          "path": "/health",
+          "port": 8080
+        }
+      },
+      {
+        "class": "blueprint-builder",
+        "id": "blueprint-three",
+        "nixos_config": ".#nixosConfigurations.blueprint-three.config.system.build.vm",
+        "service": {
+          "expected_body": "ready",
+          "expected_status": 200,
+          "health": {
+            "consecutive_failures": 3,
+            "poll_interval_ms": 1000,
+            "recovery_window_seconds": 60
+          },
+          "path": "/health",
+          "port": 8080
+        }
+      }
+    ],
+    "visualization": {
+      "links": [
+        {
+          "from": "client",
+          "kind": "traffic",
+          "label": "HTTP :8080",
+          "to": "edge"
+        },
+        {
+          "from": "edge",
+          "kind": "traffic",
+          "label": "route",
+          "to": "api"
+        },
+        {
+          "from": "api",
+          "kind": "queue",
+          "label": "accept",
+          "to": "queue"
+        },
+        {
+          "from": "queue",
+          "kind": "queue",
+          "label": "claim",
+          "to": "worker"
+        },
+        {
+          "from": "worker",
+          "kind": "storage",
+          "label": "complete",
+          "to": "results"
+        },
+        {
+          "from": "results",
+          "kind": "storage",
+          "label": "read",
+          "to": "api"
+        },
+        {
+          "from": "host",
+          "kind": "lifecycle",
+          "label": null,
+          "to": "edge"
+        }
+      ],
+      "nodes": [
+        {
+          "display_name": "Client",
+          "id": "client",
+          "kind": "client",
+          "milestone": null,
+          "x": 5,
+          "y": 28
+        },
+        {
+          "display_name": "Edge Gateway",
+          "id": "edge",
+          "kind": "proxy",
+          "milestone": "gateway-ready",
+          "x": 23,
+          "y": 28
+        },
+        {
+          "display_name": "API Receiver",
+          "id": "api",
+          "kind": "service",
+          "milestone": "accept-under-stop",
+          "x": 42,
+          "y": 28
+        },
+        {
+          "display_name": "Durable Queue",
+          "id": "queue",
+          "kind": "queue",
+          "milestone": "recover-blueprint",
+          "x": 61,
+          "y": 28
+        },
+        {
+          "display_name": "Worker",
+          "id": "worker",
+          "kind": "worker",
+          "milestone": "recover-blueprint",
+          "x": 80,
+          "y": 28
+        },
+        {
+          "display_name": "Result Store",
+          "id": "results",
+          "kind": "storage",
+          "milestone": "service-restart",
+          "x": 80,
+          "y": 72
+        },
+        {
+          "display_name": "NixOS Host",
+          "id": "host",
+          "kind": "host",
+          "milestone": "host-reboot",
+          "x": 42,
+          "y": 72
+        }
+      ]
+    }
+  },
+  "artifact_type": "agents-of-empires.match",
+  "events": [
+    {
+      "elapsed_ms": 0,
+      "from": "preparing",
+      "kind": "match_state_changed",
+      "schema_version": 1,
+      "sequence": 0,
+      "to": "running"
+    },
+    {
+      "elapsed_ms": 0,
+      "from": "preparing",
+      "kind": "competitor_state_changed",
+      "reason": "SSH preflight passed",
+      "schema_version": 1,
+      "sequence": 1,
+      "territory": "blueprint-one",
+      "to": "building"
+    },
+    {
+      "elapsed_ms": 0,
+      "from": "preparing",
+      "kind": "competitor_state_changed",
+      "reason": "SSH preflight passed",
+      "schema_version": 1,
+      "sequence": 2,
+      "territory": "blueprint-three",
+      "to": "building"
+    },
+    {
+      "elapsed_ms": 0,
+      "from": "preparing",
+      "kind": "competitor_state_changed",
+      "reason": "SSH preflight passed",
+      "schema_version": 1,
+      "sequence": 3,
+      "territory": "blueprint-two",
+      "to": "building"
+    },
+    {
+      "agent": "blueprint-one-agent",
+      "class": "blueprint-builder",
+      "elapsed_ms": 0,
+      "kind": "territory_registered",
+      "schema_version": 1,
+      "sequence": 4,
+      "territory": "blueprint-one"
+    },
+    {
+      "agent": "blueprint-two-agent",
+      "class": "blueprint-builder",
+      "elapsed_ms": 0,
+      "kind": "territory_registered",
+      "schema_version": 1,
+      "sequence": 5,
+      "territory": "blueprint-two"
+    },
+    {
+      "agent": "blueprint-three-agent",
+      "class": "blueprint-builder",
+      "elapsed_ms": 0,
+      "kind": "territory_registered",
+      "schema_version": 1,
+      "sequence": 6,
+      "territory": "blueprint-three"
+    },
+    {
+      "agent": "blueprint-one-agent",
+      "elapsed_ms": 0,
+      "kind": "agent_started",
+      "model": "oracle",
+      "schema_version": 1,
+      "sequence": 7,
+      "territory": "blueprint-one"
+    },
+    {
+      "agent": "blueprint-two-agent",
+      "elapsed_ms": 0,
+      "kind": "agent_started",
+      "model": "oracle",
+      "schema_version": 1,
+      "sequence": 8,
+      "territory": "blueprint-two"
+    },
+    {
+      "agent": "blueprint-three-agent",
+      "elapsed_ms": 0,
+      "kind": "agent_started",
+      "model": "oracle",
+      "schema_version": 1,
+      "sequence": 9,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 2001,
+      "from": "building",
+      "kind": "competitor_state_changed",
+      "reason": "milestone verification began",
+      "schema_version": 1,
+      "sequence": 10,
+      "territory": "blueprint-one",
+      "to": "verifying"
+    },
+    {
+      "elapsed_ms": 2001,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 11,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 2001,
+      "from": "building",
+      "kind": "competitor_state_changed",
+      "reason": "milestone verification began",
+      "schema_version": 1,
+      "sequence": 12,
+      "territory": "blueprint-two",
+      "to": "verifying"
+    },
+    {
+      "elapsed_ms": 2001,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 13,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 2001,
+      "from": "building",
+      "kind": "competitor_state_changed",
+      "reason": "milestone verification began",
+      "schema_version": 1,
+      "sequence": 14,
+      "territory": "blueprint-three",
+      "to": "verifying"
+    },
+    {
+      "elapsed_ms": 2001,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 15,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 2076,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 16,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 2076,
+      "evidence": {
+        "health": "ready"
+      },
+      "kind": "milestone_passed",
+      "milestone": "gateway-ready",
+      "points": 10,
+      "schema_version": 1,
+      "sequence": 17,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 2076,
+      "evidence": {
+        "health": "ready"
+      },
+      "kind": "milestone_passed",
+      "milestone": "gateway-ready",
+      "points": 10,
+      "schema_version": 1,
+      "sequence": 18,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 2076,
+      "kind": "milestone_evaluation_started",
+      "milestone": "accept-under-stop",
+      "schema_version": 1,
+      "sequence": 19,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 2076,
+      "kind": "milestone_evaluation_started",
+      "milestone": "accept-under-stop",
+      "schema_version": 1,
+      "sequence": 20,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 2432,
+      "evidence": {
+        "jobs": [
+          "cedar-aececa3a5bd2",
+          "cobalt-b6fc260d214e",
+          "saffron-67fe84e7d318"
+        ],
+        "payloads": [
+          "opaque/cedar/d300a314287bf1365f000fd5",
+          "opaque/cobalt/4c59397b7bc4c8da38d39d4b",
+          "opaque/saffron/9ca07e705967644158357919"
+        ],
+        "worker_stopped": true
+      },
+      "kind": "milestone_passed",
+      "milestone": "accept-under-stop",
+      "points": 20,
+      "schema_version": 1,
+      "sequence": 21,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 2432,
+      "evidence": {
+        "jobs": [
+          "cedar-9cd546eeeb80",
+          "cobalt-4b4d801a54a7",
+          "saffron-d63092c495f6"
+        ],
+        "payloads": [
+          "opaque/cedar/ca3734546b231019654bd7b6",
+          "opaque/cobalt/e8f917e126560ac7df930a6a",
+          "opaque/saffron/ecfad9eaa7ffeea3ef5f931c"
+        ],
+        "worker_stopped": true
+      },
+      "kind": "milestone_passed",
+      "milestone": "accept-under-stop",
+      "points": 20,
+      "schema_version": 1,
+      "sequence": 22,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 2432,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-blueprint",
+      "schema_version": 1,
+      "sequence": 23,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 2432,
+      "kind": "milestone_evaluation_started",
+      "milestone": "recover-blueprint",
+      "schema_version": 1,
+      "sequence": 24,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 3803,
+      "evidence": {
+        "jobs": [
+          "cedar-aececa3a5bd2",
+          "cobalt-b6fc260d214e",
+          "saffron-67fe84e7d318"
+        ],
+        "payloads": [
+          "opaque/cedar/d300a314287bf1365f000fd5",
+          "opaque/cobalt/4c59397b7bc4c8da38d39d4b",
+          "opaque/saffron/9ca07e705967644158357919"
+        ],
+        "recovered": true
+      },
+      "kind": "milestone_passed",
+      "milestone": "recover-blueprint",
+      "points": 25,
+      "schema_version": 1,
+      "sequence": 25,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 3803,
+      "evidence": {
+        "jobs": [
+          "cedar-9cd546eeeb80",
+          "cobalt-4b4d801a54a7",
+          "saffron-d63092c495f6"
+        ],
+        "payloads": [
+          "opaque/cedar/ca3734546b231019654bd7b6",
+          "opaque/cobalt/e8f917e126560ac7df930a6a",
+          "opaque/saffron/ecfad9eaa7ffeea3ef5f931c"
+        ],
+        "recovered": true
+      },
+      "kind": "milestone_passed",
+      "milestone": "recover-blueprint",
+      "points": 25,
+      "schema_version": 1,
+      "sequence": 26,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 3803,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-restart",
+      "schema_version": 1,
+      "sequence": 27,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 3803,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-restart",
+      "schema_version": 1,
+      "sequence": 28,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "Connection closed by 127.0.0.1 port 26002\r\nConnection closed by 127.0.0.1 port 26002\r\nConnection closed by 127.0.0.1 port 26002\r\nConnection closed by 127.0.0.1 port 26002\r\nConnection closed by 127.0.0.1 port 26002\r\nConnection closed by 127.0.0.1 port 26002\r\nConnection closed by 127.0.0.1 port 26002\r\nConnection closed by 127.0.0.1 port 26002\r\nConnection closed by 127.0.0.1 port 26002\r\nConnection closed by 127.0.0.1 port 26002\r\ncould not restart blueprint lifecycle units",
+      "elapsed_ms": 8946,
+      "kind": "milestone_failed",
+      "milestone": "service-restart",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 29,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "Connection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\ncould not restart blueprint lifecycle units",
+      "elapsed_ms": 8946,
+      "kind": "milestone_failed",
+      "milestone": "service-restart",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 30,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 10947,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 31,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 10956,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 32,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 10956,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-restart",
+      "schema_version": 1,
+      "sequence": 33,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 10956,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-restart",
+      "schema_version": 1,
+      "sequence": 34,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "Connection closed by 127.0.0.1 port 26002\r\nConnection closed by 127.0.0.1 port 26002\r\nConnection closed by 127.0.0.1 port 26002\r\nConnection closed by 127.0.0.1 port 26002\r\nConnection closed by 127.0.0.1 port 26002\r\nConnection closed by 127.0.0.1 port 26002\r\nConnection closed by 127.0.0.1 port 26002\r\nConnection closed by 127.0.0.1 port 26002\r\nConnection closed by 127.0.0.1 port 26002\r\nConnection closed by 127.0.0.1 port 26002\r\ncould not restart blueprint lifecycle units",
+      "elapsed_ms": 16139,
+      "kind": "milestone_failed",
+      "milestone": "service-restart",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 35,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "Connection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\ncould not restart blueprint lifecycle units",
+      "elapsed_ms": 16139,
+      "kind": "milestone_failed",
+      "milestone": "service-restart",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 36,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 18142,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 37,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 18227,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 38,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 18227,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-restart",
+      "schema_version": 1,
+      "sequence": 39,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 18227,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-restart",
+      "schema_version": 1,
+      "sequence": 40,
+      "territory": "blueprint-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "Connection closed by 127.0.0.1 port 26002\r\nConnection closed by 127.0.0.1 port 26002\r\nConnection closed by 127.0.0.1 port 26002\r\nConnection closed by 127.0.0.1 port 26002\r\nConnection closed by 127.0.0.1 port 26002\r\nConnection closed by 127.0.0.1 port 26002\r\nConnection closed by 127.0.0.1 port 26002\r\nConnection closed by 127.0.0.1 port 26002\r\nConnection closed by 127.0.0.1 port 26002\r\nConnection closed by 127.0.0.1 port 26002\r\ncould not restart blueprint lifecycle units",
+      "elapsed_ms": 23532,
+      "kind": "milestone_failed",
+      "milestone": "service-restart",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 41,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "Connection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\ncould not restart blueprint lifecycle units",
+      "elapsed_ms": 23532,
+      "kind": "milestone_failed",
+      "milestone": "service-restart",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 42,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 25533,
+      "kind": "milestone_evaluation_started",
+      "milestone": "gateway-ready",
+      "schema_version": 1,
+      "sequence": 43,
+      "territory": "blueprint-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 25571,
+      "kind": "milestone_failed",
+      "milestone": "gateway-ready",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 44,
+      "territory": "blueprint-one"
+    },
+    {
+      "elapsed_ms": 25571,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-restart",
+      "schema_version": 1,
+      "sequence": 45,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 25571,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-restart",
+      "schema_version": 1,
+      "sequence": 46,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 30728,
+      "evidence": {
+        "jobs": [
+          "cedar-aececa3a5bd2",
+          "cobalt-b6fc260d214e",
+          "saffron-67fe84e7d318",
+          "restart-7f0edf930e12"
+        ],
+        "payloads": [
+          "opaque/cedar/d300a314287bf1365f000fd5",
+          "opaque/cobalt/4c59397b7bc4c8da38d39d4b",
+          "opaque/saffron/9ca07e705967644158357919",
+          "opaque/restart/9970340163d594097d8d47c2"
+        ],
+        "restarted": true
+      },
+      "kind": "milestone_passed",
+      "milestone": "service-restart",
+      "points": 20,
+      "schema_version": 1,
+      "sequence": 47,
+      "territory": "blueprint-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "Connection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\ncould not restart blueprint lifecycle units",
+      "elapsed_ms": 30729,
+      "kind": "milestone_failed",
+      "milestone": "service-restart",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 48,
+      "territory": "blueprint-three"
+    },
+    {
+      "elapsed_ms": 30729,
+      "kind": "milestone_evaluation_started",
+      "milestone": "host-reboot",
+      "schema_version": 1,
+      "sequence": 49,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 46625,
+      "evidence": {
+        "jobs": [
+          "cedar-aececa3a5bd2",
+          "cobalt-b6fc260d214e",
+          "saffron-67fe84e7d318",
+          "restart-7f0edf930e12"
+        ],
+        "reboot": true
+      },
+      "kind": "milestone_passed",
+      "milestone": "host-reboot",
+      "points": 25,
+      "schema_version": 1,
+      "sequence": 50,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 46625,
+      "from": "verifying",
+      "kind": "competitor_state_changed",
+      "reason": "completion milestone passed",
+      "schema_version": 1,
+      "sequence": 51,
+      "territory": "blueprint-two",
+      "to": "durable"
+    },
+    {
+      "elapsed_ms": 46625,
+      "kind": "durable_deployment_completed",
+      "schema_version": 1,
+      "sequence": 52,
+      "territory": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 46625,
+      "from": "running",
+      "kind": "match_state_changed",
+      "schema_version": 1,
+      "sequence": 53,
+      "to": "finished"
+    },
+    {
+      "elapsed_ms": 46625,
+      "kind": "match_finished",
+      "reason": "first durable deployment",
+      "schema_version": 1,
+      "sequence": 54,
+      "winner": "blueprint-two"
+    },
+    {
+      "elapsed_ms": 46625,
+      "kind": "post_match_drain_started",
+      "pending_agents": 3,
+      "schema_version": 1,
+      "sequence": 55,
+      "timeout_ms": 30000
+    },
+    {
+      "agent": "blueprint-one-agent",
+      "detail": "adapter exited with exit status: 255",
+      "elapsed_ms": 46625,
+      "kind": "agent_finished",
+      "schema_version": 1,
+      "sequence": 56,
+      "source": "harness",
+      "success": false
+    },
+    {
+      "agent": "blueprint-one-agent",
+      "cost_microusd": null,
+      "elapsed_ms": 46625,
+      "input_tokens": null,
+      "kind": "usage_charged",
+      "output_tokens": null,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 57
+    },
+    {
+      "agent": "blueprint-two-agent",
+      "detail": "oracle implemented the attached asynchronous blueprint",
+      "elapsed_ms": 46625,
+      "kind": "agent_finished",
+      "schema_version": 1,
+      "sequence": 58,
+      "source": "player",
+      "success": true
+    },
+    {
+      "agent": "blueprint-two-agent",
+      "cost_microusd": null,
+      "elapsed_ms": 46625,
+      "input_tokens": null,
+      "kind": "usage_charged",
+      "output_tokens": null,
+      "resource_units": 1,
+      "schema_version": 1,
+      "sequence": 59
+    },
+    {
+      "agent": "blueprint-three-agent",
+      "detail": "oracle implemented the attached asynchronous blueprint",
+      "elapsed_ms": 46625,
+      "kind": "agent_finished",
+      "schema_version": 1,
+      "sequence": 60,
+      "source": "player",
+      "success": true
+    },
+    {
+      "agent": "blueprint-three-agent",
+      "cost_microusd": null,
+      "elapsed_ms": 46625,
+      "input_tokens": null,
+      "kind": "usage_charged",
+      "output_tokens": null,
+      "resource_units": 1,
+      "schema_version": 1,
+      "sequence": 61
+    },
+    {
+      "captured_agents": 3,
+      "elapsed_ms": 46625,
+      "kind": "post_match_drain_finished",
+      "schema_version": 1,
+      "sequence": 62,
+      "terminated_agents": 0
+    }
+  ],
+  "match": {
+    "fog_of_war": true,
+    "listed": true,
+    "name": "blueprint-build-oracle-20260823-165026",
+    "slug": "blueprint-build-oracle-20260823-165026"
+  },
+  "provenance": null,
+  "schema_version": 1,
+  "visualization": {
+    "links": [
+      {
+        "from": "client",
+        "kind": "traffic",
+        "label": "HTTP :8080",
+        "to": "edge"
+      },
+      {
+        "from": "edge",
+        "kind": "traffic",
+        "label": "route",
+        "to": "api"
+      },
+      {
+        "from": "api",
+        "kind": "queue",
+        "label": "accept",
+        "to": "queue"
+      },
+      {
+        "from": "queue",
+        "kind": "queue",
+        "label": "claim",
+        "to": "worker"
+      },
+      {
+        "from": "worker",
+        "kind": "storage",
+        "label": "complete",
+        "to": "results"
+      },
+      {
+        "from": "results",
+        "kind": "storage",
+        "label": "read",
+        "to": "api"
+      },
+      {
+        "from": "host",
+        "kind": "lifecycle",
+        "label": null,
+        "to": "edge"
+      }
+    ],
+    "nodes": [
+      {
+        "display_name": "Client",
+        "id": "client",
+        "kind": "client",
+        "milestone": null,
+        "x": 5,
+        "y": 28
+      },
+      {
+        "display_name": "Edge Gateway",
+        "id": "edge",
+        "kind": "proxy",
+        "milestone": "gateway-ready",
+        "x": 23,
+        "y": 28
+      },
+      {
+        "display_name": "API Receiver",
+        "id": "api",
+        "kind": "service",
+        "milestone": "accept-under-stop",
+        "x": 42,
+        "y": 28
+      },
+      {
+        "display_name": "Durable Queue",
+        "id": "queue",
+        "kind": "queue",
+        "milestone": "recover-blueprint",
+        "x": 61,
+        "y": 28
+      },
+      {
+        "display_name": "Worker",
+        "id": "worker",
+        "kind": "worker",
+        "milestone": "recover-blueprint",
+        "x": 80,
+        "y": 28
+      },
+      {
+        "display_name": "Result Store",
+        "id": "results",
+        "kind": "storage",
+        "milestone": "service-restart",
+        "x": 80,
+        "y": 72
+      },
+      {
+        "display_name": "NixOS Host",
+        "id": "host",
+        "kind": "host",
+        "milestone": "host-reboot",
+        "x": 42,
+        "y": 72
+      }
+    ]
+  },
+  "world": {
+    "agents": {
+      "blueprint-one-agent": {
+        "cost_microusd": 0,
+        "failure_source": "harness",
+        "input_tokens": 0,
+        "model": "oracle",
+        "output_tokens": 0,
+        "resource_units_used": 0,
+        "running": false,
+        "successful": false,
+        "terminal_detail": "adapter exited with exit status: 255",
+        "terminal_state": "failed",
+        "territory": "blueprint-one"
+      },
+      "blueprint-three-agent": {
+        "cost_microusd": 0,
+        "failure_source": "player",
+        "input_tokens": 0,
+        "model": "oracle",
+        "output_tokens": 0,
+        "resource_units_used": 1,
+        "running": false,
+        "successful": true,
+        "terminal_detail": "oracle implemented the attached asynchronous blueprint",
+        "terminal_state": "completed",
+        "territory": "blueprint-three"
+      },
+      "blueprint-two-agent": {
+        "cost_microusd": 0,
+        "failure_source": "player",
+        "input_tokens": 0,
+        "model": "oracle",
+        "output_tokens": 0,
+        "resource_units_used": 1,
+        "running": false,
+        "successful": true,
+        "terminal_detail": "oracle implemented the attached asynchronous blueprint",
+        "terminal_state": "completed",
+        "territory": "blueprint-two"
+      }
+    },
+    "elapsed_ms": 46625,
+    "finish_reason": "first durable deployment",
+    "infrastructure_failures": 0,
+    "last_sequence": 62,
+    "match_state": "finished",
+    "territories": {
+      "blueprint-one": {
+        "agent": "blueprint-one-agent",
+        "class": "blueprint-builder",
+        "competitor_state": "verifying",
+        "durable_at_ms": null,
+        "elimination_detail": null,
+        "elimination_source": null,
+        "last_health": null,
+        "milestone_points": 0,
+        "milestones": {
+          "gateway-ready": {
+            "evaluating": false,
+            "evidence": null,
+            "failure_category": "verification_failed",
+            "failure_detail": "curl: (56) Recv failure: Connection reset by peer",
+            "passed": false,
+            "points": 0
+          }
+        },
+        "resources": 0,
+        "state": "provisioning"
+      },
+      "blueprint-three": {
+        "agent": "blueprint-three-agent",
+        "class": "blueprint-builder",
+        "competitor_state": "verifying",
+        "durable_at_ms": null,
+        "elimination_detail": null,
+        "elimination_source": null,
+        "last_health": null,
+        "milestone_points": 55,
+        "milestones": {
+          "accept-under-stop": {
+            "evaluating": false,
+            "evidence": {
+              "jobs": [
+                "cedar-9cd546eeeb80",
+                "cobalt-4b4d801a54a7",
+                "saffron-d63092c495f6"
+              ],
+              "payloads": [
+                "opaque/cedar/ca3734546b231019654bd7b6",
+                "opaque/cobalt/e8f917e126560ac7df930a6a",
+                "opaque/saffron/ecfad9eaa7ffeea3ef5f931c"
+              ],
+              "worker_stopped": true
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 20
+          },
+          "gateway-ready": {
+            "evaluating": false,
+            "evidence": {
+              "health": "ready"
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 10
+          },
+          "recover-blueprint": {
+            "evaluating": false,
+            "evidence": {
+              "jobs": [
+                "cedar-9cd546eeeb80",
+                "cobalt-4b4d801a54a7",
+                "saffron-d63092c495f6"
+              ],
+              "payloads": [
+                "opaque/cedar/ca3734546b231019654bd7b6",
+                "opaque/cobalt/e8f917e126560ac7df930a6a",
+                "opaque/saffron/ecfad9eaa7ffeea3ef5f931c"
+              ],
+              "recovered": true
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 25
+          },
+          "service-restart": {
+            "evaluating": false,
+            "evidence": null,
+            "failure_category": "verification_failed",
+            "failure_detail": "Connection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\nConnection closed by 127.0.0.1 port 26004\r\ncould not restart blueprint lifecycle units",
+            "passed": false,
+            "points": 0
+          }
+        },
+        "resources": 0,
+        "state": "provisioning"
+      },
+      "blueprint-two": {
+        "agent": "blueprint-two-agent",
+        "class": "blueprint-builder",
+        "competitor_state": "durable",
+        "durable_at_ms": 46625,
+        "elimination_detail": null,
+        "elimination_source": null,
+        "last_health": null,
+        "milestone_points": 100,
+        "milestones": {
+          "accept-under-stop": {
+            "evaluating": false,
+            "evidence": {
+              "jobs": [
+                "cedar-aececa3a5bd2",
+                "cobalt-b6fc260d214e",
+                "saffron-67fe84e7d318"
+              ],
+              "payloads": [
+                "opaque/cedar/d300a314287bf1365f000fd5",
+                "opaque/cobalt/4c59397b7bc4c8da38d39d4b",
+                "opaque/saffron/9ca07e705967644158357919"
+              ],
+              "worker_stopped": true
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 20
+          },
+          "gateway-ready": {
+            "evaluating": false,
+            "evidence": {
+              "health": "ready"
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 10
+          },
+          "host-reboot": {
+            "evaluating": false,
+            "evidence": {
+              "jobs": [
+                "cedar-aececa3a5bd2",
+                "cobalt-b6fc260d214e",
+                "saffron-67fe84e7d318",
+                "restart-7f0edf930e12"
+              ],
+              "reboot": true
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 25
+          },
+          "recover-blueprint": {
+            "evaluating": false,
+            "evidence": {
+              "jobs": [
+                "cedar-aececa3a5bd2",
+                "cobalt-b6fc260d214e",
+                "saffron-67fe84e7d318"
+              ],
+              "payloads": [
+                "opaque/cedar/d300a314287bf1365f000fd5",
+                "opaque/cobalt/4c59397b7bc4c8da38d39d4b",
+                "opaque/saffron/9ca07e705967644158357919"
+              ],
+              "recovered": true
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 25
+          },
+          "service-restart": {
+            "evaluating": false,
+            "evidence": {
+              "jobs": [
+                "cedar-aececa3a5bd2",
+                "cobalt-b6fc260d214e",
+                "saffron-67fe84e7d318",
+                "restart-7f0edf930e12"
+              ],
+              "payloads": [
+                "opaque/cedar/d300a314287bf1365f000fd5",
+                "opaque/cobalt/4c59397b7bc4c8da38d39d4b",
+                "opaque/saffron/9ca07e705967644158357919",
+                "opaque/restart/9970340163d594097d8d47c2"
+              ],
+              "restarted": true
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 20
+          }
+        },
+        "resources": 0,
+        "state": "provisioning"
+      }
+    },
+    "winner": "blueprint-two"
+  }
+}

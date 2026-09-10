@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "analyzer": "aoe-controller/20260816.0.1",
+  "source_sha256": "6c3ef4dfdf6dde5ae092032adea032a06713f7f9c7a5a519c61bcf16c65d47a6",
+  "agent": "kimi",
+  "territory": "failover-one",
+  "model": "moonshotai/kimi-k3",
+  "outcome": "running",
+  "metrics": {
+    "tool_calls": 9,
+    "tool_errors": 0,
+    "discoveries": 7,
+    "mutations": 1,
+    "lifecycle_actions": 0,
+    "validations": 1,
+    "first_mutation_after_ms": 31320,
+    "last_observed_after_ms": 59968
+  },
+  "architecture": {
+    "technologies": [
+      "Python",
+      "SQLite",
+      "systemd"
+    ],
+    "service_units": [
+      "failover-proxy.service",
+      "failover-replica.service",
+      "failover-seed.service"
+    ],
+    "persistent_paths": [
+      "/var/lib/failover",
+      "/var/lib/failover/records.sqlite3",
+      "/var/lib/failover/replica.role",
+      "/var/lib/failover/upstream"
+    ]
+  },
+  "actions": [
+    {
+      "index": 0,
+      "tool_id": "chatcmpl-tool-89082bcbf490be11",
+      "kind": "discovery",
+      "started_after_ms": 13310,
+      "duration_ms": 47,
+      "description": "Inspect failover state directory",
+      "command": "ls -la /var/lib/failover/ 2>/dev/null; echo \"---\"; cat /var/lib/failover/replica.role 2>/dev/null; echo \"---\"; cat /var/lib/failover/upstream 2>/dev/null; echo \"---\"; ls /var/lib/failover/",
+      "success": true,
+      "output_excerpt": "total 28\ndrwxr-xr-x 2 root root  4096 Sep 10 15:38 .\ndrwxr-xr-x 9 root root  4096 Sep 10 15:38 ..\n-rw-r--r-- 1 root root     0 Sep 10 15:38 primary.failed\n-rw-r--r-- 1 root root 12288 Sep 10 15:38 records.sqlite3\n-rw-r--r-- 1 root root     8 Sep 10 15:38 replica.role\n-rw-r--r-- 1…"
+    },
+    {
+      "index": 1,
+      "tool_id": "chatcmpl-tool-9a30beac43b543ff",
+      "kind": "validation",
+      "started_after_ms": 13357,
+      "duration_ms": 23,
+      "description": "Check listening ports",
+      "command": "ss -tlnp 2>/dev/null | grep -E '8080|8081|8082' || netstat -tlnp 2>/dev/null | grep -E '8080|8081|8082'",
+      "success": true,
+      "output_excerpt": "LISTEN 0      5          127.0.0.1:8082       0.0.0.0:*    users:((\"python\",pid=555,fd=3))\nLISTEN 0      5            0.0.0.0:8080       0.0.0.0:*    users:((\"python\",pid=554,fd=3))"
+    },
+    {
+      "index": 2,
+      "tool_id": "chatcmpl-tool-a9662d85d8fa19d7",
+      "kind": "discovery",
+      "started_after_ms": 31261,
+      "duration_ms": 58,
+      "description": "Identify running service processes",
+      "command": "ps aux | grep -E 'python|808' | grep -v grep; echo \"---\"; ls -l /proc/554/cwd /proc/555/cwd 2>/dev/null; echo \"---\"; tr '\\0' ' ' < /proc/554/cmdline; echo; tr '\\0' ' ' < /proc/555/cmdline; echo",
+      "success": true,
+      "output_excerpt": "root         554  0.5  3.2 112160 23932 ?        Ss   15:38   0:00 /nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python /nix/store/gy7xaavwyh9mbwz4ll8h6z3ban0s6g93-failover-proxy.py\nroot         555  0.4  3.3  40360 24604 ?        Ss   15:38   0:00 /nix/store/3n4…"
+    },
+    {
+      "index": 3,
+      "tool_id": "chatcmpl-tool-bc7c8dbe36ff2a17",
+      "kind": "mutation",
+      "started_after_ms": 31320,
+      "duration_ms": 35,
+      "description": "Inspect customer data in sqlite",
+      "command": "sqlite3 /var/lib/failover/records.sqlite3 '.tables' 2>/dev/null || python3 -c \"\nimport sqlite3\nc = sqlite3.connect('/var/lib/failover/records.sqlite3')\nprint(c.execute(\\\"SELECT name FROM sqlite_master WHERE type='table'\\\").fetchall())\nfor t in c.execute(\\\"SELECT name FROM sqlite_master WHERE type='table'\\\"):\n    print(t[0], c.execute(f'SELECT COUNT(*) FROM {t[0]}').fetchone())\n\"",
+      "success": true,
+      "output_excerpt": "records"
+    },
+    {
+      "index": 4,
+      "tool_id": "chatcmpl-tool-a845b1aab9ffc389",
+      "kind": "discovery",
+      "started_after_ms": 41847,
+      "duration_ms": 91,
+      "description": "Inspect records table contents",
+      "command": "python3 -c \"\nimport sqlite3\nc = sqlite3.connect('/var/lib/failover/records.sqlite3')\nprint(c.execute(\\\"SELECT name, sql FROM sqlite_master\\\").fetchall())\nrows = c.execute('SELECT * FROM records').fetchall()\nprint('rows:', len(rows))\nfor r in rows[:5]: print(repr(r))\n\"",
+      "success": true,
+      "output_excerpt": "[('records', 'CREATE TABLE records (id TEXT PRIMARY KEY, value TEXT NOT NULL)'), ('sqlite_autoindex_records_1', None)]\nrows: 3\n('customer-red-4a7', 'red-original')\n('customer-blue-8d2', 'blue-original')\n('customer-green-f31', 'green-original')"
+    },
+    {
+      "index": 5,
+      "tool_id": "chatcmpl-tool-a383a57afe0e551c",
+      "kind": "discovery",
+      "started_after_ms": 41939,
+      "duration_ms": 35,
+      "description": "Check systemd units and proxy script",
+      "command": "systemctl list-units --all 2>/dev/null | grep -iE 'failover|record|proxy|replica|primary' ; echo \"---\"; cat /nix/store/gy7xaavwyh9mbwz4ll8h6z3ban0s6g93-failover-proxy.py",
+      "success": true,
+      "output_excerpt": "failover-proxy.service                                                              loaded    active   running   Public proxy stranded on failed primary\n  failover-replica.service                                                            loaded    active   running   Healthy read…"
+    },
+    {
+      "index": 6,
+      "tool_id": "chatcmpl-tool-89af4aad7076784a",
+      "kind": "discovery",
+      "started_after_ms": 47005,
+      "duration_ms": 35,
+      "description": "Read replica script and unit files",
+      "command": "cat /nix/store/3lf8if1z3ahcv9mdxqmwncn87hnwdymi-failover-replica.py; echo \"---\"; systemctl cat failover-replica.service failover-proxy.service 2>/dev/null",
+      "success": true,
+      "output_excerpt": "import sqlite3\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\nDB = \"/var/lib/failover/records.sqlite3\"\nROLE = \"/var/lib/failover/replica.role\"\ndef role():\n    with open(ROLE) as source: return source.read().strip()\ndef database():\n    connection = sqlite3.con…"
+    },
+    {
+      "index": 7,
+      "tool_id": "chatcmpl-tool-b0a8d2433ce9d9bf",
+      "kind": "discovery",
+      "started_after_ms": 54890,
+      "duration_ms": 350,
+      "description": "Inspect seed service",
+      "command": "systemctl cat failover-seed.service 2>/dev/null; echo \"---\"; ls /nix/store/ | grep -i seed",
+      "success": true,
+      "output_excerpt": "# /etc/systemd/system/failover-seed.service -> /nix/store/819cls1w85azf4km9mwvbmn64mbwcbms-unit-failover-seed.service/failover-seed.service\n[Unit]\nBefore=failover-replica.service failover-proxy.service\nDescription=Seed failed-primary topology and replicated state\n\n[Service]\nEnvir…"
+    },
+    {
+      "index": 8,
+      "tool_id": "chatcmpl-tool-9e68b4b794272ef9",
+      "kind": "discovery",
+      "started_after_ms": 59943,
+      "duration_ms": 25,
+      "description": "Read seed script",
+      "command": "cat /nix/store/vnsdj3nml00cykxy4dmpcsgbwp76jspz-unit-script-failover-seed-start/bin/failover-seed-start",
+      "success": true,
+      "output_excerpt": "#!/nix/store/byi2zpy2bgcf3dr6y0l8m50rmjj8z7q1-bash-5.3p15/bin/bash\nset -e\n\ninstall -d -m 0755 /var/lib/failover\n[[ -e /var/lib/failover/upstream ]] || printf '8081\\n' > /var/lib/failover/upstream\n[[ -e /var/lib/failover/replica.role ]] || printf 'replica\\n' > /var/lib/failover/re…"
+    }
+  ]
+}

@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "analyzer": "aoe-controller/20260816.0.1",
+  "source_sha256": "1fcb6388f197dbba6e464c5a7b3996e48c2d1d55f6335018b8826aae8252461c",
+  "agent": "qwen",
+  "territory": "failover-two",
+  "model": "qwen/qwen3.8-max-0902",
+  "outcome": "running",
+  "metrics": {
+    "tool_calls": 9,
+    "tool_errors": 0,
+    "discoveries": 8,
+    "mutations": 0,
+    "lifecycle_actions": 0,
+    "validations": 1,
+    "first_mutation_after_ms": null,
+    "last_observed_after_ms": 83757
+  },
+  "architecture": {
+    "technologies": [
+      "Python",
+      "SQLite",
+      "systemd"
+    ],
+    "service_units": [
+      "failover-proxy.service",
+      "failover-replica.service",
+      "failover-seed.service"
+    ],
+    "persistent_paths": [
+      "/var/lib/failover",
+      "/var/lib/failover/primary.failed",
+      "/var/lib/failover/primary.fenced",
+      "/var/lib/failover/replica.role",
+      "/var/lib/failover/upstream"
+    ]
+  },
+  "actions": [
+    {
+      "index": 1,
+      "tool_id": "call_83a876dd595f4c599cb602ad",
+      "kind": "discovery",
+      "started_after_ms": 26458,
+      "duration_ms": 58,
+      "description": "List failover state directory",
+      "command": "ls -la /var/lib/failover/ 2>&1; echo ---; for f in /var/lib/failover/*; do echo \"== $f\"; cat \"$f\" 2>/dev/null | head -5; echo; done",
+      "success": true,
+      "output_excerpt": "[binary stdout suppressed: 12765 bytes]"
+    },
+    {
+      "index": 2,
+      "tool_id": "call_062859e0ed7f4185b6d04797",
+      "kind": "validation",
+      "started_after_ms": 26517,
+      "duration_ms": 46,
+      "description": "Show listening ports and related processes",
+      "command": "ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null; echo ---; ps aux | grep -Ei 'proxy|record|replica|primary|8080|8081|8082|uvicorn|python|node' | grep -v grep",
+      "success": true,
+      "output_excerpt": "State  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess\nLISTEN 0      128        127.0.0.1:18002      0.0.0.0:*    users:((\"sshd-session\",pid=629,fd=10))\nLISTEN 0      4096      127.0.0.54:53         0.0.0.0:*    users:((\"systemd-resolve\",pid=302,fd=25))\nLISTEN 0      4…"
+    },
+    {
+      "index": 3,
+      "tool_id": "call_f70c399f3143470daf8eba8c",
+      "kind": "discovery",
+      "started_after_ms": 39563,
+      "duration_ms": 4899,
+      "description": "Inspect state files and systemd units",
+      "command": "ls -la /var/lib/failover/; echo ---; file /var/lib/failover/* 2>/dev/null; echo ---; systemctl --version 2>/dev/null | head -1; echo ---; systemctl list-units --all 2>/dev/null | grep -Ei 'failover|proxy|replica|primary|record' ; systemctl list-unit-files 2>/dev/null | grep -Ei 'failover|proxy|replica|primary|record'",
+      "success": true,
+      "output_excerpt": "total 28\ndrwxr-xr-x 2 root root  4096 Sep 10 15:36 .\ndrwxr-xr-x 9 root root  4096 Sep 10 15:36 ..\n-rw-r--r-- 1 root root     0 Sep 10 15:36 primary.failed\n-rw-r--r-- 1 root root 12288 Sep 10 15:36 records.sqlite3\n-rw-r--r-- 1 root root     8 Sep 10 15:36 replica.role\n-rw-r--r-- 1…"
+    },
+    {
+      "index": 4,
+      "tool_id": "call_215e7e622737430d8a95ff8b",
+      "kind": "discovery",
+      "started_after_ms": 44463,
+      "duration_ms": 58,
+      "description": "Dump role/upstream/fence file contents",
+      "command": "for f in /var/lib/failover/replica.role /var/lib/failover/upstream /var/lib/failover/primary.failed /var/lib/failover/primary.fenced; do echo \"== $f\"; od -c \"$f\" 2>&1 | head -3; done",
+      "success": true,
+      "output_excerpt": "== /var/lib/failover/replica.role\n0000000   r   e   p   l   i   c   a  \\n\n0000010\n== /var/lib/failover/upstream\n0000000   8   0   8   1  \\n\n0000005\n== /var/lib/failover/primary.failed\n0000000\n== /var/lib/failover/primary.fenced\nod: /var/lib/failover/primary.fenced: No such file o…"
+    },
+    {
+      "index": 5,
+      "tool_id": "call_d9504fd40e4d415b84d72f6d",
+      "kind": "discovery",
+      "started_after_ms": 57835,
+      "duration_ms": 24,
+      "description": "Show unit definitions",
+      "command": "systemctl cat failover-proxy.service failover-replica.service failover-seed.service 2>&1",
+      "success": true,
+      "output_excerpt": "# /etc/systemd/system/failover-proxy.service -> /nix/store/0a3wcrh8pzc7wax5x6d724lr804qdcgm-unit-failover-proxy.service/failover-proxy.service\n[Unit]\nAfter=failover-seed.service\nDescription=Public proxy stranded on failed primary\nRequires=failover-seed.service\n\n[Service]\nEnvironm…"
+    },
+    {
+      "index": 6,
+      "tool_id": "call_82d34b6207494b73b98d234a",
+      "kind": "discovery",
+      "started_after_ms": 57860,
+      "duration_ms": 488,
+      "description": "Locate failover scripts in nix store",
+      "command": "ls /nix/store/*failover* /nix/store/*seed* 2>/dev/null",
+      "success": true,
+      "output_excerpt": "/nix/store/23728y7zgh1jb55kpwxv5qnjbq0ykca6-randstruct-provide-seed-5.19.patch\n/nix/store/3lf8if1z3ahcv9mdxqmwncn87hnwdymi-failover-replica.py\n/nix/store/5h8n2bwv9if473r8ibdj1ryhzsh36l0w-unit-rollout-seed.service.drv\n/nix/store/8di1gyrag3hq9bw4nv6cic0ilxv1jfjg-failover-proxy.py.d…"
+    },
+    {
+      "index": 7,
+      "tool_id": "call_a89d6755f5664305add03f8a",
+      "kind": "discovery",
+      "started_after_ms": 83756,
+      "duration_ms": 1,
+      "description": null,
+      "command": "Read /nix/store/vnsdj3nml00cykxy4dmpcsgbwp76jspz-unit-script-failover-seed-start/bin/failover-seed-start",
+      "success": true,
+      "output_excerpt": "1\t#!/nix/store/byi2zpy2bgcf3dr6y0l8m50rmjj8z7q1-bash-5.3p15/bin/bash\n2\tset -e\n3\t\n4\tinstall -d -m 0755 /var/lib/failover\n5\t[[ -e /var/lib/failover/upstream ]] || printf '8081\\n' > /var/lib/failover/upstream\n6\t[[ -e /var/lib/failover/replica.role ]] || printf 'replica\\n' > /var/lib…"
+    },
+    {
+      "index": 8,
+      "tool_id": "call_d3240553910a449d82301b20",
+      "kind": "discovery",
+      "started_after_ms": 83756,
+      "duration_ms": 1,
+      "description": null,
+      "command": "Read /nix/store/gy7xaavwyh9mbwz4ll8h6z3ban0s6g93-failover-proxy.py",
+      "success": true,
+      "output_excerpt": "1\timport http.client\n2\tfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n3\tUPSTREAM = \"/var/lib/failover/upstream\"\n4\tclass Handler(BaseHTTPRequestHandler):\n5\t    def forward(self):\n6\t        try:\n7\t            with open(UPSTREAM) as source: port = int(source.rea…"
+    },
+    {
+      "index": 9,
+      "tool_id": "call_4b8b7773f2d349efa4fd0c07",
+      "kind": "discovery",
+      "started_after_ms": 83756,
+      "duration_ms": 1,
+      "description": null,
+      "command": "Read /nix/store/3lf8if1z3ahcv9mdxqmwncn87hnwdymi-failover-replica.py",
+      "success": true,
+      "output_excerpt": "1\timport sqlite3\n2\tfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n3\tDB = \"/var/lib/failover/records.sqlite3\"\n4\tROLE = \"/var/lib/failover/replica.role\"\n5\tdef role():\n6\t    with open(ROLE) as source: return source.read().strip()\n7\tdef database():\n8\t    connecti…"
+    }
+  ]
+}

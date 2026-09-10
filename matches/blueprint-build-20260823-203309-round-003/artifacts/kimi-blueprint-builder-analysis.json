@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "analyzer": "aoe-controller/20260816.0.1",
+  "source_sha256": "2f9fed968bf7ee407384730d33e977d6dda94a8974fe150a873890849e49fce1",
+  "agent": "kimi-blueprint-builder",
+  "territory": "blueprint-two",
+  "model": "moonshotai/kimi-k3",
+  "outcome": "running",
+  "metrics": {
+    "tool_calls": 6,
+    "tool_errors": 1,
+    "discoveries": 1,
+    "mutations": 3,
+    "lifecycle_actions": 1,
+    "validations": 1,
+    "first_mutation_after_ms": 104315,
+    "last_observed_after_ms": 139298
+  },
+  "architecture": {
+    "technologies": [
+      "Python",
+      "systemd"
+    ],
+    "service_units": [
+      "blueprint-api.service",
+      "blueprint-edge.service",
+      "blueprint-worker.service"
+    ],
+    "persistent_paths": [
+      "/opt/blueprint",
+      "/opt/blueprint/$m",
+      "/opt/blueprint/blueprint.py",
+      "/var/lib/blueprint",
+      "/var/lib/blueprint/queue",
+      "/var/lib/blueprint/results"
+    ]
+  },
+  "actions": [
+    {
+      "index": 0,
+      "tool_id": "Bash_0",
+      "kind": "discovery",
+      "started_after_ms": 30423,
+      "duration_ms": 4864,
+      "description": "Check available tooling and existing state",
+      "command": "which python3 python; python3 --version; systemctl --version | head -1; ls /opt/blueprint 2>/dev/null; ls /var/lib/blueprint 2>/dev/null; systemctl list-unit-files | grep -i blueprint",
+      "success": true,
+      "output_excerpt": "/run/current-system/sw/bin/python3\n/run/current-system/sw/bin/python\nPython 3.14.7\nsystemd 261 (261.1)\nblueprint-api.service                       enabled         ignored\nblueprint-edge.service                      enabled         ignored\nblueprint-worker.service                 …"
+    },
+    {
+      "index": 1,
+      "tool_id": "Bash:0",
+      "kind": "validation",
+      "started_after_ms": 43713,
+      "duration_ms": 31,
+      "description": "Inspect existing blueprint systemd units",
+      "command": "systemctl cat blueprint-edge.service blueprint-api.service blueprint-worker.service 2>&1; echo ---; systemctl is-active blueprint-edge blueprint-api blueprint-worker",
+      "success": false,
+      "output_excerpt": "# /etc/systemd/system/blueprint-edge.service -> /nix/store/cl009zv95mxdrlhlk86fjmwrxqy7w7a5-unit-blueprint-edge.service/blueprint-edge.service\n[Unit]\nAfter=network.target blueprint-api.service\nConditionPathIsExecutable=/opt/blueprint/edge\nDescription=Player-defined blueprint edge…"
+    },
+    {
+      "index": 2,
+      "tool_id": "Write:0",
+      "kind": "mutation",
+      "started_after_ms": 104315,
+      "duration_ms": 0,
+      "description": null,
+      "command": "Write /opt/blueprint/blueprint.py",
+      "success": true,
+      "output_excerpt": "Successfully wrote to /opt/blueprint/blueprint.py"
+    },
+    {
+      "index": 3,
+      "tool_id": "Bash:0",
+      "kind": "mutation",
+      "started_after_ms": 111957,
+      "duration_ms": 42,
+      "description": "Install launchers and state directories",
+      "command": "for m in edge api worker; do printf '#!/bin/sh\\nexec /run/current-system/sw/bin/python3 /opt/blueprint/blueprint.py %s\\n' \"$m\" > /opt/blueprint/$m; chmod 755 /opt/blueprint/$m; done; chmod 755 /opt/blueprint/blueprint.py; mkdir -p /var/lib/blueprint/queue /var/lib/blueprint/results; ls -l /opt/blueprint",
+      "success": true,
+      "output_excerpt": "total 20\n-rwxr-xr-x 1 root root   82 Aug 23 20:40 api\n-rwxr-xr-x 1 root root 5350 Aug 23 20:40 blueprint.py\n-rwxr-xr-x 1 root root   83 Aug 23 20:40 edge\n-rwxr-xr-x 1 root root   85 Aug 23 20:40 worker"
+    },
+    {
+      "index": 4,
+      "tool_id": "Bash:0",
+      "kind": "lifecycle",
+      "started_after_ms": 124246,
+      "duration_ms": 1104,
+      "description": "Start all three services",
+      "command": "systemctl start blueprint-api blueprint-worker blueprint-edge; sleep 1; systemctl is-active blueprint-edge blueprint-api blueprint-worker",
+      "success": true,
+      "output_excerpt": "active\nactive\nactive"
+    },
+    {
+      "index": 5,
+      "tool_id": "Bash:0",
+      "kind": "mutation",
+      "started_after_ms": 138636,
+      "duration_ms": 662,
+      "description": "End-to-end contract test through the edge",
+      "command": "set -e\necho \"health: $(curl -s -w ' [%{http_code}]' http://127.0.0.1:8080/health)\"\nhead -c 1024 /dev/urandom > /tmp/payload.bin\necho \"put: $(curl -s -w ' [%{http_code}]' -X PUT --data-binary @/tmp/payload.bin http://127.0.0.1:8080/jobs/job-123)\"\necho \"get1: $(curl -s -w ' [%{http_code}]' http://127.0.0.1:8080/jobs/job-123 -o /tmp/out.bin)\"\nsleep 0.5\necho \"get2: $(curl -s -w ' [%{http_code}]' http://127.0.0.1:8080/jobs/job-123 -o /tmp/out.bin)\"\ncmp /tmp/payload.bin /tmp/out.bin && echo \"bytes match\"",
+      "success": true,
+      "output_excerpt": "health: ready [200]\nput: accepted [202]\nget1:  [409]\nget2:  [200]\nbytes match"
+    }
+  ]
+}

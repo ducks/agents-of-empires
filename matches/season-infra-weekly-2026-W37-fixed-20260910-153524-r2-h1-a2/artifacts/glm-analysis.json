@@ -1,0 +1,234 @@
+{
+  "schema_version": 1,
+  "analyzer": "aoe-controller/20260816.0.1",
+  "source_sha256": "33ee4f3e528bbc456a529a08d9daed79663adc4390614cf7d898790e7fb55bf3",
+  "agent": "glm",
+  "territory": "rollout-two",
+  "model": "z-ai/glm-5.3",
+  "outcome": "running",
+  "metrics": {
+    "tool_calls": 17,
+    "tool_errors": 3,
+    "discoveries": 6,
+    "mutations": 7,
+    "lifecycle_actions": 1,
+    "validations": 3,
+    "first_mutation_after_ms": 6758,
+    "last_observed_after_ms": 139646
+  },
+  "architecture": {
+    "technologies": [
+      "Python",
+      "SQLite",
+      "systemd"
+    ],
+    "service_units": [
+      "etc/systemd/system/rollout-proxy.service",
+      "etc/systemd/system/rollout-v1.service",
+      "etc/systemd/system/rollout-v2.service",
+      "rollout-proxy.service",
+      "rollout-v1.service",
+      "rollout-v2.service"
+    ],
+    "persistent_paths": [
+      "/etc/systemd/system/rollout-proxy.service",
+      "/etc/systemd/system/rollout-v1.service",
+      "/etc/systemd/system/rollout-v2.service",
+      "/opt/rollout",
+      "/opt/rollout/v2.py",
+      "/var/lib/rollout",
+      "/var/lib/rollout/records.sqlite3",
+      "/var/lib/rollout/upstream",
+      "/var/lib/rollout/upstream.tmp"
+    ]
+  },
+  "actions": [
+    {
+      "index": 0,
+      "tool_id": "call_bc5420765c2345fd8f85bc15",
+      "kind": "validation",
+      "started_after_ms": 2297,
+      "duration_ms": 90,
+      "description": "Inspect rollout service state and files",
+      "command": "ls -la /opt/rollout/ 2>/dev/null; echo \"---\"; ls -la /var/lib/rollout/ 2>/dev/null; echo \"---\"; cat /var/lib/rollout/upstream 2>/dev/null; echo \"---\"; systemctl status rollout-v1.service rollout-proxy.service rollout-v2.service --no-pager 2>&1 | head -50",
+      "success": true,
+      "output_excerpt": "total 8\ndrwxr-xr-x 2 root root 4096 Sep 10 15:42 .\ndrwxr-xr-x 3 root root 4096 Sep 10 15:42 ..\n---\ntotal 24\ndrwxr-xr-x 2 root root  4096 Sep 10 15:42 .\ndrwxr-xr-x 9 root root  4096 Sep 10 15:42 ..\n-rw-r--r-- 1 root root 12288 Sep 10 15:42 records.sqlite3\n-rw-r--r-- 1 root root   …"
+    },
+    {
+      "index": 1,
+      "tool_id": "call_ae967c85137146279b6794d3",
+      "kind": "discovery",
+      "started_after_ms": 6685,
+      "duration_ms": 24,
+      "description": "Read systemd unit files",
+      "command": "cat /etc/systemd/system/rollout-v1.service /etc/systemd/system/rollout-v2.service /etc/systemd/system/rollout-proxy.service",
+      "success": true,
+      "output_excerpt": "[Unit]\nAfter=rollout-seed.service\nDescription=Existing rollout v1 service\nRequires=rollout-seed.service\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE=/nix/store/c59mcax29xrwyfdqs308wkmn2srnmzkn-glibc-locales-2.42-67/lib/locale/locale-archive\"\nEnvironment=\"PATH=/nix/store/97d5ygrvqj55f4n…"
+    },
+    {
+      "index": 2,
+      "tool_id": "call_7661ddcfb2374a8899c10ccc",
+      "kind": "discovery",
+      "started_after_ms": 6710,
+      "duration_ms": 48,
+      "description": "Read v1 and proxy source code",
+      "command": "cat /nix/store/13qi755lbgrlrh6c5jqjdlpf1f7nvffv-rollout-v1.py; echo \"=== PROXY ===\"; cat /nix/store/08ib8hkpsxizx3zrsv266idphl0r1hgb-rollout-proxy.py",
+      "success": true,
+      "output_excerpt": "import sqlite3\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n\nDB = \"/var/lib/rollout/records.sqlite3\"\n\ndef database():\n    connection = sqlite3.connect(DB, timeout=10)\n    connection.execute(\"CREATE TABLE IF NOT EXISTS records (id TEXT PRIMARY KEY, value TEX…"
+    },
+    {
+      "index": 3,
+      "tool_id": "call_51b9d67a2ede4ba3af1b946b",
+      "kind": "mutation",
+      "started_after_ms": 6758,
+      "duration_ms": 24,
+      "description": "Inspect sqlite schema and records",
+      "command": "command -v sqlite3 || python3 -c \"\nimport sqlite3\nc = sqlite3.connect('/var/lib/rollout/records.sqlite3')\nprint(c.execute(\\\"select name, sql from sqlite_master\\\").fetchall())\nprint(c.execute(\\\"select * from records limit 10\\\").fetchall())\n\"",
+      "success": true,
+      "output_excerpt": "/run/current-system/sw/bin/sqlite3"
+    },
+    {
+      "index": 4,
+      "tool_id": "call_97f6c0771288403787471a53",
+      "kind": "mutation",
+      "started_after_ms": 19362,
+      "duration_ms": 58,
+      "description": "Dump existing records",
+      "command": "sqlite3 /var/lib/rollout/records.sqlite3 \".schema\" \"select id, value from records;\"",
+      "success": true,
+      "output_excerpt": "CREATE TABLE records (id TEXT PRIMARY KEY, value TEXT NOT NULL);\ncustomer-alpha-73c|alpha-original\ncustomer-beta-a19|beta-original"
+    },
+    {
+      "index": 5,
+      "tool_id": "call_a96639f39208411286d8d0aa",
+      "kind": "validation",
+      "started_after_ms": 19421,
+      "duration_ms": 205,
+      "description": "Baseline public endpoint health and version",
+      "command": "echo \"health: $(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/health) body=$(curl -s http://127.0.0.1:8080/health)\"; echo \"version: $(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/version) body=$(curl -s http://127.0.0.1:8080/version)\"",
+      "success": true,
+      "output_excerpt": "health: 200 body=ready\nversion: 200 body=v1"
+    },
+    {
+      "index": 6,
+      "tool_id": "call_1d42e1addd3045bbafd8c430",
+      "kind": "mutation",
+      "started_after_ms": 27618,
+      "duration_ms": 0,
+      "description": null,
+      "command": "Write /opt/rollout/v2.py",
+      "success": true,
+      "output_excerpt": "Successfully wrote to /opt/rollout/v2.py"
+    },
+    {
+      "index": 7,
+      "tool_id": "call_b71904cfad764b2cb9d76d87",
+      "kind": "lifecycle",
+      "started_after_ms": 29472,
+      "duration_ms": 1088,
+      "description": "Start rollout-v2 service",
+      "command": "systemctl reset-failed rollout-v2.service && systemctl start rollout-v2.service && sleep 1 && systemctl is-active rollout-v2.service",
+      "success": true,
+      "output_excerpt": "active"
+    },
+    {
+      "index": 8,
+      "tool_id": "call_4bf9e7ab012c41e896b32af1",
+      "kind": "validation",
+      "started_after_ms": 34346,
+      "duration_ms": 4335,
+      "description": "Verify v2 directly on port 8082",
+      "command": "echo \"health: $(curl -s -w '|%{http_code}' http://127.0.0.1:8082/health)\"; echo \"version: $(curl -s -w '|%{http_code}' http://127.0.0.1:8082/version)\"; echo \"alpha: $(curl -s -w '|%{http_code}' http://127.0.0.1:8082/records/customer-alpha-73c)\"; echo \"beta: $(curl -s -w '|%{http_code}' http://127.0.0.1:8082/records/customer-beta-a19)\"; echo \"absent: $(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8082/records/no-such-id)\"",
+      "success": true,
+      "output_excerpt": "health: ready|200\nversion: v2|200\nalpha: alpha-original|200\nbeta: beta-original|200\nabsent: 404"
+    },
+    {
+      "index": 9,
+      "tool_id": "call_3b5816c498c54b5daa4c27b8",
+      "kind": "mutation",
+      "started_after_ms": 46114,
+      "duration_ms": 130,
+      "description": "Test v2 PUT/GET round-trip then clean up",
+      "command": "curl -s -o /dev/null -w 'put:%{http_code} ' -X PUT --data-binary 'test-payload-Δ' http://127.0.0.1:8082/records/__cutover_probe__; curl -s -w '|%{http_code}\\n' http://127.0.0.1:8082/records/__cutover_probe__; sqlite3 /var/lib/rollout/records.sqlite3 \"delete from records where id='__cutover_probe__';\" && echo \"probe removed\"",
+      "success": true,
+      "output_excerpt": "put:204 test-payload-Δ|200\nprobe removed"
+    },
+    {
+      "index": 10,
+      "tool_id": "call_0a70fbc588554372811e7209",
+      "kind": "mutation",
+      "started_after_ms": 56392,
+      "duration_ms": 36,
+      "description": "Create zero-downtime monitor script",
+      "command": "cat > /tmp/cutover-monitor.sh <<'EOF'\n#!/bin/bash\nLOG=/tmp/cutover-monitor.log\n: > \"$LOG\"\nfails=0; total=0\nend=$((SECONDS+20))\nwhile [ $SECONDS -lt $end ]; do\n  for path in /health /version /records/customer-alpha-73c /records/customer-beta-a19; do\n    body=$(curl -s --max-time 2 \"http://127.0.0.1:8080$path\")\n    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 \"http://127.0.0.1:8080$path\")\n    total=$((total+1))\n    case \"$path:$code:$body\" in\n      \"/health:200:ready\"|\"/version:200:v1\"|\"/version:200:v2\"|\"/records/customer-alpha-73c:200:alpha-original\"|\"/records/customer-beta-a19:200:beta-original\") ;;\n      *) fails=$((fails+1)); echo \"FAIL $path code=$code body=$body at $(date +…",
+      "success": true,
+      "output_excerpt": null
+    },
+    {
+      "index": 11,
+      "tool_id": "call_557f5b9b7f1a48c0b453c938",
+      "kind": "discovery",
+      "started_after_ms": 57567,
+      "duration_ms": 0,
+      "description": "Run public endpoint monitor during cutover",
+      "command": "/tmp/cutover-monitor.sh",
+      "success": false,
+      "output_excerpt": "Tool Bash failed: Background jobs require an interactive session. Run this Bash command in the foreground instead."
+    },
+    {
+      "index": 12,
+      "tool_id": "call_6b5e93c4a85e46d2b6c2bc86",
+      "kind": "discovery",
+      "started_after_ms": 59446,
+      "duration_ms": 2050,
+      "description": "Launch monitor detached via nohup",
+      "command": "nohup /tmp/cutover-monitor.sh >/dev/null 2>&1 & disown; echo \"monitor pid $!\"; sleep 2; tail -5 /tmp/cutover-monitor.log",
+      "success": false,
+      "output_excerpt": "monitor pid 8732\n\ntail: cannot open '/tmp/cutover-monitor.log' for reading: No such file or directory\n\nExit code: exit status: 1"
+    },
+    {
+      "index": 13,
+      "tool_id": "call_f08d4cdb22a04f758acea9d8",
+      "kind": "discovery",
+      "started_after_ms": 69942,
+      "duration_ms": 88,
+      "description": "Check monitor process and log existence",
+      "command": "ps aux | grep -F cutover-monitor | grep -v grep; ls -la /tmp/cutover-monitor.*",
+      "success": true,
+      "output_excerpt": "-rwxr-xr-x 1 root root 747 Sep 10 15:43 /tmp/cutover-monitor.sh"
+    },
+    {
+      "index": 14,
+      "tool_id": "call_18d9650dffbe485383e769cd",
+      "kind": "mutation",
+      "started_after_ms": 80153,
+      "duration_ms": 102,
+      "description": "Run monitored atomic cutover from v1 to v2",
+      "command": "cat > /tmp/cutover-monitor.sh <<'EOF'\n#!/bin/bash\nLOG=/tmp/cutover-monitor.log\n: > \"$LOG\"\nfails=0; total=0\ncheck() {\n  local path=\"$1\" expect=\"$2\"\n  local out code body\n  out=$(curl -s -w '\\n%{http_code}' --max-time 2 \"http://127.0.0.1:8080$path\")\n  code=\"${out##*$'\\n'}\"; body=\"${out%$'\\n'*}\"\n  total=$((total+1))\n  if [ \"$code\" = \"200\" ] && [ \"$body\" = \"$expect\" ]; then return 0; fi\n  fails=$((fails+1)); echo \"FAIL $path code=$code body=$body at $(date +%s.%N)\" >> \"$LOG\"\n}\nfor i in $(seq 1 60); do\n  check /health ready\n  check /records/customer-alpha-73c alpha-original\n  check /records/customer-beta-a19 beta-original\n  if [ \"$i\" -eq 20 ]; then\n    printf '8082' > /var/lib/rollout/upstream.tm…",
+      "success": false,
+      "output_excerpt": "=== LOG ===\n\nsh: /tmp/cutover-monitor.sh: /bin/bash: bad interpreter: No such file or directory\ncat: /tmp/cutover-monitor.log: No such file or directory\n\nExit code: exit status: 1"
+    },
+    {
+      "index": 15,
+      "tool_id": "call_c94dcfdd59294a18bf57bf28",
+      "kind": "discovery",
+      "started_after_ms": 82299,
+      "duration_ms": 89,
+      "description": "Locate bash and available shells",
+      "command": "command -v bash sh; ls /bin/ 2>/dev/null | head; ls /run/current-system/sw/bin/ | head -30",
+      "success": true,
+      "output_excerpt": "/run/current-system/sw/bin/bash\n/run/current-system/sw/bin/sh\nsh\n[\naccessdb\naddpart\nagetty\napropos\narpd\narping\narptables\narptables-nft\narptables-nft-restore\narptables-nft-save\narptables-restore\narptables-save\narptables-translate\nattr\nawk\nb2sum\nbadblocks\nbase32\nbase64\nbasename\nbas…"
+    },
+    {
+      "index": 16,
+      "tool_id": "call_06964384d5414de58e17b9b1",
+      "kind": "mutation",
+      "started_after_ms": 83934,
+      "duration_ms": 55712,
+      "description": "Run monitored atomic cutover from v1 to v2",
+      "command": "sed -i '1s|.*|#!/run/current-system/sw/bin/bash|' /tmp/cutover-monitor.sh && /tmp/cutover-monitor.sh; echo \"=== LOG ===\"; cat /tmp/cutover-monitor.log",
+      "success": true,
+      "output_excerpt": "=== LOG ===\nFAIL /records/customer-alpha-73c code=000 body= at 1789055048.299639061\nFAIL /records/customer-beta-a19 code=000 body= at 1789055050.408314581\nFAIL /version code=000 body= at 1789055052.513339151\nFAIL /health code=000 body= at 1789055057.926808408\nFAIL /records/custom…"
+    }
+  ]
+}

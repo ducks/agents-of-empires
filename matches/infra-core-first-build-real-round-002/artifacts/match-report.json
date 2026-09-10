@@ -1,0 +1,2051 @@
+{
+  "analyses": {
+    "deepseek-builder": {
+      "actions": [
+        {
+          "command": "echo \"=== /opt/builder ===\" ; ls -la /opt/builder 2>/dev/null || echo \"not found\"; echo \"=== systemd units mentioning builder ===\"; ls -la /etc/systemd/system/ 2>/dev/null | grep -i builder; grep -rl builder /etc/systemd/ 2>/dev/null; echo \"=== port 8080 in use? ===\"; ls -la /proc/*/exe 2>/dev/null | grep -o '/.*' ; netstat -tlnp 2>/dev/null | grep 8080 || echo \"no 8080\"; echo \"=== python ===\"; python3 -V 2>/dev/null || python -V 2>/dev/null",
+          "description": "Explore host environment",
+          "duration_ms": 336,
+          "index": 0,
+          "kind": "validation",
+          "output_excerpt": "=== /opt/builder ===\nnot found\n=== systemd units mentioning builder ===\nlrwxrwxrwx  1 root root      88 Jan  1  1970 builder-app.service -> /nix/store/bkhc7c1djj4z9s51r616fqfbc55zwdvs-unit-builder-app.service/builder-app.service\n=== port 8080 in use? ===\n/proc/106/exe\n/proc/108/e…",
+          "started_after_ms": 10610,
+          "success": true,
+          "tool_id": "call_07e2432d898b46da86faaea4"
+        },
+        {
+          "command": "echo \"=== unit file ===\"; systemctl cat builder-app.service 2>/dev/null || cat /etc/systemd/system/builder-app.service; echo \"=== target store file ===\"; ls -la /nix/store/*unit-builder-app*/ 2>/dev/null; echo \"=== resolved real path ===\"; realpath /etc/systemd/system/builder-app.service",
+          "description": "Read unit definition",
+          "duration_ms": 456,
+          "index": 1,
+          "kind": "discovery",
+          "output_excerpt": "=== unit file ===\n# /etc/systemd/system/builder-app.service -> /nix/store/bkhc7c1djj4z9s51r616fqfbc55zwdvs-unit-builder-app.service/builder-app.service\n[Unit]\nAfter=network.target\nDescription=Agent-built application slot\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE=/nix/store/54jg0kk0c…",
+          "started_after_ms": 14008,
+          "success": true,
+          "tool_id": "call_9438cef70e4a4155b6639db6"
+        },
+        {
+          "command": "Write /opt/builder/app.py",
+          "description": null,
+          "duration_ms": 0,
+          "index": 2,
+          "kind": "mutation",
+          "output_excerpt": "Successfully wrote to /opt/builder/app.py",
+          "started_after_ms": 28151,
+          "success": true,
+          "tool_id": "call_f3a5cd954bcc42dca1baab3c"
+        },
+        {
+          "command": "Edit /opt/builder/app.py",
+          "description": null,
+          "duration_ms": 0,
+          "index": 3,
+          "kind": "mutation",
+          "output_excerpt": "Updated /opt/builder/app.py",
+          "started_after_ms": 30623,
+          "success": true,
+          "tool_id": "call_0df7574fea944d9a82cfb421"
+        },
+        {
+          "command": "python3 -m py_compile /opt/builder/app.py && echo \"syntax OK\"; echo \"=== unit state ===\"; systemctl status builder-app.service 2>/dev/null | head -5; systemctl start builder-app.service 2>&1; sleep 1; echo \"=== after start ===\"; systemctl status builder-app.service 2>/dev/null | head -8",
+          "description": "Syntax check and start unit",
+          "duration_ms": 1280,
+          "index": 4,
+          "kind": "lifecycle",
+          "output_excerpt": "syntax OK\n=== unit state ===\n× builder-app.service - Agent-built application slot\n     Loaded: loaded (/etc/systemd/system/builder-app.service; enabled; preset: ignored)\n     Active: failed (Result: start-limit-hit) since Thu 2026-08-20 02:39:11 UTC; 31s ago\n   Duration: 103ms\n I…",
+          "started_after_ms": 32435,
+          "success": true,
+          "tool_id": "call_ff42b63ab50b4eb59ef38875"
+        },
+        {
+          "command": "echo \"=== health ===\"; curl -s -w \" [%{http_code}]\\n\" http://127.0.0.1:8080/health; echo \"=== PUT record ===\"; curl -s -o /dev/null -w \"[%{http_code}]\\n\" -X PUT --data-binary 'hello durable world' http://127.0.0.1:8080/records/alpha; echo \"=== GET record ===\"; curl -s -w \" [%{http_code}]\\n\" http://127.0.0.1:8080/records/alpha; echo \"=== PUT binary/empty ===\"; curl -s -o /dev/null -w \"[%{http_code}]\\n\" -X PUT --data-binary $'line1\\nline2' http://127.0.0.1:8080/records/beta; curl -s -w \" [%{http_code}]\\n\" http://127.0.0.1:8080/records/beta; echo \"=== missing record ===\"; curl -s -w \"[%{http_code}]\\n\" http://127.0.0.1:8080/records/nope",
+          "description": "Verify endpoints",
+          "duration_ms": 303,
+          "index": 5,
+          "kind": "validation",
+          "output_excerpt": "=== health ===\nready [200]\n=== PUT record ===\n[204]\n=== GET record ===\nhello durable world [200]\n=== PUT binary/empty ===\n[204]\nline1\nline2 [200]\n=== missing record ===\n[404]",
+          "started_after_ms": 43024,
+          "success": true,
+          "tool_id": "call_2bf272df04b8470cb8cbf06b"
+        },
+        {
+          "command": "systemctl restart builder-app.service; sleep 1.5; echo \"=== after restart ===\"; systemctl is-active builder-app.service; echo \"--- health ---\"; curl -s -w \" [%{http_code}]\\n\" http://127.0.0.1:8080/health; echo \"--- stored record survives ---\"; curl -s -w \" [%{http_code}]\\n\" http://127.0.0.1:8080/records/alpha; echo \"--- data on disk ---\"; ls -la /opt/builder/data/",
+          "description": "Test restart durability",
+          "duration_ms": 1623,
+          "index": 6,
+          "kind": "lifecycle",
+          "output_excerpt": "=== after restart ===\nactive\n--- health ---\nready [200]\n--- stored record survives ---\nhello durable world [200]\n--- data on disk ---\ntotal 16\ndrwxr-xr-x 2 root root 4096 Aug 20 02:39 .\ndrwxr-xr-x 4 root root 4096 Aug 20 02:39 ..\n-rw-r--r-- 1 root root   19 Aug 20 02:39 alpha\n-rw…",
+          "started_after_ms": 45612,
+          "success": true,
+          "tool_id": "call_c2dbce40215341cfae585841"
+        },
+        {
+          "command": "systemctl is-enabled builder-app.service; echo \"=== running processes on 8080 ===\"; curl -s -o /dev/null -w \"health=%{http_code}\\n\" http://127.0.0.1:8080/health; grep -r \"8080\" /etc/systemd/ 2>/dev/null | head; echo \"=== confirm data dir on disk (survives reboot) ===\"; df -h /opt/builder/data 2>/dev/null | tail -1",
+          "description": "Confirm enabled and durable storage",
+          "duration_ms": 63,
+          "index": 7,
+          "kind": "lifecycle",
+          "output_excerpt": "enabled\n=== running processes on 8080 ===\nhealth=200\n=== confirm data dir on disk (survives reboot) ===\n/dev/vda        2.0G   34M  1.8G   2% /",
+          "started_after_ms": 49298,
+          "success": true,
+          "tool_id": "call_548f651ae4a14059a647da03"
+        }
+      ],
+      "agent": "deepseek-builder",
+      "analyzer": "aoe-controller/20260816.0.1",
+      "architecture": {
+        "persistent_paths": [
+          "/etc/systemd",
+          "/etc/systemd/system",
+          "/etc/systemd/system/builder-app.service",
+          "/opt/builder",
+          "/opt/builder/app.py",
+          "/opt/builder/data"
+        ],
+        "service_units": [
+          "builder-app.service",
+          "etc/systemd/system/builder-app.service"
+        ],
+        "technologies": [
+          "Python",
+          "systemd"
+        ]
+      },
+      "metrics": {
+        "discoveries": 1,
+        "first_mutation_after_ms": 28151,
+        "last_observed_after_ms": 49361,
+        "lifecycle_actions": 3,
+        "mutations": 2,
+        "tool_calls": 8,
+        "tool_errors": 0,
+        "validations": 2
+      },
+      "model": "deepseek/deepseek-v4-flash-0731",
+      "outcome": "completed",
+      "schema_version": 1,
+      "source_sha256": "7863cc9aea6e9104985668885001c41ed74c8bfe2987031c99bf7cba78a22ec1",
+      "territory": "builder-two"
+    },
+    "glm-builder": {
+      "actions": [
+        {
+          "command": "cat /etc/systemd/system/builder-app.service 2>/dev/null; systemctl status builder-app.service --no-pager 2>&1 | head -20",
+          "description": "Show builder-app unit file and status",
+          "duration_ms": 134,
+          "index": 1,
+          "kind": "validation",
+          "output_excerpt": "[Unit]\nAfter=network.target\nDescription=Agent-built application slot\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE=/nix/store/54jg0kk0cn5h7j19r0l8x36fmbfywwjj-glibc-locales-2.42-67/lib/locale/locale-archive\"\nEnvironment=\"PATH=/nix/store/di26b1kkbammy0sj70nq5qzvfrh78wxl-coreutils-9.11/bi…",
+          "started_after_ms": 11131,
+          "success": true,
+          "tool_id": "call_1364caba14534be0895fee21"
+        },
+        {
+          "command": "ls -la /opt/builder/ 2>/dev/null; python3 --version 2>&1; which python3",
+          "description": "Check /opt/builder contents and python version",
+          "duration_ms": 28,
+          "index": 2,
+          "kind": "discovery",
+          "output_excerpt": "Python 3.14.6\n/run/current-system/sw/bin/python3",
+          "started_after_ms": 11265,
+          "success": true,
+          "tool_id": "call_7e76e92413ce4f80b97dfd38"
+        },
+        {
+          "command": "ls -la /opt/builder 2>&1; mkdir -p /opt/builder /var/lib/builder-app/records",
+          "description": "Check /opt/builder and create storage dir",
+          "duration_ms": 21,
+          "index": 3,
+          "kind": "mutation",
+          "output_excerpt": "ls: cannot access '/opt/builder': No such file or directory",
+          "started_after_ms": 32889,
+          "success": true,
+          "tool_id": "call_fdc3562b0c384319a65ae4d1"
+        },
+        {
+          "command": "Write /opt/builder/app.py",
+          "description": null,
+          "duration_ms": 0,
+          "index": 4,
+          "kind": "mutation",
+          "output_excerpt": "Successfully wrote to /opt/builder/app.py",
+          "started_after_ms": 50700,
+          "success": true,
+          "tool_id": "call_dc699b8f98dc4511a43f551b"
+        },
+        {
+          "command": "chmod +x /opt/builder/app.py; systemctl reset-failed builder-app.service; systemctl restart builder-app.service; sleep 1; systemctl status builder-app.service --no-pager | head -8",
+          "description": "Start builder-app service and check status",
+          "duration_ms": 1122,
+          "index": 5,
+          "kind": "lifecycle",
+          "output_excerpt": "● builder-app.service - Agent-built application slot\n     Loaded: loaded (/etc/systemd/system/builder-app.service; enabled; preset: ignored)\n     Active: active (running) since Thu 2026-08-20 02:40:07 UTC; 1s ago\n Invocation: 553960675d1d4748bb69a732600ce3b7\n   Main PID: 1095 (py…",
+          "started_after_ms": 56445,
+          "success": true,
+          "tool_id": "call_4f8791bc48a044d6b62f9bb5"
+        }
+      ],
+      "agent": "glm-builder",
+      "analyzer": "aoe-controller/20260816.0.1",
+      "architecture": {
+        "persistent_paths": [
+          "/etc/systemd/system/builder-app.service",
+          "/opt/builder",
+          "/opt/builder/app.py",
+          "/var/lib/builder-app/records"
+        ],
+        "service_units": [
+          "builder-app.service",
+          "etc/systemd/system/builder-app.service"
+        ],
+        "technologies": [
+          "Python",
+          "systemd"
+        ]
+      },
+      "metrics": {
+        "discoveries": 1,
+        "first_mutation_after_ms": 32889,
+        "last_observed_after_ms": 57567,
+        "lifecycle_actions": 1,
+        "mutations": 2,
+        "tool_calls": 5,
+        "tool_errors": 0,
+        "validations": 1
+      },
+      "model": "z-ai/glm-5.3",
+      "outcome": "running",
+      "schema_version": 1,
+      "source_sha256": "fcd96b1e52aa884f1f52c385e2a16ee66014b3a106800dfc76d818955ac8d7db",
+      "territory": "builder-one"
+    },
+    "luna-builder": {
+      "actions": [
+        {
+          "command": "pwd && ls -la /opt /opt/builder 2>&1 || true",
+          "description": "Inspect application directories",
+          "duration_ms": 25,
+          "index": 1,
+          "kind": "discovery",
+          "output_excerpt": "/root\nls: cannot access '/opt': No such file or directory\nls: cannot access '/opt/builder': No such file or directory",
+          "started_after_ms": 6237,
+          "success": true,
+          "tool_id": "call_O8GADLzwe5l4xopV5Y816YAi"
+        },
+        {
+          "command": "systemctl cat builder-app.service 2>&1 || true; systemctl status builder-app.service --no-pager 2>&1 || true",
+          "description": "Inspect existing systemd unit",
+          "duration_ms": 49,
+          "index": 2,
+          "kind": "validation",
+          "output_excerpt": "# /etc/systemd/system/builder-app.service -> /nix/store/bkhc7c1djj4z9s51r616fqfbc55zwdvs-unit-builder-app.service/builder-app.service\n[Unit]\nAfter=network.target\nDescription=Agent-built application slot\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE=/nix/store/54jg0kk0cn5h7j19r0l8x36fmbf…",
+          "started_after_ms": 6263,
+          "success": true,
+          "tool_id": "call_OlrUQYoCFGNO4A1ulxuhCcAD"
+        },
+        {
+          "command": "ls -la /etc/systemd/system /lib/systemd/system 2>/dev/null | head -100; ss -ltnp 2>&1 | head -50",
+          "description": "Inspect system services and port usage",
+          "duration_ms": 74,
+          "index": 3,
+          "kind": "validation",
+          "output_excerpt": "lrwxrwxrwx 1 root root 26 Aug 20 02:38 /etc/systemd/system -> /etc/static/systemd/system\nState  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess\nLISTEN 0      4096   127.0.0.53%lo:53         0.0.0.0:*    users:((\"systemd-resolve\",pid=297,fd=23))\nLISTEN 0      4096      …",
+          "started_after_ms": 6313,
+          "success": true,
+          "tool_id": "call_QBCsypubY0RNAJlysh429LIg"
+        },
+        {
+          "command": "id; command -v python3; python3 --version; mount | head -30",
+          "description": "Inspect runtime and filesystems",
+          "duration_ms": 34,
+          "index": 4,
+          "kind": "discovery",
+          "output_excerpt": "uid=0(root) gid=0(root) groups=0(root)\n/run/current-system/sw/bin/python3\nPython 3.14.6\n/dev/vda on / type ext4 (rw,relatime,x-initrd.mount)\ntmpfs on /nix/.rw-store type tmpfs (rw,relatime,mode=755,x-initrd.mount)\nnix-store on /nix/.ro-store type 9p (rw,relatime,cache=0xf,access=…",
+          "started_after_ms": 6387,
+          "success": true,
+          "tool_id": "call_UZLjT9tcVTZFhf8BSm6u2jEe"
+        },
+        {
+          "command": "Write /opt/builder/app.py",
+          "description": null,
+          "duration_ms": 0,
+          "index": 6,
+          "kind": "mutation",
+          "output_excerpt": "Successfully wrote to /opt/builder/app.py",
+          "started_after_ms": 18688,
+          "success": true,
+          "tool_id": "call_JVrHUMbLKGSWHG2VyXaYtnpF"
+        },
+        {
+          "command": "chmod 755 /opt/builder/app.py && systemctl daemon-reload && systemctl reset-failed builder-app.service && systemctl enable builder-app.service && systemctl restart builder-app.service && systemctl status builder-app.service --no-pager",
+          "description": "Install and start the durable service",
+          "duration_ms": 1194,
+          "index": 7,
+          "kind": "lifecycle",
+          "output_excerpt": "● builder-app.service - Agent-built application slot\n     Loaded: loaded (/etc/systemd/system/builder-app.service; enabled; preset: ignored)\n     Active: active (running) since Thu 2026-08-20 02:39:34 UTC; 23ms ago\n Invocation: d30775f8f2264120b74c7582d7be299f\n   Main PID: 945 ((…",
+          "started_after_ms": 22457,
+          "success": true,
+          "tool_id": "call_Mx5W4iXYFpibZR078BLZbhGW"
+        }
+      ],
+      "agent": "luna-builder",
+      "analyzer": "aoe-controller/20260816.0.1",
+      "architecture": {
+        "persistent_paths": [
+          "/etc/systemd/system",
+          "/opt/builder",
+          "/opt/builder/app.py"
+        ],
+        "service_units": [
+          "builder-app.service"
+        ],
+        "technologies": [
+          "Python",
+          "systemd"
+        ]
+      },
+      "metrics": {
+        "discoveries": 2,
+        "first_mutation_after_ms": 18688,
+        "last_observed_after_ms": 23651,
+        "lifecycle_actions": 1,
+        "mutations": 1,
+        "tool_calls": 6,
+        "tool_errors": 0,
+        "validations": 2
+      },
+      "model": "openai/gpt-5.6-luna",
+      "outcome": "running",
+      "schema_version": 1,
+      "source_sha256": "4b4bd174df7fbd76dc918902a061fd32e7750ca70529b063482699418a64a532",
+      "territory": "builder-three"
+    }
+  },
+  "arena": {
+    "agents": [
+      {
+        "adapter": "claux",
+        "budget": {
+          "max_cost_microusd": null,
+          "resource_units": 900
+        },
+        "id": "deepseek-builder",
+        "model": "deepseek/deepseek-v4-flash-0731",
+        "reasoning_effort": "high",
+        "territory": "builder-two"
+      },
+      {
+        "adapter": "claux",
+        "budget": {
+          "max_cost_microusd": null,
+          "resource_units": 900
+        },
+        "id": "luna-builder",
+        "model": "openai/gpt-5.6-luna",
+        "reasoning_effort": "high",
+        "territory": "builder-three"
+      },
+      {
+        "adapter": "claux",
+        "budget": {
+          "max_cost_microusd": null,
+          "resource_units": 900
+        },
+        "id": "glm-builder",
+        "model": "z-ai/glm-5.3",
+        "reasoning_effort": "high",
+        "territory": "builder-one"
+      }
+    ],
+    "arena": {
+      "category": "service-delivery",
+      "display_name": "First Build: Real Agents",
+      "id": "first-build-real",
+      "mode": "build_race"
+    },
+    "build": {
+      "completion_milestone": "host-reboot",
+      "milestones": [
+        {
+          "depends_on": [],
+          "display_name": "Service Up",
+          "id": "service-up",
+          "operation": "observe",
+          "points": 10,
+          "required": true,
+          "timeout_seconds": 5,
+          "verifier": "verify/service-up.sh"
+        },
+        {
+          "depends_on": [
+            "service-up"
+          ],
+          "display_name": "Write and Read",
+          "id": "write-read",
+          "operation": "observe",
+          "points": 20,
+          "required": true,
+          "timeout_seconds": 10,
+          "verifier": "verify/write-read.sh"
+        },
+        {
+          "depends_on": [
+            "write-read"
+          ],
+          "display_name": "Service Restart",
+          "id": "service-restart",
+          "operation": "observe",
+          "points": 30,
+          "required": true,
+          "timeout_seconds": 15,
+          "verifier": "verify/service-restart.sh"
+        },
+        {
+          "depends_on": [
+            "service-restart"
+          ],
+          "display_name": "Host Reboot",
+          "id": "host-reboot",
+          "operation": "host_reboot",
+          "points": 40,
+          "required": true,
+          "timeout_seconds": 30,
+          "verifier": "verify/host-reboot.sh"
+        }
+      ],
+      "stop_on_first_durable": true
+    },
+    "classes": [
+      {
+        "display_name": "Builder",
+        "id": "builder",
+        "resources": {
+          "disk_mib": 2048,
+          "memory_mib": 768,
+          "vcpus": 1
+        },
+        "strengths": [],
+        "weaknesses": []
+      }
+    ],
+    "fog_of_war": null,
+    "network": {
+      "allow_public_internet": false,
+      "cidr": "10.78.0.0/24"
+    },
+    "rules": {
+      "duration_seconds": 900,
+      "healthy_resources_per_tick": 0,
+      "minimum_territories": 3,
+      "tick_ms": 2000
+    },
+    "schema_version": 1,
+    "territories": [
+      {
+        "class": "builder",
+        "id": "builder-one",
+        "nixos_config": "./arenas/first-build#nixosConfigurations.builder-one.config.system.build.vm",
+        "service": {
+          "expected_body": "ready",
+          "expected_status": 200,
+          "health": {
+            "consecutive_failures": 3,
+            "poll_interval_ms": 1000,
+            "recovery_window_seconds": 60
+          },
+          "path": "/health",
+          "port": 8080
+        }
+      },
+      {
+        "class": "builder",
+        "id": "builder-two",
+        "nixos_config": "./arenas/first-build#nixosConfigurations.builder-two.config.system.build.vm",
+        "service": {
+          "expected_body": "ready",
+          "expected_status": 200,
+          "health": {
+            "consecutive_failures": 3,
+            "poll_interval_ms": 1000,
+            "recovery_window_seconds": 60
+          },
+          "path": "/health",
+          "port": 8080
+        }
+      },
+      {
+        "class": "builder",
+        "id": "builder-three",
+        "nixos_config": "./arenas/first-build#nixosConfigurations.builder-three.config.system.build.vm",
+        "service": {
+          "expected_body": "ready",
+          "expected_status": 200,
+          "health": {
+            "consecutive_failures": 3,
+            "poll_interval_ms": 1000,
+            "recovery_window_seconds": 60
+          },
+          "path": "/health",
+          "port": 8080
+        }
+      }
+    ],
+    "visualization": {
+      "links": [
+        {
+          "from": "client",
+          "kind": "traffic",
+          "label": "HTTP",
+          "to": "app"
+        },
+        {
+          "from": "app",
+          "kind": "storage",
+          "label": null,
+          "to": "state"
+        },
+        {
+          "from": "systemd",
+          "kind": "lifecycle",
+          "label": null,
+          "to": "app"
+        },
+        {
+          "from": "host",
+          "kind": "lifecycle",
+          "label": null,
+          "to": "systemd"
+        }
+      ],
+      "nodes": [
+        {
+          "display_name": "Client",
+          "id": "client",
+          "kind": "client",
+          "milestone": null,
+          "x": 8,
+          "y": 28
+        },
+        {
+          "display_name": "Application",
+          "id": "app",
+          "kind": "service",
+          "milestone": "service-up",
+          "x": 36,
+          "y": 28
+        },
+        {
+          "display_name": "State Store",
+          "id": "state",
+          "kind": "database",
+          "milestone": "write-read",
+          "x": 72,
+          "y": 28
+        },
+        {
+          "display_name": "Service Unit",
+          "id": "systemd",
+          "kind": "service",
+          "milestone": "service-restart",
+          "x": 36,
+          "y": 74
+        },
+        {
+          "display_name": "NixOS Host",
+          "id": "host",
+          "kind": "host",
+          "milestone": "host-reboot",
+          "x": 72,
+          "y": 74
+        }
+      ]
+    }
+  },
+  "artifact_type": "agents-of-empires.match",
+  "events": [
+    {
+      "elapsed_ms": 0,
+      "from": "preparing",
+      "kind": "match_state_changed",
+      "schema_version": 1,
+      "sequence": 0,
+      "to": "running"
+    },
+    {
+      "elapsed_ms": 0,
+      "from": "preparing",
+      "kind": "competitor_state_changed",
+      "reason": "SSH preflight passed",
+      "schema_version": 1,
+      "sequence": 1,
+      "territory": "builder-one",
+      "to": "building"
+    },
+    {
+      "elapsed_ms": 0,
+      "from": "preparing",
+      "kind": "competitor_state_changed",
+      "reason": "SSH preflight passed",
+      "schema_version": 1,
+      "sequence": 2,
+      "territory": "builder-three",
+      "to": "building"
+    },
+    {
+      "elapsed_ms": 0,
+      "from": "preparing",
+      "kind": "competitor_state_changed",
+      "reason": "SSH preflight passed",
+      "schema_version": 1,
+      "sequence": 3,
+      "territory": "builder-two",
+      "to": "building"
+    },
+    {
+      "agent": "glm-builder",
+      "class": "builder",
+      "elapsed_ms": 0,
+      "kind": "territory_registered",
+      "schema_version": 1,
+      "sequence": 4,
+      "territory": "builder-one"
+    },
+    {
+      "agent": "deepseek-builder",
+      "class": "builder",
+      "elapsed_ms": 0,
+      "kind": "territory_registered",
+      "schema_version": 1,
+      "sequence": 5,
+      "territory": "builder-two"
+    },
+    {
+      "agent": "luna-builder",
+      "class": "builder",
+      "elapsed_ms": 0,
+      "kind": "territory_registered",
+      "schema_version": 1,
+      "sequence": 6,
+      "territory": "builder-three"
+    },
+    {
+      "agent": "deepseek-builder",
+      "elapsed_ms": 0,
+      "kind": "agent_started",
+      "model": "deepseek/deepseek-v4-flash-0731",
+      "schema_version": 1,
+      "sequence": 7,
+      "territory": "builder-two"
+    },
+    {
+      "agent": "luna-builder",
+      "elapsed_ms": 0,
+      "kind": "agent_started",
+      "model": "openai/gpt-5.6-luna",
+      "schema_version": 1,
+      "sequence": 8,
+      "territory": "builder-three"
+    },
+    {
+      "agent": "glm-builder",
+      "elapsed_ms": 0,
+      "kind": "agent_started",
+      "model": "z-ai/glm-5.3",
+      "schema_version": 1,
+      "sequence": 9,
+      "territory": "builder-one"
+    },
+    {
+      "elapsed_ms": 2001,
+      "from": "building",
+      "kind": "competitor_state_changed",
+      "reason": "milestone verification began",
+      "schema_version": 1,
+      "sequence": 10,
+      "territory": "builder-one",
+      "to": "verifying"
+    },
+    {
+      "elapsed_ms": 2001,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 11,
+      "territory": "builder-one"
+    },
+    {
+      "elapsed_ms": 2001,
+      "from": "building",
+      "kind": "competitor_state_changed",
+      "reason": "milestone verification began",
+      "schema_version": 1,
+      "sequence": 12,
+      "territory": "builder-two",
+      "to": "verifying"
+    },
+    {
+      "elapsed_ms": 2001,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 13,
+      "territory": "builder-two"
+    },
+    {
+      "elapsed_ms": 2001,
+      "from": "building",
+      "kind": "competitor_state_changed",
+      "reason": "milestone verification began",
+      "schema_version": 1,
+      "sequence": 14,
+      "territory": "builder-three",
+      "to": "verifying"
+    },
+    {
+      "elapsed_ms": 2001,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 15,
+      "territory": "builder-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 2020,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 16,
+      "territory": "builder-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 2020,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 17,
+      "territory": "builder-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 2020,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 18,
+      "territory": "builder-three"
+    },
+    {
+      "elapsed_ms": 4021,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 19,
+      "territory": "builder-one"
+    },
+    {
+      "elapsed_ms": 4021,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 20,
+      "territory": "builder-two"
+    },
+    {
+      "elapsed_ms": 4021,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 21,
+      "territory": "builder-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 4032,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 22,
+      "territory": "builder-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 4032,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 23,
+      "territory": "builder-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 4032,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 24,
+      "territory": "builder-three"
+    },
+    {
+      "elapsed_ms": 6034,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 25,
+      "territory": "builder-one"
+    },
+    {
+      "elapsed_ms": 6034,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 26,
+      "territory": "builder-two"
+    },
+    {
+      "elapsed_ms": 6034,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 27,
+      "territory": "builder-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 6052,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 28,
+      "territory": "builder-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 6052,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 29,
+      "territory": "builder-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 6052,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 30,
+      "territory": "builder-three"
+    },
+    {
+      "agent": "deepseek-builder",
+      "cost_microusd": null,
+      "elapsed_ms": 6052,
+      "input_tokens": 0,
+      "kind": "usage_charged",
+      "output_tokens": 0,
+      "resource_units": 1,
+      "schema_version": 1,
+      "sequence": 31
+    },
+    {
+      "agent": "glm-builder",
+      "cost_microusd": null,
+      "elapsed_ms": 6052,
+      "input_tokens": 0,
+      "kind": "usage_charged",
+      "output_tokens": 0,
+      "resource_units": 1,
+      "schema_version": 1,
+      "sequence": 32
+    },
+    {
+      "agent": "luna-builder",
+      "cost_microusd": 0,
+      "elapsed_ms": 6052,
+      "input_tokens": 0,
+      "kind": "usage_charged",
+      "output_tokens": 0,
+      "resource_units": 1,
+      "schema_version": 1,
+      "sequence": 33
+    },
+    {
+      "elapsed_ms": 8053,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 34,
+      "territory": "builder-one"
+    },
+    {
+      "elapsed_ms": 8053,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 35,
+      "territory": "builder-two"
+    },
+    {
+      "elapsed_ms": 8053,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 36,
+      "territory": "builder-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 8064,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 37,
+      "territory": "builder-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 8064,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 38,
+      "territory": "builder-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 8064,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 39,
+      "territory": "builder-three"
+    },
+    {
+      "agent": "luna-builder",
+      "cost_microusd": 193,
+      "elapsed_ms": 8064,
+      "input_tokens": 2144,
+      "kind": "usage_charged",
+      "output_tokens": 125,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 40
+    },
+    {
+      "elapsed_ms": 10065,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 41,
+      "territory": "builder-one"
+    },
+    {
+      "elapsed_ms": 10065,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 42,
+      "territory": "builder-two"
+    },
+    {
+      "elapsed_ms": 10065,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 43,
+      "territory": "builder-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 10074,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 44,
+      "territory": "builder-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 10074,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 45,
+      "territory": "builder-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 10074,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 46,
+      "territory": "builder-three"
+    },
+    {
+      "agent": "luna-builder",
+      "cost_microusd": 364,
+      "elapsed_ms": 10074,
+      "input_tokens": 2355,
+      "kind": "usage_charged",
+      "output_tokens": 223,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 47
+    },
+    {
+      "elapsed_ms": 12076,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 48,
+      "territory": "builder-one"
+    },
+    {
+      "elapsed_ms": 12076,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 49,
+      "territory": "builder-two"
+    },
+    {
+      "elapsed_ms": 12076,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 50,
+      "territory": "builder-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 12095,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 51,
+      "territory": "builder-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 12095,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 52,
+      "territory": "builder-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 12095,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 53,
+      "territory": "builder-three"
+    },
+    {
+      "elapsed_ms": 14096,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 54,
+      "territory": "builder-one"
+    },
+    {
+      "elapsed_ms": 14096,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 55,
+      "territory": "builder-two"
+    },
+    {
+      "elapsed_ms": 14096,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 56,
+      "territory": "builder-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 14106,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 57,
+      "territory": "builder-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 14106,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 58,
+      "territory": "builder-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 14106,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 59,
+      "territory": "builder-three"
+    },
+    {
+      "agent": "deepseek-builder",
+      "cost_microusd": 400,
+      "elapsed_ms": 14106,
+      "input_tokens": 2933,
+      "kind": "usage_charged",
+      "output_tokens": 1393,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 60
+    },
+    {
+      "elapsed_ms": 16107,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 61,
+      "territory": "builder-one"
+    },
+    {
+      "elapsed_ms": 16107,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 62,
+      "territory": "builder-two"
+    },
+    {
+      "elapsed_ms": 16107,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 63,
+      "territory": "builder-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 16116,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 64,
+      "territory": "builder-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 16116,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 65,
+      "territory": "builder-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 16116,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 66,
+      "territory": "builder-three"
+    },
+    {
+      "agent": "glm-builder",
+      "cost_microusd": 2510,
+      "elapsed_ms": 16116,
+      "input_tokens": 2718,
+      "kind": "usage_charged",
+      "output_tokens": 402,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 67
+    },
+    {
+      "agent": "luna-builder",
+      "cost_microusd": 1313,
+      "elapsed_ms": 16116,
+      "input_tokens": 5050,
+      "kind": "usage_charged",
+      "output_tokens": 493,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 68
+    },
+    {
+      "elapsed_ms": 18117,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 69,
+      "territory": "builder-one"
+    },
+    {
+      "elapsed_ms": 18117,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 70,
+      "territory": "builder-two"
+    },
+    {
+      "elapsed_ms": 18117,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 71,
+      "territory": "builder-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 18125,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 72,
+      "territory": "builder-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 18125,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 73,
+      "territory": "builder-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 18125,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 74,
+      "territory": "builder-three"
+    },
+    {
+      "agent": "deepseek-builder",
+      "cost_microusd": 347,
+      "elapsed_ms": 18125,
+      "input_tokens": 6872,
+      "kind": "usage_charged",
+      "output_tokens": 169,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 75
+    },
+    {
+      "elapsed_ms": 20126,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 76,
+      "territory": "builder-one"
+    },
+    {
+      "elapsed_ms": 20126,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 77,
+      "territory": "builder-two"
+    },
+    {
+      "elapsed_ms": 20126,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 78,
+      "territory": "builder-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 20143,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 79,
+      "territory": "builder-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 20143,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 80,
+      "territory": "builder-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 20143,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 81,
+      "territory": "builder-three"
+    },
+    {
+      "elapsed_ms": 22145,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 82,
+      "territory": "builder-one"
+    },
+    {
+      "elapsed_ms": 22146,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 83,
+      "territory": "builder-two"
+    },
+    {
+      "elapsed_ms": 22146,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 84,
+      "territory": "builder-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 22182,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 85,
+      "territory": "builder-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 22182,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 86,
+      "territory": "builder-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 22182,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 87,
+      "territory": "builder-three"
+    },
+    {
+      "elapsed_ms": 24183,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 88,
+      "territory": "builder-one"
+    },
+    {
+      "elapsed_ms": 24183,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 89,
+      "territory": "builder-two"
+    },
+    {
+      "elapsed_ms": 24183,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 90,
+      "territory": "builder-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 24201,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 91,
+      "territory": "builder-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 24201,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 92,
+      "territory": "builder-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 24201,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 93,
+      "territory": "builder-three"
+    },
+    {
+      "agent": "luna-builder",
+      "cost_microusd": 1144,
+      "elapsed_ms": 24201,
+      "input_tokens": 5616,
+      "kind": "usage_charged",
+      "output_tokens": 751,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 94
+    },
+    {
+      "elapsed_ms": 26204,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 95,
+      "territory": "builder-one"
+    },
+    {
+      "elapsed_ms": 26204,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 96,
+      "territory": "builder-two"
+    },
+    {
+      "elapsed_ms": 26204,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 97,
+      "territory": "builder-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 26214,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 98,
+      "territory": "builder-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 26214,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 99,
+      "territory": "builder-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 26214,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 100,
+      "territory": "builder-three"
+    },
+    {
+      "elapsed_ms": 28215,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 101,
+      "territory": "builder-one"
+    },
+    {
+      "elapsed_ms": 28215,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 102,
+      "territory": "builder-two"
+    },
+    {
+      "elapsed_ms": 28215,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-up",
+      "schema_version": 1,
+      "sequence": 103,
+      "territory": "builder-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 28253,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 104,
+      "territory": "builder-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (56) Recv failure: Connection reset by peer",
+      "elapsed_ms": 28253,
+      "kind": "milestone_failed",
+      "milestone": "service-up",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 105,
+      "territory": "builder-two"
+    },
+    {
+      "elapsed_ms": 28253,
+      "evidence": {
+        "health": "ready"
+      },
+      "kind": "milestone_passed",
+      "milestone": "service-up",
+      "points": 10,
+      "schema_version": 1,
+      "sequence": 106,
+      "territory": "builder-three"
+    },
+    {
+      "elapsed_ms": 28253,
+      "kind": "milestone_evaluation_started",
+      "milestone": "write-read",
+      "schema_version": 1,
+      "sequence": 107,
+      "territory": "builder-three"
+    },
+    {
+      "elapsed_ms": 28298,
+      "evidence": {
+        "record": "record-664f7d098863f46c",
+        "value": "opaque-3259427f273d0682382f26d9a286ffa1"
+      },
+      "kind": "milestone_passed",
+      "milestone": "write-read",
+      "points": 20,
+      "schema_version": 1,
+      "sequence": 108,
+      "territory": "builder-three"
+    },
+    {
+      "elapsed_ms": 28298,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-restart",
+      "schema_version": 1,
+      "sequence": 109,
+      "territory": "builder-three"
+    },
+    {
+      "elapsed_ms": 29024,
+      "evidence": {
+        "record": "record-664f7d098863f46c",
+        "restart": true,
+        "value": "opaque-3259427f273d0682382f26d9a286ffa1"
+      },
+      "kind": "milestone_passed",
+      "milestone": "service-restart",
+      "points": 30,
+      "schema_version": 1,
+      "sequence": 110,
+      "territory": "builder-three"
+    },
+    {
+      "elapsed_ms": 29024,
+      "kind": "milestone_evaluation_started",
+      "milestone": "host-reboot",
+      "schema_version": 1,
+      "sequence": 111,
+      "territory": "builder-three"
+    },
+    {
+      "elapsed_ms": 42874,
+      "evidence": {
+        "reboot": true,
+        "record": "record-664f7d098863f46c",
+        "value": "opaque-3259427f273d0682382f26d9a286ffa1"
+      },
+      "kind": "milestone_passed",
+      "milestone": "host-reboot",
+      "points": 40,
+      "schema_version": 1,
+      "sequence": 112,
+      "territory": "builder-three"
+    },
+    {
+      "elapsed_ms": 42874,
+      "from": "verifying",
+      "kind": "competitor_state_changed",
+      "reason": "completion milestone passed",
+      "schema_version": 1,
+      "sequence": 113,
+      "territory": "builder-three",
+      "to": "durable"
+    },
+    {
+      "elapsed_ms": 42874,
+      "kind": "durable_deployment_completed",
+      "schema_version": 1,
+      "sequence": 114,
+      "territory": "builder-three"
+    },
+    {
+      "elapsed_ms": 42874,
+      "from": "running",
+      "kind": "match_state_changed",
+      "schema_version": 1,
+      "sequence": 115,
+      "to": "finished"
+    },
+    {
+      "elapsed_ms": 42874,
+      "kind": "match_finished",
+      "reason": "first durable deployment",
+      "schema_version": 1,
+      "sequence": 116,
+      "winner": "builder-three"
+    },
+    {
+      "agent": "deepseek-builder",
+      "cost_microusd": 996,
+      "elapsed_ms": 42879,
+      "input_tokens": 25846,
+      "kind": "usage_charged",
+      "output_tokens": 1461,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 117
+    },
+    {
+      "agent": "glm-builder",
+      "cost_microusd": 5616,
+      "elapsed_ms": 42879,
+      "input_tokens": 4211,
+      "kind": "usage_charged",
+      "output_tokens": 633,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 118
+    },
+    {
+      "agent": "luna-builder",
+      "cost_microusd": 449,
+      "elapsed_ms": 42879,
+      "input_tokens": 6386,
+      "kind": "usage_charged",
+      "output_tokens": 119,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 119
+    },
+    {
+      "elapsed_ms": 42879,
+      "kind": "post_match_drain_started",
+      "pending_agents": 3,
+      "schema_version": 1,
+      "sequence": 120,
+      "timeout_ms": 30000
+    },
+    {
+      "agent": "luna-builder",
+      "detail": "agent session was interrupted by the referee's host reboot",
+      "elapsed_ms": 42879,
+      "kind": "agent_interrupted",
+      "schema_version": 1,
+      "sequence": 121,
+      "source": "arena"
+    },
+    {
+      "agent": "luna-builder",
+      "cost_microusd": 0,
+      "elapsed_ms": 42879,
+      "input_tokens": 0,
+      "kind": "usage_charged",
+      "output_tokens": 0,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 122
+    },
+    {
+      "agent": "deepseek-builder",
+      "detail": "I'll start by exploring the host environment to understand what's alreadyLet me examine the dormant unit definition to matchThe unit already exists and points to `/opt/builder/app.py`. Now I'll supply the application with durable disk-backedI used inconsistent helper names. Let me fix thatNow let me syntax-check and startUnit is running. Now let me verify all contract endpoints\n\nAll endpoints correct. Now let me verify durability across a serviceRecords persist across restart. Let me confirm the unit is enabled for boot and check its",
+      "elapsed_ms": 42879,
+      "kind": "agent_finished",
+      "schema_version": 1,
+      "sequence": 123,
+      "source": "player",
+      "success": true
+    },
+    {
+      "agent": "deepseek-builder",
+      "cost_microusd": 1458,
+      "elapsed_ms": 42879,
+      "input_tokens": 40788,
+      "kind": "usage_charged",
+      "output_tokens": 1055,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 124
+    },
+    {
+      "agent": "glm-builder",
+      "cost_microusd": 13890,
+      "elapsed_ms": 42879,
+      "input_tokens": 17989,
+      "kind": "usage_charged",
+      "output_tokens": 1479,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 125
+    },
+    {
+      "agent": "glm-builder",
+      "elapsed_ms": 42879,
+      "kind": "agent_terminated",
+      "reason": "post-match drain deadline expired",
+      "schema_version": 1,
+      "sequence": 126
+    },
+    {
+      "captured_agents": 2,
+      "elapsed_ms": 42879,
+      "kind": "post_match_drain_finished",
+      "schema_version": 1,
+      "sequence": 127,
+      "terminated_agents": 1
+    }
+  ],
+  "match": {
+    "fog_of_war": false,
+    "listed": false,
+    "name": "infra-core · first-build-real · round 2",
+    "slug": "infra-core-first-build-real-round-002"
+  },
+  "provenance": {
+    "adapter_sha256": {
+      "claux": "554ebee775ee2db01b85e5d291615deac5ab1f73b97744c8542fa2f6d02b462b"
+    },
+    "arena_id": "first-build-real",
+    "arena_mode": "buildrace",
+    "compatibility_key": "f8704375ceff56dc991f631df655d3b9dc4c260e6ddcc610fbadc81ce4c37983",
+    "controller_version": "20260816.0.1",
+    "manifest_sha256": "631e19bf46821c2506c96ea5e7d7eb413f42aab9293afa74a72a8c1b53996bcd",
+    "player_artifacts_sha256": {},
+    "player_brief_sha256": null,
+    "schema_version": 1,
+    "source_revision": "2c7d6faef2f5474849b34f85c7ba916d27b6c90d",
+    "verifier_sha256": "06a2813a43a036901906193b96067d95fbd4e46d2fbfb914ce3659738a0905e0"
+  },
+  "schema_version": 1,
+  "visualization": {
+    "links": [
+      {
+        "from": "client",
+        "kind": "traffic",
+        "label": "HTTP",
+        "to": "app"
+      },
+      {
+        "from": "app",
+        "kind": "storage",
+        "label": null,
+        "to": "state"
+      },
+      {
+        "from": "systemd",
+        "kind": "lifecycle",
+        "label": null,
+        "to": "app"
+      },
+      {
+        "from": "host",
+        "kind": "lifecycle",
+        "label": null,
+        "to": "systemd"
+      }
+    ],
+    "nodes": [
+      {
+        "display_name": "Client",
+        "id": "client",
+        "kind": "client",
+        "milestone": null,
+        "x": 8,
+        "y": 28
+      },
+      {
+        "display_name": "Application",
+        "id": "app",
+        "kind": "service",
+        "milestone": "service-up",
+        "x": 36,
+        "y": 28
+      },
+      {
+        "display_name": "State Store",
+        "id": "state",
+        "kind": "database",
+        "milestone": "write-read",
+        "x": 72,
+        "y": 28
+      },
+      {
+        "display_name": "Service Unit",
+        "id": "systemd",
+        "kind": "service",
+        "milestone": "service-restart",
+        "x": 36,
+        "y": 74
+      },
+      {
+        "display_name": "NixOS Host",
+        "id": "host",
+        "kind": "host",
+        "milestone": "host-reboot",
+        "x": 72,
+        "y": 74
+      }
+    ]
+  },
+  "world": {
+    "agents": {
+      "deepseek-builder": {
+        "cost_microusd": 3201,
+        "failure_source": "player",
+        "input_tokens": 76439,
+        "model": "deepseek/deepseek-v4-flash-0731",
+        "output_tokens": 4078,
+        "resource_units_used": 1,
+        "running": false,
+        "successful": true,
+        "terminal_detail": "I'll start by exploring the host environment to understand what's alreadyLet me examine the dormant unit definition to matchThe unit already exists and points to `/opt/builder/app.py`. Now I'll supply the application with durable disk-backedI used inconsistent helper names. Let me fix thatNow let me syntax-check and startUnit is running. Now let me verify all contract endpoints\n\nAll endpoints correct. Now let me verify durability across a serviceRecords persist across restart. Let me confirm the unit is enabled for boot and check its",
+        "terminal_state": "completed",
+        "territory": "builder-two"
+      },
+      "glm-builder": {
+        "cost_microusd": 22016,
+        "failure_source": "controller",
+        "input_tokens": 24918,
+        "model": "z-ai/glm-5.3",
+        "output_tokens": 2514,
+        "resource_units_used": 1,
+        "running": false,
+        "successful": null,
+        "terminal_detail": "post-match drain deadline expired",
+        "terminal_state": "terminated",
+        "territory": "builder-one"
+      },
+      "luna-builder": {
+        "cost_microusd": 3463,
+        "failure_source": "arena",
+        "input_tokens": 21551,
+        "model": "openai/gpt-5.6-luna",
+        "output_tokens": 1711,
+        "resource_units_used": 1,
+        "running": false,
+        "successful": null,
+        "terminal_detail": "agent session was interrupted by the referee's host reboot",
+        "terminal_state": "interrupted",
+        "territory": "builder-three"
+      }
+    },
+    "elapsed_ms": 42879,
+    "finish_reason": "first durable deployment",
+    "infrastructure_failures": 0,
+    "last_sequence": 127,
+    "match_state": "finished",
+    "territories": {
+      "builder-one": {
+        "agent": "glm-builder",
+        "class": "builder",
+        "competitor_state": "verifying",
+        "durable_at_ms": null,
+        "elimination_detail": null,
+        "elimination_source": null,
+        "last_health": null,
+        "milestone_points": 0,
+        "milestones": {
+          "service-up": {
+            "evaluating": false,
+            "evidence": null,
+            "failure_category": "verification_failed",
+            "failure_detail": "curl: (56) Recv failure: Connection reset by peer",
+            "passed": false,
+            "points": 0
+          }
+        },
+        "resources": 0,
+        "state": "provisioning"
+      },
+      "builder-three": {
+        "agent": "luna-builder",
+        "class": "builder",
+        "competitor_state": "durable",
+        "durable_at_ms": 42874,
+        "elimination_detail": null,
+        "elimination_source": null,
+        "last_health": null,
+        "milestone_points": 100,
+        "milestones": {
+          "host-reboot": {
+            "evaluating": false,
+            "evidence": {
+              "reboot": true,
+              "record": "record-664f7d098863f46c",
+              "value": "opaque-3259427f273d0682382f26d9a286ffa1"
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 40
+          },
+          "service-restart": {
+            "evaluating": false,
+            "evidence": {
+              "record": "record-664f7d098863f46c",
+              "restart": true,
+              "value": "opaque-3259427f273d0682382f26d9a286ffa1"
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 30
+          },
+          "service-up": {
+            "evaluating": false,
+            "evidence": {
+              "health": "ready"
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 10
+          },
+          "write-read": {
+            "evaluating": false,
+            "evidence": {
+              "record": "record-664f7d098863f46c",
+              "value": "opaque-3259427f273d0682382f26d9a286ffa1"
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 20
+          }
+        },
+        "resources": 0,
+        "state": "provisioning"
+      },
+      "builder-two": {
+        "agent": "deepseek-builder",
+        "class": "builder",
+        "competitor_state": "verifying",
+        "durable_at_ms": null,
+        "elimination_detail": null,
+        "elimination_source": null,
+        "last_health": null,
+        "milestone_points": 0,
+        "milestones": {
+          "service-up": {
+            "evaluating": false,
+            "evidence": null,
+            "failure_category": "verification_failed",
+            "failure_detail": "curl: (56) Recv failure: Connection reset by peer",
+            "passed": false,
+            "points": 0
+          }
+        },
+        "resources": 0,
+        "state": "provisioning"
+      }
+    },
+    "winner": "builder-three"
+  }
+}
