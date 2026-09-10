@@ -2179,9 +2179,12 @@ fn page(title: &str, content: &str) -> String {
 // Seasons
 // ---------------------------------------------------------------------------
 
+#[derive(Debug)]
 struct SeasonStanding {
     fleet_id: String,
     model: String,
+    adapter: String,
+    reasoning_effort: String,
     titles: usize,
     finals: usize,
     heats: usize,
@@ -2190,6 +2193,7 @@ struct SeasonStanding {
     milestone_points: u64,
     forfeits: usize,
     cost_microusd: u64,
+    cost_incomplete: bool,
 }
 
 struct WeekAccounting {
@@ -2245,14 +2249,21 @@ impl WeekAccounting {
 }
 
 fn season_standings(report: &SeasonReport) -> Vec<SeasonStanding> {
-    let mut table: BTreeMap<String, SeasonStanding> = BTreeMap::new();
+    let mut table = BTreeMap::new();
     for week in &report.weeks {
         for entry in &week.draw.fleet {
             table
-                .entry(entry.id.clone())
+                .entry((
+                    entry.id.clone(),
+                    entry.model.clone(),
+                    entry.adapter.clone(),
+                    entry.reasoning_effort.clone(),
+                ))
                 .or_insert_with(|| SeasonStanding {
                     fleet_id: entry.id.clone(),
                     model: entry.model.clone(),
+                    adapter: entry.adapter.clone(),
+                    reasoning_effort: entry.reasoning_effort.clone(),
                     titles: 0,
                     finals: 0,
                     heats: 0,
@@ -2261,6 +2272,7 @@ fn season_standings(report: &SeasonReport) -> Vec<SeasonStanding> {
                     milestone_points: 0,
                     forfeits: 0,
                     cost_microusd: 0,
+                    cost_incomplete: false,
                 });
         }
         let Some(summary) = &week.summary else {
@@ -2268,7 +2280,20 @@ fn season_standings(report: &SeasonReport) -> Vec<SeasonStanding> {
         };
         let last_round = week.draw.shape.len();
         for standing in &summary.standings {
-            let Some(row) = table.get_mut(&standing.fleet_id) else {
+            let Some(entry) = week
+                .draw
+                .fleet
+                .iter()
+                .find(|entry| entry.id == standing.fleet_id)
+            else {
+                continue;
+            };
+            let Some(row) = table.get_mut(&(
+                entry.id.clone(),
+                entry.model.clone(),
+                entry.adapter.clone(),
+                entry.reasoning_effort.clone(),
+            )) else {
                 continue;
             };
             row.heats += standing.heats;
@@ -2277,6 +2302,7 @@ fn season_standings(report: &SeasonReport) -> Vec<SeasonStanding> {
             row.milestone_points += standing.milestone_points;
             row.forfeits += standing.forfeits;
             row.cost_microusd += standing.cost_microusd;
+            row.cost_incomplete |= replay_spend_missing(summary);
             if standing.reached_round >= last_round && standing.heats > 0 {
                 row.finals += 1;
             }
@@ -2297,6 +2323,84 @@ fn season_standings(report: &SeasonReport) -> Vec<SeasonStanding> {
             .then_with(|| a.fleet_id.cmp(&b.fleet_id))
     });
     rows
+}
+
+#[cfg(test)]
+mod season_integrity_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn week(model: &str, adapter: &str, effort: &str) -> WeekReport {
+        let draw: WeekDraw = serde_json::from_value(json!({
+            "schema_version": 1, "season_id": "season", "season_manifest": "season.toml",
+            "week": "week", "draw_seed": "seed", "variation_seed_commitment": "commitment",
+            "heat_size": 3, "rules": {"unavailable_replays": 1},
+            "fleet": [{"id": "same-id", "model": model, "adapter": adapter, "reasoning_effort": effort}],
+            "arenas": [], "shape": [{"round": 1, "field": 3, "heats": 1, "byes": 0, "wildcards": 0}],
+            "round_arenas": [], "first_round": {"round": 1, "heats": [], "byes": []}
+        })).unwrap();
+        let summary: WeekSummary = serde_json::from_value(json!({
+            "schema_version": 1, "season_id": "season", "week": "week", "draw_seed": "seed",
+            "variation_seed_commitment": "commitment", "completed": true, "rounds": [],
+            "champion": "same-id", "standings": [{
+                "fleet_id": "same-id", "model": model, "reached_round": 2,
+                "heats": 1, "wins": 1, "durable_deployments": 1, "milestone_points": 100,
+                "forfeits": 0, "cost_microusd": 10
+            }]
+        }))
+        .unwrap();
+        WeekReport {
+            week: "week".into(),
+            slug: "week".into(),
+            draw,
+            summary: Some(summary),
+            heat_links: BTreeMap::new(),
+        }
+    }
+
+    #[test]
+    fn season_standings_separate_model_harness_and_reasoning_changes() {
+        let report = SeasonReport {
+            id: "season".into(),
+            slug: "season".into(),
+            report_dir: PathBuf::new(),
+            weeks: vec![
+                week("model/a", "claux", "high"),
+                week("model/a", "claux", "high"),
+                week("model/b", "claux", "high"),
+                week("model/a", "claux", "low"),
+                week("model/a", "other", "high"),
+            ],
+        };
+        let rows = season_standings(&report);
+        assert_eq!(rows.len(), 4, "{rows:?}");
+        assert_eq!(rows.iter().map(|r| r.titles).sum::<usize>(), 5);
+        let combined = rows
+            .iter()
+            .find(|r| r.model == "model/a" && r.adapter == "claux" && r.reasoning_effort == "high")
+            .unwrap();
+        assert_eq!((combined.titles, combined.cost_microusd), (2, 20));
+        let html = render_season(&report);
+        assert!(html.contains("model/a · claux · reasoning high"));
+        assert!(html.contains("model/a · claux · reasoning low"));
+        assert!(html.contains("model/b · claux · reasoning high"));
+    }
+}
+
+fn replay_spend_missing(summary: &WeekSummary) -> bool {
+    summary
+        .rounds
+        .iter()
+        .flat_map(|round| &round.heats)
+        .any(|heat| heat.prior_attempts.len() < heat.attempts.saturating_sub(1))
+}
+
+fn season_money(cost: u64, incomplete: bool) -> String {
+    if incomplete {
+        format!("{}+ (legacy replay spend missing)", money(cost))
+    } else {
+        money(cost)
+    }
 }
 
 fn render_season_cards(reports: &[SeasonReport]) -> String {
@@ -2370,7 +2474,7 @@ fn render_season(report: &SeasonReport) -> String {
                     },
                     summary.champion.clone().unwrap_or_else(|| "—".to_owned()),
                     acc.evaluated_pct(),
-                    money(cost),
+                    season_money(cost, replay_spend_missing(summary)),
                 )
             }
             None => ("drawn", "—".to_owned(), "n/a".to_owned(), "n/a".to_owned()),
@@ -2405,7 +2509,10 @@ fn render_season(report: &SeasonReport) -> String {
                 ""
             },
             escape(&row.fleet_id),
-            escape(&row.model),
+            escape(&format!(
+                "{} · {} · reasoning {}",
+                row.model, row.adapter, row.reasoning_effort
+            )),
             row.titles,
             row.finals,
             row.heats,
@@ -2413,7 +2520,7 @@ fn render_season(report: &SeasonReport) -> String {
             row.durable,
             row.milestone_points,
             row.forfeits,
-            money(row.cost_microusd),
+            season_money(row.cost_microusd, row.cost_incomplete),
         );
     }
     page(
