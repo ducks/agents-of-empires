@@ -30,6 +30,9 @@ for argument in "$@"; do
     exit 255
   fi
   if [[ -n "${TEST_REMOTE_EXIT:-}" && "$argument" == *"--output-format json"* ]]; then
+    if [[ -n "${TEST_LIVE_TRANSCRIPT_JSON:-}" ]]; then
+      printf '%s' "$TEST_LIVE_TRANSCRIPT_JSON" >"$(dirname "$AOE_RESULT_FILE")/transcript.live.json"
+    fi
     exit "$TEST_REMOTE_EXIT"
   fi
 done
@@ -168,6 +171,7 @@ jq -e '
 # with a null result and an outcome. A present result.json must not be read
 # as success, and provider failures must not be charged to the player.
 run_adapter_case() {
+  rm -f "$root/run/transcript.live.json" "$root/run/transcript.json.partial"
   rm -f "$root/run/result.json" "$root/run/claux-result.json" "$root/run/transcript.json" "$root/run/referee-reboot"
   set +e
   PATH="$root/bin:$PATH" \
@@ -187,6 +191,21 @@ run_adapter_case() {
   last_status=$?
   set -e
 }
+
+# SSH loss after work preserves the last checkpoint without guessing its cause.
+run_adapter_case \
+  TEST_REMOTE_EXIT=255 TEST_NO_NATIVE_RESULT=1 TEST_NO_TRANSCRIPT=1 \
+  TEST_LIVE_TRANSCRIPT_JSON='{"schema_version":2,"outcome":{"status":"running"},"usage":{"input_tokens":8753,"output_tokens":7106,"cost_usd":0.06368828}}'
+[[ "$last_status" == 255 ]]
+jq -e '.status == "harness_error" and (.summary | contains("disconnect cause unknown")) and .usage.cost_microusd == 63688 and .usage.input_tokens == 8753' "$root/run/result.json" >/dev/null
+jq -e '.usage.cost_microusd == 63688' "$root/run/usage.json" >/dev/null
+jq -e '.outcome.status == "running"' "$root/run/transcript.json" >/dev/null
+
+# A partial checkpoint must not be mistaken for usable evidence.
+run_adapter_case \
+  TEST_REMOTE_EXIT=255 TEST_NO_NATIVE_RESULT=1 TEST_NO_TRANSCRIPT=1 \
+  TEST_LIVE_TRANSCRIPT_JSON='{"usage":'
+jq -e '.status == "harness_error" and (.summary | contains("before producing a transcript"))' "$root/run/result.json" >/dev/null
 
 # Rate limited after retries: classified in the JSON, exit 11, usage kept.
 run_adapter_case \

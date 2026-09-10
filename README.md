@@ -372,6 +372,19 @@ points, then earliest durable time, then lowest cost. Weeks draw arenas
 independently, so they are not comparable to each other as benchmarks; the
 benchmark suite remains the comparable measurement.
 
+A completed agent run is not itself a durable deployment. Completed runs
+without verified durability are `incomplete`, not `failed`; completions
+collected after the race ends are recorded as outraced at the frozen clock.
+The drain preserves usage and transcripts but never adds milestone points.
+Referee-interrupted non-winners are also `incomplete`, not player failures.
+Concurrent checks are scored in completion order. Each guest's reboot and
+recovery proceeds independently; the first successful durability check ends
+the race without waiting for slower guests or recording post-win scores.
+On SSH loss, the Claux adapter retains its last valid transcript checkpoint
+and reported usage. An unexplained disconnect remains a harness failure
+(and may trigger a replay); evidence of work alone does not prove that the
+agent caused the disconnect. These changes do not rewrite retained results.
+
 Execution checks every arena against the compatibility key recorded in the
 draw before starting, on resume, and before each attempt. Restore the committed
 arena files if a verifier or manifest has changed. New checkpoints also bind

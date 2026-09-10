@@ -15,6 +15,7 @@ use aoe_referee::{BuildReferee, HealthProbe, HttpProbe, ProbeTarget, Referee};
 use aoe_replay::{EventLog, WorldState, reduce};
 use aoe_runtime::{ArenaSupervisor, NetworkPlan, NixVmDriver};
 use aoe_tui::{RenderOptions, render_world};
+use futures::{StreamExt, stream::FuturesUnordered};
 use thiserror::Error;
 use tokio::sync::mpsc;
 
@@ -391,12 +392,11 @@ async fn run_booted_build_match(
                     referee.begin_milestone(&territory.id, &milestone.id, elapsed_ms(started))?,
                 )?;
             }
-            if milestone.operation == MilestoneOperation::HostReboot {
-                // Reboot the guest OS, not the QEMU process. Besides being a
-                // truer durability test, this keeps every competitor's host
-                // forwards stable and lets all reboots begin before any one
-                // territory is polled for recovery.
-                for territory in &eligible {
+            let check_world = world.clone();
+            let checks = eligible.iter().map(|territory| async {
+                if milestone.operation == MilestoneOperation::HostReboot {
+                    // Each guest reboots, recovers and verifies independently.
+                    // Keep QEMU alive so its host forwards stay stable.
                     let agent = manifest
                         .agents
                         .iter()
@@ -420,65 +420,28 @@ async fn run_booted_build_match(
                         .expect("validated credential");
                     let password = credential_value(credential, "AOE_SSH_PASSWORD")?;
                     let _ = password_ssh(assignment.ssh_port, &password, "systemctl reboot").await;
-                }
-                futures::future::try_join_all(eligible.iter().map(|territory| {
-                    let assignment = plan
-                        .assignments
-                        .iter()
-                        .find(|assignment| assignment.territory == territory.id)
-                        .expect("network assignment");
-                    let credential = options
-                        .credentials
-                        .get(&territory.id)
-                        .expect("validated credential");
                     wait_for_one_ssh_cycle(
                         assignment,
                         credential,
                         Duration::from_secs(30),
                         Duration::from_secs(120),
                     )
-                }))
-                .await?;
-            }
-            let checks = futures::future::join_all(eligible.iter().map(|territory| {
-                run_milestone_verifier(options, plan, territory, milestone, &world)
-            }))
-            .await;
-            for (territory, result) in eligible.iter().zip(checks) {
-                if referee.outcome().is_some() {
-                    break;
+                    .await?;
                 }
-                let elapsed = elapsed_ms(started);
-                match result {
-                    Ok(evidence) => {
-                        append(
-                            &mut log,
-                            &mut world,
-                            &mut events,
-                            referee.pass_milestone(
-                                &territory.id,
-                                &milestone.id,
-                                milestone.points,
-                                evidence,
-                                elapsed,
-                            )?,
-                        )?;
-                    }
-                    Err(detail) => append(
-                        &mut log,
-                        &mut world,
-                        &mut events,
-                        referee.fail_milestone(
-                            &territory.id,
-                            &milestone.id,
-                            "verification_failed",
-                            &detail,
-                            true,
-                            elapsed,
-                        )?,
-                    )?,
-                }
-            }
+                let result =
+                    run_milestone_verifier(options, plan, territory, milestone, &check_world).await;
+                Ok((territory.id.clone(), result))
+            });
+            record_milestone_checks(
+                checks,
+                milestone,
+                &mut referee,
+                &mut log,
+                &mut world,
+                &mut events,
+                started,
+            )
+            .await?;
         }
         record_build_usage_checkpoints(
             &options.output,
@@ -519,6 +482,50 @@ async fn run_booted_build_match(
         serde_json::to_vec_pretty(&world)?,
     )?;
     Ok(world)
+}
+
+/// Consume checks as they finish, including each guest's own reboot/recovery.
+/// Dropping pending futures at the first durable result prevents post-win scoring.
+#[allow(clippy::too_many_arguments)]
+async fn record_milestone_checks<F>(
+    checks: impl IntoIterator<Item = F>,
+    milestone: &MilestoneConfig,
+    referee: &mut BuildReferee,
+    log: &mut EventLog,
+    world: &mut WorldState,
+    events: &mut Vec<EventEnvelope>,
+    started: Instant,
+) -> Result<(), RunError>
+where
+    F: std::future::Future<Output = Result<(String, Result<serde_json::Value, String>), RunError>>,
+{
+    let mut pending: FuturesUnordered<_> = checks.into_iter().collect();
+    while referee.outcome().is_none() {
+        let Some(check) = pending.next().await else {
+            break;
+        };
+        let (territory, result) = check?;
+        let elapsed = elapsed_ms(started);
+        let emitted = match result {
+            Ok(evidence) => referee.pass_milestone(
+                &territory,
+                &milestone.id,
+                milestone.points,
+                evidence,
+                elapsed,
+            )?,
+            Err(detail) => referee.fail_milestone(
+                &territory,
+                &milestone.id,
+                "verification_failed",
+                &detail,
+                true,
+                elapsed,
+            )?,
+        };
+        append(log, world, events, emitted)?;
+    }
+    Ok(())
 }
 
 /// Why an unfinished agent's build ended: a named winner, or the deadline.
@@ -740,6 +747,7 @@ async fn run_milestone_verifier(
     let output = tokio::time::timeout(
         Duration::from_secs(milestone.timeout_seconds),
         tokio::process::Command::new(&verifier)
+            .kill_on_drop(true)
             .env("AOE_TERRITORY_ID", &territory.id)
             .env("AOE_HOST", "127.0.0.1")
             .env("AOE_SSH_PORT", assignment.ssh_port.to_string())
@@ -825,6 +833,13 @@ fn record_build_agent_results(
     elapsed: u64,
 ) -> Result<(), RunError> {
     for result in results {
+        let completed_after_finish = result.status == AgentStatus::Completed
+            && world.match_state == aoe_domain::MatchState::Finished
+            && world
+                .territories
+                .get(&result.territory)
+                .is_some_and(|territory| territory.durable_at_ms.is_none());
+        let agent_id = result.agent.clone();
         let source = match result.status {
             AgentStatus::Unavailable => FailureSource::Provider,
             AgentStatus::HarnessError => FailureSource::Harness,
@@ -857,6 +872,16 @@ fn record_build_agent_results(
             },
         ] {
             let envelope = referee.record(event, elapsed)?;
+            append(log, world, events, [envelope])?;
+        }
+        if completed_after_finish {
+            let envelope = referee.record(
+                Event::AgentOutraced {
+                    agent: agent_id,
+                    reason: outraced_reason(world.winner.as_deref()),
+                },
+                elapsed,
+            )?;
             append(log, world, events, [envelope])?;
         }
     }
@@ -1372,6 +1397,73 @@ mod tests {
 
     const MANIFEST: &str = include_str!("../../runtime/tests/fixture.toml");
 
+    #[tokio::test]
+    async fn durability_race_uses_completion_order_and_drops_pending_checks() {
+        let manifest_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../arenas/first-build/agents-real.toml");
+        let manifest = ArenaManifest::load(&manifest_path).unwrap();
+        let milestone = manifest
+            .build
+            .as_ref()
+            .unwrap()
+            .milestones
+            .iter()
+            .find(|milestone| milestone.id == "host-reboot")
+            .unwrap();
+        // Exercise both a stalled first seat and a failed first check.
+        // Neither may delay the successful second seat.
+        for first_stalls in [true, false] {
+            let mut referee = BuildReferee::from_manifest(&manifest);
+            let mut world = WorldState::default();
+            let path = std::env::temp_dir()
+                .join(format!("aoe-completion-order-{}.jsonl", std::process::id()));
+            let _ = std::fs::remove_file(&path);
+            let mut log = EventLog::open(&path).unwrap();
+            let mut events = Vec::new();
+            append(&mut log, &mut world, &mut events, referee.start().unwrap()).unwrap();
+            let checks = ["builder-one", "builder-two", "builder-three"]
+                .into_iter()
+                .map(|id| async move {
+                    let result = match id {
+                        "builder-one" if first_stalls => std::future::pending().await,
+                        "builder-one" => Err("not durable".to_owned()),
+                        "builder-two" => {
+                            tokio::task::yield_now().await;
+                            Ok(serde_json::json!({"reboot": true}))
+                        }
+                        _ => std::future::pending().await,
+                    };
+                    Ok((id.to_owned(), result))
+                });
+            tokio::time::timeout(
+                std::time::Duration::from_secs(1),
+                super::record_milestone_checks(
+                    checks,
+                    milestone,
+                    &mut referee,
+                    &mut log,
+                    &mut world,
+                    &mut events,
+                    std::time::Instant::now(),
+                ),
+            )
+            .await
+            .expect("a pending guest must not block the winner")
+            .unwrap();
+            assert_eq!(world.winner.as_deref(), Some("builder-two"));
+            assert_eq!(world.territories["builder-one"].milestone_points, 0);
+            assert_eq!(world.territories["builder-three"].milestone_points, 0);
+            assert_eq!(
+                events
+                    .iter()
+                    .filter(|event| matches!(event.event, Event::DurableDeploymentCompleted { .. }))
+                    .count(),
+                1
+            );
+            std::fs::remove_file(path).unwrap();
+        }
+    }
+
     #[test]
     fn no_contest_requires_every_agent_to_fail_in_the_harness() {
         let mut world = WorldState::default();
@@ -1789,6 +1881,10 @@ mod tests {
             .expect("late result event");
         assert_eq!(finished.elapsed_ms, 40_000);
         assert_eq!(world.elapsed_ms, 40_000);
+        assert!(events.iter().any(|event| matches!(
+            &event.event,
+            Event::AgentOutraced { agent, .. } if agent == "luna-builder"
+        )));
         assert!(events.iter().any(|event| matches!(
             event.event,
             Event::PostMatchDrainStarted {
