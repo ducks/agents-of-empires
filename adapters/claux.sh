@@ -71,6 +71,11 @@ remote_root="/var/tmp/agents-of-empires-${AOE_AGENT_ID}"
 remote_port="$((18000 + AOE_SSH_PORT % 1000))"
 transcript="${run_root}/transcript.json"
 native_result="${run_root}/claux-result.json"
+live_transcript="${run_root}/transcript.live.json"
+
+valid_transcript() {
+  jq -e 'type == "object" and (.usage | type == "object")' "$1" >/dev/null 2>&1
+}
 
 normalize_usage() {
   local source="$1"
@@ -86,9 +91,10 @@ normalize_usage() {
 checkpoint_usage() {
   while true; do
     sleep 2
-    live="${run_root}/transcript.live.json"
-    "${scp_command[@]}" "root@${AOE_TERRITORY_HOST}:${remote_root}/transcript.json" "$live" 2>/dev/null || continue
-    normalize_usage "$live"
+    "${scp_command[@]}" "root@${AOE_TERRITORY_HOST}:${remote_root}/transcript.json" "${live_transcript}.partial" 2>/dev/null || continue
+    valid_transcript "${live_transcript}.partial" || continue
+    mv "${live_transcript}.partial" "$live_transcript"
+    normalize_usage "$live_transcript"
   done
 }
 
@@ -260,7 +266,11 @@ if (( status == 255 )) && [[ -f "${run_root}/referee-reboot" ]]; then
   done
 fi
 
-"${scp_command[@]}" "root@${AOE_TERRITORY_HOST}:${remote_root}/transcript.json" "$transcript" 2>/dev/null || true
+if "${scp_command[@]}" "root@${AOE_TERRITORY_HOST}:${remote_root}/transcript.json" "${transcript}.partial" 2>/dev/null && valid_transcript "${transcript}.partial"; then
+  mv "${transcript}.partial" "$transcript"
+elif valid_transcript "$live_transcript"; then
+  cp "$live_transcript" "$transcript"
+fi
 "${scp_command[@]}" "root@${AOE_TERRITORY_HOST}:${remote_root}/result.json" "$native_result" 2>/dev/null || true
 normalize_usage "$transcript"
 
@@ -320,6 +330,9 @@ fi
 
 write_usage_result() {
   local normalized_status="$1" summary="$2" source="$3"
+  if [[ ! -s "$source" ]] && valid_transcript "$transcript"; then
+    source="$transcript"
+  fi
   if [[ -s "$source" ]]; then
     jq \
       --arg agent "$AOE_AGENT_ID" \
@@ -369,6 +382,11 @@ else
     if [[ -n "$native_outcome_message" ]]; then
       summary+=": ${native_outcome_message}"
     fi
+  elif (( status == 255 )) && valid_transcript "$transcript"; then
+    # Evidence of work is not evidence of who caused an SSH disconnect.
+    # Preserve usage without charging an unproven transport failure to the player.
+    normalized_status="harness_error"
+    summary="Claux SSH session disconnected (exit status 255); retained transcript and usage, disconnect cause unknown"
   elif [[ ! -s "$transcript" ]]; then
     # No classification and no evidence: the harness never got going.
     normalized_status="harness_error"

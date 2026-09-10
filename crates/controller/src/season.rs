@@ -1098,11 +1098,20 @@ pub fn heat_result(
             Some(FailureSource::Provider | FailureSource::Harness)
         ) {
             SeatOutcome::Forfeit
-        } else if agent.is_some_and(|agent| agent.successful == Some(false))
-            && failure_source == Some(FailureSource::Player)
+        } else if (failure_source == Some(FailureSource::Arena)
             && agent.is_some_and(|agent| {
-                agent.terminal_state == Some(aoe_domain::AgentTerminalState::Incomplete)
-            })
+                agent.terminal_state == Some(aoe_domain::AgentTerminalState::Interrupted)
+            }))
+            || (failure_source == Some(FailureSource::Player)
+                && agent.is_some_and(|agent| {
+                    matches!(
+                        agent.terminal_state,
+                        Some(
+                            aoe_domain::AgentTerminalState::Incomplete
+                                | aoe_domain::AgentTerminalState::Completed
+                        )
+                    )
+                }))
         {
             SeatOutcome::Incomplete
         } else {
@@ -1740,6 +1749,111 @@ mod tests {
         assert_eq!(outcomes["beta"], SeatOutcome::Incomplete);
         assert_eq!(outcomes["gamma"], SeatOutcome::Forfeit);
         assert_eq!(result.standings[0].fleet_id, "alpha", "ranked best first");
+    }
+
+    #[test]
+    fn completed_without_durability_is_incomplete_not_failed() {
+        let state = world_with(&[
+            (
+                "one",
+                "completed",
+                0,
+                None,
+                Some(FailureSource::Player),
+                Some(AgentTerminalState::Completed),
+            ),
+            (
+                "two",
+                "failed",
+                0,
+                None,
+                Some(FailureSource::Player),
+                Some(AgentTerminalState::Failed),
+            ),
+            (
+                "three",
+                "unavailable",
+                0,
+                None,
+                Some(FailureSource::Harness),
+                Some(AgentTerminalState::Failed),
+            ),
+        ]);
+        let heat = draw_for(&[
+            ("one", "completed"),
+            ("two", "failed"),
+            ("three", "unavailable"),
+        ]);
+        let result = heat_result(&heat, PathBuf::from("x"), 1, &state);
+        let outcomes: BTreeMap<_, _> = result
+            .standings
+            .iter()
+            .map(|seat| (seat.fleet_id.as_str(), seat.outcome))
+            .collect();
+        assert_eq!(outcomes["completed"], SeatOutcome::Incomplete);
+        assert_eq!(outcomes["failed"], SeatOutcome::Failed);
+        assert_eq!(outcomes["unavailable"], SeatOutcome::Forfeit);
+        assert!(
+            result
+                .standings
+                .iter()
+                .all(|seat| seat.milestone_points == 0)
+        );
+    }
+
+    #[test]
+    fn referee_reboot_interruption_is_not_a_player_failure() {
+        let mut state = world_with(&[
+            (
+                "one",
+                "winner",
+                100,
+                Some(89_212),
+                Some(FailureSource::Arena),
+                Some(AgentTerminalState::Interrupted),
+            ),
+            (
+                "two",
+                "interrupted",
+                80,
+                None,
+                Some(FailureSource::Arena),
+                Some(AgentTerminalState::Interrupted),
+            ),
+            (
+                "three",
+                "unavailable",
+                80,
+                None,
+                Some(FailureSource::Harness),
+                Some(AgentTerminalState::Interrupted),
+            ),
+        ]);
+        state.winner = Some("one".into());
+        let heat = draw_for(&[
+            ("one", "winner"),
+            ("two", "interrupted"),
+            ("three", "unavailable"),
+        ]);
+        let result = heat_result(&heat, PathBuf::from("x"), 1, &state);
+        let outcomes: BTreeMap<_, _> = result
+            .standings
+            .iter()
+            .map(|seat| (seat.fleet_id.as_str(), seat.outcome))
+            .collect();
+        assert_eq!(outcomes["winner"], SeatOutcome::Durable);
+        assert_eq!(outcomes["interrupted"], SeatOutcome::Incomplete);
+        assert_eq!(outcomes["unavailable"], SeatOutcome::Forfeit);
+        assert_eq!(result.winner.as_deref(), Some("winner"));
+        assert_eq!(
+            result
+                .standings
+                .iter()
+                .find(|seat| seat.fleet_id == "interrupted")
+                .unwrap()
+                .milestone_points,
+            80
+        );
     }
 
     #[test]
