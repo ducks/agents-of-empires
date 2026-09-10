@@ -540,6 +540,9 @@ pub struct WeekOptions {
 #[serde(deny_unknown_fields)]
 pub struct WeekSummary {
     pub schema_version: u32,
+    /// Binds resumable execution to the entire committed draw, not just its seed.
+    #[serde(default)]
+    pub draw_digest: Option<String>,
     pub season_id: String,
     pub week: String,
     pub draw_seed: String,
@@ -573,6 +576,9 @@ pub struct HeatResult {
     pub output: PathBuf,
     /// Attempts run, including replays for unavailable seats.
     pub attempts: usize,
+    /// Earlier attempts affect spend, not the final competitive outcome.
+    #[serde(default)]
+    pub prior_attempts: Vec<Vec<SeatResult>>,
     pub seats: BTreeMap<String, String>,
     pub winner: Option<String>,
     pub standings: Vec<SeatResult>,
@@ -700,6 +706,11 @@ pub async fn run_week(options: WeekOptions) -> Result<WeekSummary, SeasonError> 
     {
         return Ok(summary);
     }
+    // Validate every committed arena before spending anything, including on resume.
+    for arena in &draw.arenas {
+        load_committed_arena(arena)?;
+    }
+    write_json_atomic(&summary_path, &summary)?;
 
     // Replay the deterministic side of every round so resumed weeks derive
     // the same later-round composition as a fresh run.
@@ -709,11 +720,7 @@ pub async fn run_week(options: WeekOptions) -> Result<WeekSummary, SeasonError> 
     for shape in &draw.shape {
         let round_index = shape.round - 1;
         let arena = &draw.arenas[draw.round_arenas[round_index]];
-        let manifest =
-            ArenaManifest::load(&arena.manifest).map_err(|source| SeasonError::Manifest {
-                path: arena.manifest.clone(),
-                source,
-            })?;
+        let manifest = load_committed_arena(arena)?;
 
         // Participants for this round.
         let round_draw = if shape.round == 1 {
@@ -727,6 +734,7 @@ pub async fn run_week(options: WeekOptions) -> Result<WeekSummary, SeasonError> 
                 .collect();
             field.extend(previous.byes.iter().cloned());
             field.extend(previous.wildcards.iter().cloned());
+            validate_round_field(shape, field.len())?;
             rng.shuffle(&mut field);
             let heats = field.len() / draw.heat_size;
             let mut drawn = Vec::with_capacity(heats);
@@ -776,9 +784,15 @@ pub async fn run_week(options: WeekOptions) -> Result<WeekSummary, SeasonError> 
                 .week_dir
                 .join(format!("round-{:02}", shape.round))
                 .join(format!("heat-{:02}", heat_draw.heat));
-            let mut attempts = 0;
+            let journal = heat_dir.with_extension("attempts.json");
+            let mut previous = load_heat_attempt(&journal, heat_draw)?;
             let result = loop {
-                attempts += 1;
+                if let Some(result) = &previous
+                    && !needs_replay(result, &draw.rules)
+                {
+                    break result.clone();
+                }
+                let attempts = previous.as_ref().map_or(1, |result| result.attempts + 1);
                 let attempt_dir = if attempts == 1 {
                     heat_dir.clone()
                 } else {
@@ -786,6 +800,7 @@ pub async fn run_week(options: WeekOptions) -> Result<WeekSummary, SeasonError> 
                 };
                 archive_incomplete(&attempt_dir)?;
                 let mut heat_manifest = manifest.clone();
+                load_committed_arena(arena)?;
                 seat_manifest(&mut heat_manifest, heat_draw, &fleet)?;
                 let (base_port, multicast_port) = heat_ports(
                     options.base_port,
@@ -793,7 +808,6 @@ pub async fn run_week(options: WeekOptions) -> Result<WeekSummary, SeasonError> 
                     draw.heat_size,
                     heat_counter,
                 )?;
-                heat_counter += 1;
                 let state = run_match_with_manifest(
                     RunOptions {
                         manifest: arena.manifest.clone(),
@@ -814,22 +828,30 @@ pub async fn run_week(options: WeekOptions) -> Result<WeekSummary, SeasonError> 
                     source,
                 })?;
                 let mut result = heat_result(heat_draw, attempt_dir, attempts, &state);
+                if let Some(previous) = previous.take() {
+                    result.prior_attempts = previous.prior_attempts;
+                    result.prior_attempts.push(previous.standings);
+                }
                 let unavailable = result
                     .standings
                     .iter()
                     .any(|seat| seat.outcome == SeatOutcome::Forfeit);
-                if result.aborted || !unavailable || attempts > draw.rules.unavailable_replays {
+                if !needs_replay(&result, &draw.rules) {
                     if unavailable && !result.aborted {
                         // Replays exhausted: the forfeit stands and the
                         // heat is decided among the evaluated seats.
                         result.winner = decide_winner(&result.standings);
                     }
+                    write_json_atomic(&journal, &result)?;
                     break result;
                 }
+                write_json_atomic(&journal, &result)?;
+                previous = Some(result);
                 // A replay keeps the same seats; the earlier attempt's
                 // artifacts stay under their replay-N directory as evidence.
             };
             let aborted = result.aborted;
+            heat_counter += 1;
             round_result.heats.push(result);
             upsert_round(&mut summary.rounds, round_result.clone());
             summary.standings = week_standings(&draw, &summary.rounds);
@@ -863,11 +885,7 @@ pub async fn run_week(options: WeekOptions) -> Result<WeekSummary, SeasonError> 
         }
     }
 
-    summary.champion = summary
-        .rounds
-        .last()
-        .and_then(|round| round.heats.first())
-        .and_then(|heat| heat.winner.clone());
+    summary.champion = final_champion(&draw, &summary.rounds)?;
     summary.completed = true;
     summary.variation_seed = Some(secret);
     summary.standings = week_standings(&draw, &summary.rounds);
@@ -884,9 +902,11 @@ fn upsert_round(rounds: &mut Vec<RoundResult>, round: RoundResult) {
 }
 
 fn load_checkpoint(path: &Path, draw: &WeekDraw) -> Result<WeekSummary, SeasonError> {
+    let digest = format!("{:x}", Sha256::digest(serde_json::to_vec(draw)?));
     if !path.exists() {
         return Ok(WeekSummary {
             schema_version: WEEK_SCHEMA_VERSION,
+            draw_digest: Some(digest),
             season_id: draw.season_id.clone(),
             week: draw.week.clone(),
             draw_seed: draw.draw_seed.clone(),
@@ -907,12 +927,74 @@ fn load_checkpoint(path: &Path, draw: &WeekDraw) -> Result<WeekSummary, SeasonEr
     }
     if summary.draw_seed != draw.draw_seed
         || summary.variation_seed_commitment != draw.variation_seed_commitment
+        || (!summary.completed && summary.draw_digest.as_ref() != Some(&digest))
     {
         return Err(SeasonError::ResumeMismatch(
             "week.json was produced by a different draw".into(),
         ));
     }
     Ok(summary)
+}
+
+fn load_committed_arena(arena: &DrawArena) -> Result<ArenaManifest, SeasonError> {
+    let manifest =
+        ArenaManifest::load(&arena.manifest).map_err(|source| SeasonError::Manifest {
+            path: arena.manifest.clone(),
+            source,
+        })?;
+    if arena_compatibility_key(&arena.manifest, &manifest)? != arena.compatibility_key {
+        return Err(SeasonError::ResumeMismatch(format!(
+            "arena {} changed since the draw; restore the committed arena files",
+            arena.arena_id
+        )));
+    }
+    Ok(manifest)
+}
+
+fn validate_round_field(shape: &RoundShape, actual: usize) -> Result<(), SeasonError> {
+    if actual != shape.field {
+        return Err(SeasonError::Invalid(format!(
+            "round {} requires {} entrants but only {actual} advanced; week remains incomplete, no champion awarded",
+            shape.round, shape.field
+        )));
+    }
+    Ok(())
+}
+
+fn final_champion(draw: &WeekDraw, rounds: &[RoundResult]) -> Result<Option<String>, SeasonError> {
+    let final_round = rounds
+        .iter()
+        .find(|round| round.round == draw.shape.len())
+        .filter(|round| round.heats.len() == 1 && round.byes.is_empty() && !round.heats[0].aborted)
+        .ok_or_else(|| {
+            SeasonError::Invalid("final has not been played; week remains incomplete".into())
+        })?;
+    Ok(final_round.heats[0].winner.clone())
+}
+
+fn needs_replay(result: &HeatResult, rules: &SeasonRules) -> bool {
+    !result.aborted
+        && result.attempts <= rules.unavailable_replays
+        && result
+            .standings
+            .iter()
+            .any(|seat| seat.outcome == SeatOutcome::Forfeit)
+}
+
+fn load_heat_attempt(path: &Path, heat: &HeatDraw) -> Result<Option<HeatResult>, SeasonError> {
+    if !path.exists() {
+        return Ok(None);
+    }
+    let result: HeatResult = serde_json::from_slice(&fs::read(path)?)?;
+    if result.heat != heat.heat
+        || result.seats != heat.seats
+        || result.attempts != result.prior_attempts.len() + 1
+    {
+        return Err(SeasonError::ResumeMismatch(
+            "heat attempt journal differs from the draw".into(),
+        ));
+    }
+    Ok(Some(result))
 }
 
 fn archive_incomplete(output: &Path) -> Result<(), SeasonError> {
@@ -1047,6 +1129,7 @@ pub fn heat_result(
         heat: heat.heat,
         output,
         attempts,
+        prior_attempts: Vec::new(),
         seats: heat.seats.clone(),
         winner,
         standings,
@@ -1107,6 +1190,11 @@ fn week_standings(draw: &WeekDraw, rounds: &[RoundResult]) -> Vec<WeekStanding> 
         .collect();
     for round in rounds {
         for heat in &round.heats {
+            for seat in heat.prior_attempts.iter().flatten() {
+                if let Some(row) = table.get_mut(&seat.fleet_id) {
+                    row.cost_microusd += seat.cost_microusd;
+                }
+            }
             for seat in &heat.standings {
                 let Some(row) = table.get_mut(&seat.fleet_id) else {
                     continue;
@@ -1279,6 +1367,199 @@ mod tests {
     use super::*;
     use aoe_domain::AgentTerminalState;
     use aoe_replay::{AgentView, TerritoryView};
+
+    fn temporary_directory() -> PathBuf {
+        let path =
+            std::env::temp_dir().join(format!("aoe-season-test-{}", random_secret().unwrap()));
+        fs::create_dir(&path).unwrap();
+        path
+    }
+
+    fn test_heat(id: usize, winner: Option<&str>) -> HeatResult {
+        HeatResult {
+            heat: id,
+            output: PathBuf::new(),
+            attempts: 1,
+            prior_attempts: Vec::new(),
+            seats: BTreeMap::new(),
+            winner: winner.map(str::to_owned),
+            standings: vec![seat("m0", SeatOutcome::Durable, 100, Some(1), 5)],
+            aborted: false,
+        }
+    }
+
+    fn committed_arena() -> DrawArena {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../arenas/first-build/agents-real.toml");
+        let manifest = ArenaManifest::load(&path).unwrap();
+        DrawArena {
+            arena_id: manifest.arena.id.clone(),
+            compatibility_key: arena_compatibility_key(&path, &manifest).unwrap(),
+            manifest: path,
+            territories: manifest.territories.iter().map(|t| t.id.clone()).collect(),
+        }
+    }
+
+    #[test]
+    fn arena_commitment_is_checked() {
+        let mut arena = committed_arena();
+        assert!(load_committed_arena(&arena).is_ok());
+        arena.compatibility_key = "changed".into();
+        assert!(matches!(
+            load_committed_arena(&arena),
+            Err(SeasonError::ResumeMismatch(_))
+        ));
+    }
+
+    #[test]
+    fn checkpoint_binds_full_draw_and_legacy_completed_weeks_remain_readable() {
+        let root = temporary_directory();
+        let path = root.join("week.json");
+        let mut draw = draw_with(6);
+        let mut summary = load_checkpoint(&path, &draw).unwrap();
+        write_json_atomic(&path, &summary).unwrap();
+        assert!(load_checkpoint(&path, &draw).is_ok());
+        draw.fleet[0].model = "changed/model".into();
+        assert!(matches!(
+            load_checkpoint(&path, &draw),
+            Err(SeasonError::ResumeMismatch(_))
+        ));
+        summary.draw_digest = None;
+        write_json_atomic(&path, &summary).unwrap();
+        assert!(load_checkpoint(&path, &draw).is_err());
+        summary.completed = true;
+        write_json_atomic(&path, &summary).unwrap();
+        assert!(load_checkpoint(&path, &draw).is_ok());
+    }
+
+    #[tokio::test]
+    async fn resumed_underfilled_final_stops_without_awarding_a_champion() {
+        let root = temporary_directory();
+        let mut draw = draw_with(6);
+        draw.arenas = vec![committed_arena()];
+        draw.round_arenas = vec![0, 0];
+        draw.first_round.heats = (1..=2)
+            .map(|heat| HeatDraw {
+                heat,
+                seats: BTreeMap::new(),
+            })
+            .collect();
+        let secret = "test-secret";
+        draw.variation_seed_commitment = format!("{:x}", Sha256::digest(secret.as_bytes()));
+        write_json_atomic(&root.join("draw.json"), &draw).unwrap();
+        write_private(&root.join(SECRET_SEED_FILE), secret.as_bytes()).unwrap();
+        let path = root.join("week.json");
+        let mut summary = load_checkpoint(&path, &draw).unwrap();
+        let mut forfeited = test_heat(2, None);
+        forfeited.standings = vec![seat("m3", SeatOutcome::Forfeit, 0, None, 0)];
+        summary.rounds = vec![RoundResult {
+            round: 1,
+            arena_id: draw.arenas[0].arena_id.clone(),
+            heats: vec![test_heat(1, Some("m0")), forfeited],
+            byes: Vec::new(),
+            wildcards: vec!["m1".into()],
+        }];
+        assert!(final_champion(&draw, &summary.rounds).is_err());
+        write_json_atomic(&path, &summary).unwrap();
+        let result = run_week(WeekOptions {
+            week_dir: root,
+            adapters: HashMap::new(),
+            credentials: HashMap::new(),
+            base_port: 26000,
+            multicast_port: 23977,
+            color: false,
+        })
+        .await;
+        assert!(
+            matches!(result, Err(SeasonError::Invalid(message)) if message.contains("only 2 advanced"))
+        );
+        let saved: WeekSummary = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+        assert!(!saved.completed);
+        assert!(saved.champion.is_none());
+        assert!(saved.variation_seed.is_none());
+    }
+
+    #[test]
+    fn replay_journal_survives_resume_and_costs_do_not_change_competitive_points() {
+        let root = temporary_directory();
+        let path = root.join("attempts.json");
+        let heat = HeatDraw {
+            heat: 1,
+            seats: BTreeMap::new(),
+        };
+        let mut first = test_heat(1, None);
+        first.standings = vec![seat("m0", SeatOutcome::Forfeit, 80, None, 20)];
+        write_json_atomic(&path, &first).unwrap();
+        let restored = load_heat_attempt(&path, &heat).unwrap().unwrap();
+        assert!(needs_replay(&restored, &SeasonRules::default()));
+        let mut last = test_heat(1, Some("m0"));
+        last.attempts = 2;
+        last.prior_attempts.push(restored.standings);
+        write_json_atomic(&path, &last).unwrap();
+        let restored = load_heat_attempt(&path, &heat).unwrap().unwrap();
+        assert!(!needs_replay(&restored, &SeasonRules::default()));
+        let rows = week_standings(
+            &draw_with(3),
+            &[RoundResult {
+                round: 1,
+                arena_id: "arena".into(),
+                heats: vec![restored],
+                byes: Vec::new(),
+                wildcards: Vec::new(),
+            }],
+        );
+        assert_eq!(rows[0].cost_microusd, 25);
+        assert_eq!(
+            (
+                rows[0].heats,
+                rows[0].wins,
+                rows[0].milestone_points,
+                rows[0].forfeits
+            ),
+            (1, 1, 100, 0)
+        );
+        last.seats.insert("wrong".into(), "m0".into());
+        write_json_atomic(&path, &last).unwrap();
+        assert!(load_heat_attempt(&path, &heat).is_err());
+    }
+
+    #[tokio::test]
+    async fn completed_attempt_journal_finishes_week_without_rerunning_inference() {
+        let root = temporary_directory();
+        let mut draw = draw_with(3);
+        draw.arenas = vec![committed_arena()];
+        draw.round_arenas = vec![0];
+        draw.first_round.heats = vec![HeatDraw {
+            heat: 1,
+            seats: BTreeMap::new(),
+        }];
+        let secret = "journal-test";
+        draw.variation_seed_commitment = format!("{:x}", Sha256::digest(secret.as_bytes()));
+        write_json_atomic(&root.join("draw.json"), &draw).unwrap();
+        write_private(&root.join(SECRET_SEED_FILE), secret.as_bytes()).unwrap();
+        let summary = load_checkpoint(&root.join("week.json"), &draw).unwrap();
+        write_json_atomic(&root.join("week.json"), &summary).unwrap();
+        fs::create_dir(root.join("round-01")).unwrap();
+        let mut heat = test_heat(1, Some("m0"));
+        heat.attempts = 2;
+        heat.prior_attempts
+            .push(vec![seat("m0", SeatOutcome::Incomplete, 10, None, 20)]);
+        write_json_atomic(&root.join("round-01/heat-01.attempts.json"), &heat).unwrap();
+        let options = WeekOptions {
+            week_dir: root,
+            adapters: HashMap::new(),
+            credentials: HashMap::new(),
+            base_port: 26000,
+            multicast_port: 23977,
+            color: false,
+        };
+        let result = run_week(options.clone()).await.unwrap();
+        assert!(result.completed);
+        assert_eq!(result.champion.as_deref(), Some("m0"));
+        assert_eq!(result.standings[0].cost_microusd, 25);
+        assert_eq!(result.variation_seed.as_deref(), Some(secret));
+        assert_eq!(run_week(options).await.unwrap(), result);
+    }
 
     #[test]
     fn bracket_shapes_reduce_any_fleet_to_one_final() {
@@ -1540,6 +1821,7 @@ mod tests {
                         heat: 1,
                         output: PathBuf::from("r1h1"),
                         attempts: 1,
+                        prior_attempts: Vec::new(),
                         seats: BTreeMap::new(),
                         winner: Some("m0".into()),
                         standings: vec![
@@ -1553,6 +1835,7 @@ mod tests {
                         heat: 2,
                         output: PathBuf::from("r1h2"),
                         attempts: 2,
+                        prior_attempts: Vec::new(),
                         seats: BTreeMap::new(),
                         winner: Some("m3".into()),
                         standings: vec![
@@ -1573,6 +1856,7 @@ mod tests {
                     heat: 1,
                     output: PathBuf::from("r2h1"),
                     attempts: 1,
+                    prior_attempts: Vec::new(),
                     seats: BTreeMap::new(),
                     winner: Some("m3".into()),
                     standings: vec![

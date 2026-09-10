@@ -364,13 +364,34 @@ afterwards.
 
 `season run` writes `week.json` after every heat and resumes a compatible
 checkpoint. A seat whose result is unavailable (provider or harness failure)
-earns the heat one automatic replay with the same seats; the earlier attempt
-stays under `heat-NN.replay-1/` as evidence. If it happens again the seat
+earns the heat one automatic replay with the same seats; the original attempt
+stays under `heat-NN/` and the replay under `heat-NN.replay-1/` as evidence. If it happens again the seat
 forfeits: it is recorded, never counted as a loss, and cannot win or advance.
 A heat with no durable finisher goes to the best evaluated seat by milestone
 points, then earliest durable time, then lowest cost. Weeks draw arenas
 independently, so they are not comparable to each other as benchmarks; the
 benchmark suite remains the comparable measurement.
+
+Execution checks every arena against the compatibility key recorded in the
+draw before starting, on resume, and before each attempt. Restore the committed
+arena files if a verifier or manifest has changed. New checkpoints also bind
+the entire draw (including fleet and rules), not just the random seed.
+Legacy completed weeks remain readable; incomplete checkpoints without this
+binding are refused rather than silently mixed with a changed draw.
+
+If forfeits leave fewer entrants than the committed next round requires, the
+week stops incomplete with its checkpoint preserved. It does not invent byes,
+award a previous-round winner the title, or reveal the variation seed. A new
+draw is required to use a different bracket; do not edit the committed draw
+to force a partial week to resume.
+
+Each completed attempt is saved in `heat-NN.attempts.json` before another
+replay starts. Resume reuses this journal, and standings include recorded spend
+from earlier attempts without counting their points, wins, or forfeits twice.
+Preserve these journals alongside match artifacts and `week.json`.
+Legacy results without attempt accounting may omit earlier replay spend.
+Season standings separate each fleet ID's model, adapter, and reasoning
+configuration, showing those dimensions explicitly even when the ID is reused.
 
 ## Durable job queue race
 

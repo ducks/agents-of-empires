@@ -791,6 +791,7 @@ fn generates_season_bracket_and_week_pages() {
     };
     let summary = WeekSummary {
         schema_version: WEEK_SCHEMA_VERSION,
+        draw_digest: None,
         season_id: "infra-weekly".into(),
         week: "2026-W37".into(),
         draw_seed: draw.draw_seed.clone(),
@@ -805,6 +806,7 @@ fn generates_season_bracket_and_week_pages() {
                 output: replay_dir.clone(),
                 attempts: 2,
                 seats,
+                prior_attempts: Vec::new(),
                 winner: Some("alpha".into()),
                 standings: vec![
                     seat("alpha", "one", SeatOutcome::Durable, 100, Some(61_000)),
@@ -883,6 +885,7 @@ fn generates_season_bracket_and_week_pages() {
     let season_page =
         fs::read_to_string(output.join("seasons/infra-weekly/index.html")).expect("season page");
     assert!(season_page.contains("2026-W37"));
+    assert!(season_page.contains("legacy replay spend missing"));
     assert!(season_page.contains("67%"), "two of three seats evaluated");
 
     let week_page = fs::read_to_string(output.join("seasons/infra-weekly/2026-W37/index.html"))
