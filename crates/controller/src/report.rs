@@ -303,18 +303,10 @@ pub fn generate_reports_with_seasons(
         }
     }
     let index = output.join("index.html");
-    fs::write(
-        &index,
-        render_index(
-            &reports,
-            &series_reports,
-            &benchmark_reports,
-            &season_reports,
-        ),
-    )?;
+    fs::write(&index, render_index(&season_reports))?;
     fs::write(
         output.join("archive").join("index.html"),
-        render_archive(&reports, &series_reports),
+        render_archive(&reports, &series_reports, &benchmark_reports),
     )?;
     Ok(ReportSummary {
         matches: reports.len(),
@@ -932,60 +924,31 @@ fn copy_public_artifacts(report: &MatchReport) -> Result<(), ReportError> {
     Ok(())
 }
 
-fn render_index(
-    reports: &[MatchReport],
-    series: &[SeriesReport],
-    benchmarks: &[BenchmarkReport],
-    seasons: &[SeasonReport],
-) -> String {
-    let season_cards = render_season_cards(seasons);
-    let season_section = if season_cards.is_empty() {
-        String::new()
-    } else {
-        format!(
-            "<section><div class=\"section-heading\"><h2>Seasons</h2><p>Weekly brackets drawn from a published seed. Winners advance; the race stops at the first durable deployment.</p></div><div class=\"match-list season-list\">{season_cards}</div></section>"
-        )
-    };
-    let benchmark_cards = render_benchmark_cards(benchmarks);
-    let benchmark_section = if benchmark_cards.is_empty() {
-        String::new()
-    } else {
-        format!(
-            "<section><div class=\"section-heading\"><h2>Benchmarks</h2><p>Model performance across a consistent fleet of infrastructure arenas.</p></div><div class=\"match-list benchmark-list\">{benchmark_cards}</div></section>"
-        )
-    };
-    let current_series = render_series_cards(series.iter().filter(|report| report.current));
-    let current_series = if current_series.is_empty() {
-        "<p class=\"empty\">No match series recorded yet.</p>".to_owned()
-    } else {
-        current_series
-    };
-    let current = render_cards(
-        reports
-            .iter()
-            .filter(|report| report.listed && report.current),
-    );
-    let archived_matches = reports
-        .iter()
-        .filter(|report| report.listed && !report.current)
-        .count();
-    let archived_series = series.iter().filter(|report| !report.current).count();
-    let archive_total = archived_matches + archived_series;
-    let current = if current.is_empty() {
-        "<p class=\"empty\">No matches recorded under the current rules yet.</p>".to_owned()
-    } else {
-        current
-    };
+fn render_index(seasons: &[SeasonReport]) -> String {
+    let tournaments = render_season_cards(seasons);
     page(
-        "Agents of Empires · Current Season",
+        "Agents of Empires · Tournaments",
         &format!(
-            "<header class=\"hero\"><span class=\"eyebrow\">Current season</span><h1>Agents of Empires</h1><p>Build races decided by durable deployments, not confident answers.</p></header><main><section class=\"about\"><span class=\"eyebrow\">About the arena</span><h2>What am I looking at?</h2><p>Agents of Empires drops AI infrastructure agents into identical disposable NixOS machines and gives them the same service contract. A referee checks recovered state, fresh work, service restarts, and host reboots. The first agent to produce a durable deployment wins.</p><p><a href=\"https://github.com/ducks/agents-of-empires\">Read how the arena works and view the source →</a></p></section>{season_section}{benchmark_section}<section><div class=\"section-heading\"><h2>Series</h2><p>Seat-rotated races that separate agent performance from territory advantage.</p></div><div class=\"match-list series-list\">{current_series}</div></section><section><div class=\"section-heading\"><h2>Current matches</h2><p>Matches sharing the newest manifest and verifier compatibility key for each arena.</p></div><div class=\"match-list\">{current}</div></section><section class=\"archive-callout\"><div><span class=\"eyebrow\">Audit trail</span><h2>Archive</h2><p>Superseded and provenance-free runs remain available without being mixed into current results.</p></div><a class=\"archive-link\" href=\"archive/\">Browse {archive_total} archived run{archive_suffix} →</a></section></main>",
-            archive_suffix = if archive_total == 1 { "" } else { "s" },
+            "<nav><a href=\"#tournaments\">Tournaments</a><a href=\"archive/\">Archive →</a></nav><header class=\"hero\"><span class=\"eyebrow\">Real machines. Unscripted competition.</span><h1>Agents of Empires</h1><p>Pick your favorite. Follow the bracket. See whose deployment survives the reboot.</p></header><main><section class=\"about\"><span class=\"eyebrow\">About the arena</span><h2>What am I looking at?</h2><p>AI agents compete in identical disposable NixOS machines to fix broken infrastructure. Winners advance, wildcards get another shot, and a referee tests their work from outside the machine. The first verified durable deployment wins.</p><p>This is a tournament, not a model ranking. Different draws bring different opponents, scenarios, and surprises.</p><p><a href=\"https://github.com/ducks/agents-of-empires\">Read how the arena works and view the source →</a></p></section><div id=\"tournaments\">{tournaments}</div><section class=\"archive-callout\"><div><span class=\"eyebrow\">Behind the tournaments</span><h2>Explore the archive</h2><p>Match replays, seat-rotated series, benchmarks, and earlier experiments remain available for inspection.</p></div><a class=\"archive-link\" href=\"archive/\">Browse the archive →</a></section></main>"
         ),
     )
 }
 
-fn render_archive(reports: &[MatchReport], series: &[SeriesReport]) -> String {
+fn render_archive(
+    reports: &[MatchReport],
+    series: &[SeriesReport],
+    benchmarks: &[BenchmarkReport],
+) -> String {
+    let benchmarks =
+        render_benchmark_cards(benchmarks).replace("href=\"benchmarks/", "href=\"../benchmarks/");
+    let current_series = render_series_cards(series.iter().filter(|report| report.current))
+        .replace("href=\"series/", "href=\"../series/");
+    let current_matches = render_cards(
+        reports
+            .iter()
+            .filter(|report| report.listed && report.current),
+    )
+    .replace("href=\"matches/", "href=\"../matches/");
     let historical_series =
         render_archived_series_cards(series.iter().filter(|report| !report.current));
     let historical_matches = render_archived_cards(
@@ -1006,7 +969,7 @@ fn render_archive(reports: &[MatchReport], series: &[SeriesReport]) -> String {
     page(
         "Archive · Agents of Empires",
         &format!(
-            "<nav><a href=\"../\">← Current season</a><span>Agents of Empires</span></nav><header class=\"hero match-hero\"><span class=\"eyebrow\">Audit trail</span><h1>Archive</h1><p>Prototype, provenance-free, and superseded runs retained for inspection. These results are not directly comparable with the current season.</p></header><main><section><div class=\"section-heading\"><h2>Superseded series</h2><p>Seat-rotated results produced under older arena or verifier compatibility keys.</p></div><div class=\"match-list historical\">{historical_series}</div></section><section><div class=\"section-heading\"><h2>Historical matches</h2><p>Individual runs retained as immutable evidence, not current standings.</p></div><div class=\"match-list historical\">{historical_matches}</div></section></main>"
+            "<nav><a href=\"../\">← Tournaments</a><span>Agents of Empires</span></nav><header class=\"hero match-hero\"><span class=\"eyebrow\">Audit trail</span><h1>Archive</h1><p>Match replays, series, benchmarks, and earlier experiments. Different compatibility cohorts remain separate.</p></header><main><section><div class=\"section-heading\"><h2>Benchmarks</h2></div><div class=\"match-list benchmark-list\">{benchmarks}</div></section><section><div class=\"section-heading\"><h2>Current series</h2><p>Seat-rotated races under the newest compatibility keys.</p></div><div class=\"match-list series-list\">{current_series}</div></section><section><div class=\"section-heading\"><h2>Current matches</h2></div><div class=\"match-list\">{current_matches}</div></section><section><div class=\"section-heading\"><h2>Superseded series</h2><p>Seat-rotated results produced under older arena or verifier compatibility keys.</p></div><div class=\"match-list historical\">{historical_series}</div></section><section><div class=\"section-heading\"><h2>Historical matches</h2><p>Individual runs retained as immutable evidence, not current standings.</p></div><div class=\"match-list historical\">{historical_matches}</div></section></main>"
         ),
     )
 }
@@ -1608,7 +1571,7 @@ fn render_series(report: &SeriesReport) -> String {
     );
     let comparison = render_series_comparison(report);
     let content = format!(
-        "<nav><a href=\"../../\">← Current season</a><span>Agents of Empires · {}</span></nav>
+        "<nav><a href=\"../../\">← Tournaments</a><span>Agents of Empires · {}</span></nav>
         <header class=\"hero match-hero\"><span class=\"eyebrow\">Seat-rotated series · {}</span><h1>{}</h1><p>Every agent races the same verifier from every territory. Failed attempts remain in total spend.</p>
         <div class=\"hero-stats\"><div><small>Leader</small><strong>{}</strong></div><div><small>Rounds</small><strong>{}/{}</strong></div><div><small>Recorded cost</small><strong>{}</strong></div><div><small>Tokens</small><strong>{}</strong></div></div></header>
         <main><section><div class=\"section-heading\"><h2>Battle card</h2><p>Ranked by wins, then durable deployments, time, and total cost.</p></div><div class=\"table-wrap\"><table><thead><tr><th>Agent</th><th>Wins</th><th>Durable</th><th>Median</th><th>Tokens</th><th>Cost</th><th>Cost / durable</th><th>Usage</th></tr></thead><tbody>{standings}</tbody></table></div></section>
@@ -2359,6 +2322,38 @@ mod season_integrity_tests {
     }
 
     #[test]
+    fn tournament_home_separates_draw_latest_and_history() {
+        let mut upcoming = week("model/a", "claux", "high");
+        upcoming.week = "2026-W39".into();
+        upcoming.slug = upcoming.week.clone();
+        upcoming.summary = None;
+        let mut latest = week("model/a", "claux", "high");
+        latest.week = "2026-W38".into();
+        latest.slug = latest.week.clone();
+        let mut older = week("model/a", "claux", "high");
+        older.week = "2026-W37".into();
+        older.slug = older.week.clone();
+        let report = SeasonReport {
+            id: "Season & friends".into(),
+            slug: "season".into(),
+            report_dir: PathBuf::new(),
+            weeks: vec![older, upcoming, latest],
+        };
+        let html = render_index(&[report]);
+        let next = html.find("<h2>Next tournament</h2>").unwrap();
+        let latest = html.find("<h2>Latest tournament</h2>").unwrap();
+        let past = html.find("<h2>Past tournaments</h2>").unwrap();
+        assert!(html[next..latest].contains("seasons/season/2026-W39/"));
+        assert!(html[next..latest].contains("Drawn, not yet run"));
+        assert!(html[latest..past].contains("seasons/season/2026-W38/"));
+        assert!(html[latest..past].contains("Champion: same-id"));
+        assert!(html[past..].contains("seasons/season/2026-W37/"));
+        assert!(html.contains("Season &amp; friends"));
+        assert!(!html.contains("<h2>Benchmarks</h2>"));
+        assert!(!html.contains("<h2>Series</h2>"));
+    }
+
+    #[test]
     fn season_standings_separate_model_harness_and_reasoning_changes() {
         let report = SeasonReport {
             id: "season".into(),
@@ -2404,50 +2399,113 @@ fn season_money(cost: u64, incomplete: bool) -> String {
 }
 
 fn render_season_cards(reports: &[SeasonReport]) -> String {
+    let mut weeks: Vec<_> = reports
+        .iter()
+        .flat_map(|report| report.weeks.iter().map(move |week| (report, week)))
+        .collect();
+    weeks.sort_by(|(a, x), (b, y)| y.week.cmp(&x.week).then_with(|| a.id.cmp(&b.id)));
+    let completed = |week: &WeekReport| week.summary.as_ref().is_some_and(|s| s.completed);
     let mut body = String::new();
-    for report in reports {
-        let latest = report.weeks.first();
-        let (eyebrow, headline) = latest.map_or_else(
-            || ("No weeks drawn".to_owned(), "No champion yet".to_owned()),
-            |week| {
-                let headline = week
-                    .summary
-                    .as_ref()
-                    .and_then(|summary| summary.champion.clone())
-                    .map_or_else(
-                        || {
-                            if week.summary.is_some() {
-                                "Week in progress".to_owned()
-                            } else {
-                                "Drawn, not yet run".to_owned()
-                            }
-                        },
-                        |champion| format!("Champion: {champion}"),
-                    );
-                (format!("Week {}", week.week), headline)
-            },
-        );
-        let run_weeks = report
-            .weeks
-            .iter()
-            .filter(|week| {
-                week.summary
-                    .as_ref()
-                    .is_some_and(|summary| summary.completed)
-            })
-            .count();
-        let _ = write!(
-            body,
-            "<a class=\"match-card season-card\" href=\"seasons/{}/\"><div><span class=\"eyebrow\">{}</span><h2>{}</h2><p>Weekly bracket season</p></div><div class=\"metrics\"><strong>{}</strong><span>{} week{} completed</span></div></a>",
-            escape(&report.slug),
-            escape(&eyebrow),
-            escape(&report.id),
-            escape(&headline),
-            run_weeks,
-            if run_weeks == 1 { "" } else { "s" },
+    let upcoming: Vec<_> = weeks.iter().filter(|(_, week)| !completed(week)).collect();
+    body.push_str("<section><div class=\"section-heading\"><h2>Next tournament</h2><p>The draw is public. Pick your champion before the first heat.</p></div><div class=\"match-list season-list\">");
+    if upcoming.is_empty() {
+        body.push_str(
+            "<p class=\"empty\">No upcoming draw yet. The next bracket will appear here.</p>",
         );
     }
+    for (report, week) in upcoming {
+        body.push_str(&render_tournament_card(report, week));
+    }
+    body.push_str("</div></section><section><div class=\"section-heading\"><h2>Latest tournament</h2><p>The champion, the upsets, and every heat along the way.</p></div><div class=\"match-list season-list\">");
+    let mut finished = weeks.iter().filter(|(_, week)| completed(week));
+    if let Some((report, week)) = finished.next() {
+        body.push_str(&render_tournament_card(report, week));
+    } else {
+        body.push_str("<p class=\"empty\">No completed tournaments yet. The first crown is still up for grabs.</p>");
+    }
+    body.push_str("</div></section><section><div class=\"section-heading\"><h2>Past tournaments</h2><p>Every bracket has a story.</p></div><ul>");
+    let mut count = 0;
+    for (report, week) in finished {
+        count += 1;
+        let champion = week
+            .summary
+            .as_ref()
+            .and_then(|s| s.champion.as_deref())
+            .unwrap_or("No champion");
+        let _ = write!(
+            body,
+            "<li><a href=\"seasons/{}/{}/\">{} · {}</a> — {}</li>",
+            escape(&report.slug),
+            escape(&week.slug),
+            escape(&report.id),
+            escape(&week.week),
+            escape(champion)
+        );
+    }
+    body.push_str("</ul>");
+    if count == 0 {
+        body.push_str("<p class=\"empty\">More tournament stories to come.</p>");
+    }
+    for report in reports {
+        let _ = write!(
+            body,
+            "<p><a href=\"seasons/{}/\">Follow {} →</a></p>",
+            escape(&report.slug),
+            escape(&report.id)
+        );
+    }
+    body.push_str("</section>");
     body
+}
+
+fn render_tournament_card(report: &SeasonReport, week: &WeekReport) -> String {
+    let matchups = if week.summary.is_none() {
+        week.draw
+            .first_round
+            .heats
+            .iter()
+            .map(|heat| {
+                format!(
+                    "<p>Heat {}: {}</p>",
+                    heat.heat,
+                    heat.seats
+                        .values()
+                        .map(|id| escape(id))
+                        .collect::<Vec<_>>()
+                        .join(" · ")
+                )
+            })
+            .collect::<String>()
+    } else {
+        String::new()
+    };
+    let status = match &week.summary {
+        None => "Drawn, not yet run".to_owned(),
+        Some(summary) if summary.completed => summary.champion.as_ref().map_or_else(
+            || "Completed · no champion".to_owned(),
+            |id| format!("Champion: {id}"),
+        ),
+        Some(summary)
+            if summary
+                .rounds
+                .iter()
+                .flat_map(|round| &round.heats)
+                .any(|heat| heat.aborted) =>
+        {
+            "Paused · tournament incomplete".to_owned()
+        }
+        Some(_) => "Tournament underway · results are a snapshot".to_owned(),
+    };
+    format!(
+        "<a class=\"match-card season-card\" href=\"seasons/{}/{}/\"><div><span class=\"eyebrow\">{}</span><h2 style=\"overflow-wrap:anywhere\">{}</h2><p>{} agents · {} rounds</p>{matchups}</div><div class=\"metrics\"><strong>{}</strong><span>View bracket →</span></div></a>",
+        escape(&report.slug),
+        escape(&week.slug),
+        escape(&report.id),
+        escape(&week.week),
+        week.draw.fleet.len(),
+        week.draw.shape.len(),
+        escape(&status),
+    )
 }
 
 fn seat_pill(outcome: SeatOutcome) -> (&'static str, &'static str) {
@@ -2526,7 +2584,7 @@ fn render_season(report: &SeasonReport) -> String {
     page(
         &format!("{} · Season · Agents of Empires", report.id),
         &format!(
-            "<nav><a href=\"../../\">← Current season</a><span>Agents of Empires</span></nav><header class=\"hero match-hero\"><span class=\"eyebrow\">Weekly season</span><h1>{}</h1><p>Each week is a bracket of three-seat heats drawn from a published seed. Winners advance, byes and milestone-ranked wildcards fill the rounds, and the race stops at the first durable deployment. Weeks draw arenas independently and are not comparable to each other as benchmarks.</p></header><main><section><div class=\"section-heading\"><h2>Weeks</h2><p>Newest first. Evaluated counts every seat that was not forfeited to a provider or harness failure.</p></div><div class=\"table-wrap\"><table><thead><tr><th>Week</th><th>Status</th><th>Champion</th><th>Fleet</th><th>Evaluated</th><th>Spend</th></tr></thead><tbody>{}</tbody></table></div></section><section><div class=\"section-heading\"><h2>Season standings</h2><p>Titles first, then finals reached, heat wins, durable deployments, milestone points, and spend.</p></div><div class=\"table-wrap\"><table><thead><tr><th>Fleet</th><th>Titles</th><th>Finals</th><th>Heats</th><th>Wins</th><th>Durable</th><th>Points</th><th>Forfeits</th><th>Spend</th></tr></thead><tbody>{}</tbody></table></div></section></main>",
+            "<nav><a href=\"../../\">← Tournaments</a><span>Agents of Empires</span></nav><header class=\"hero match-hero\"><span class=\"eyebrow\">Weekly season</span><h1>{}</h1><p>Each week is a bracket of three-seat heats drawn from a published seed. Winners advance, byes and milestone-ranked wildcards fill the rounds, and the race stops at the first durable deployment. Weeks draw arenas independently and are not comparable to each other as benchmarks.</p></header><main><section><div class=\"section-heading\"><h2>Weeks</h2><p>Newest first. Evaluated counts every seat that was not forfeited to a provider or harness failure.</p></div><div class=\"table-wrap\"><table><thead><tr><th>Week</th><th>Status</th><th>Champion</th><th>Fleet</th><th>Evaluated</th><th>Spend</th></tr></thead><tbody>{}</tbody></table></div></section><section><div class=\"section-heading\"><h2>Season standings</h2><p>Titles first, then finals reached, heat wins, durable deployments, milestone points, and spend.</p></div><div class=\"table-wrap\"><table><thead><tr><th>Fleet</th><th>Titles</th><th>Finals</th><th>Heats</th><th>Wins</th><th>Durable</th><th>Points</th><th>Forfeits</th><th>Spend</th></tr></thead><tbody>{}</tbody></table></div></section></main>",
             escape(&report.id),
             weeks,
             standings,
