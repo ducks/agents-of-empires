@@ -110,6 +110,50 @@ Use `--base-port` when the default block starting at `26000` is busy;
 series, benchmarks, and seasons allocate two ports per territory per
 concurrent match from that base.
 
+## Tournament workflow and publishing
+
+- AoE is a spectator tournament, not a model-ranking product. The homepage
+  leads with the next draw, latest completed tournament, and past brackets.
+  Series, benchmarks, and standalone matches remain accessible in the archive.
+- CLI terminology remains `season draw` / `season run`: a season is the
+  recurring fleet and arena pool; each week directory is one tournament.
+- A morning draw and a later run are separate operations. Draw-only reports
+  are supported: they show the opening matchups without scores or a champion.
+  Drawing and rendering spend no inference; running the bracket does.
+- Use a unique week label and output directory. Preserve `draw.json` and its
+  private `seed.secret`; do not redraw, edit a committed draw, or reuse a
+  completed tournament directory to get a different result. Resume an
+  interrupted tournament with `season run` against that same directory.
+- Reuse the user's exported `OPENROUTER_API_KEY`; do not prompt for it again
+  or print it. The credential-array examples here are Bash. From Nushell,
+  enter `nix-shell --run bash` before using them.
+- To publish a draw, render both the selected completed tournaments and the
+  new draw with repeated `--season` arguments. Do not pass the entire local
+  season root unless every test tournament under it is intended to be public.
+
+```sh
+# Draw now (no VMs), then run this exact bracket later, only when requested:
+cargo run --release --bin agents-of-empires -- season draw suites/weekly-season.toml \
+  --week 2026-W37-20260911 --output seasons/infra-weekly/2026-W37-20260911
+# After preparing credential_args as above:
+cargo run --release --bin agents-of-empires -- season run seasons/infra-weekly/2026-W37-20260911 \
+  --adapter claux=adapters/claux.sh "${credential_args[@]}"
+
+# Render only the public completed tournament plus the upcoming draw:
+cargo run --release --bin agents-of-empires -- report matches \
+  --series series --benchmark benchmarks \
+  --season seasons/infra-weekly/2026-W37-fixed-20260910-153524 \
+  --season seasons/infra-weekly/2026-W37-20260911 --output site
+```
+
+- GitHub Pages serves the root of `gh-pages`. Publish generated report files
+  only, never raw run directories, credentials, VM disks, or `seed.secret`.
+  Review exports for secrets and broken links before pushing. Preserve
+  existing public archive pages. Confirm the Pages build and public URL.
+- Publishing requires explicit user authorization. A draw publication is not
+  authorization to run the tournament or schedule paid inference. After the
+  run, regenerate and republish the same bracket URL when requested.
+
 ## Behavioral contracts
 
 - The controller and referee are the scoring boundary. Adapters may change

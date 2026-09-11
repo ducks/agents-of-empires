@@ -284,6 +284,12 @@ season pages both report how many appearances were evaluated, separating
 provider, harness, arena, and controller failures from player outcomes.
 
 Open `site/index.html` locally or publish `site/` with GitHub Pages. Each match
+is accessible through its tournament bracket or the archive. The homepage
+focuses on upcoming draws, the latest completed tournament, and past brackets;
+series, benchmarks, and standalone matches live in `archive/`, with current
+and historical compatibility cohorts kept separate. Without a draw, the
+homepage shows an empty tournament schedule rather than a model leaderboard.
+Each match
 page includes the frozen outcome, territory and agent results, token and cost
 totals, the complete event timeline, downloadable source artifacts, and any
 agent transcripts captured before or during the post-match drain. Agent tables

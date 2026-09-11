@@ -169,8 +169,13 @@ fn generates_archive_and_match_artifacts() {
     assert_eq!(summary.matches, 1);
     let index = fs::read_to_string(output.join("index.html")).expect("index");
     assert!(!index.contains("build-race-001"));
-    assert!(index.contains("Browse 1 archived run"));
+    assert!(index.contains("Browse the archive"));
+    assert!(index.contains("No upcoming draw yet"));
+    assert!(index.contains("No completed tournaments yet"));
     assert!(index.contains("What am I looking at?"));
+    assert!(
+        index.find("About the arena").unwrap() < index.find("<h2>Next tournament</h2>").unwrap()
+    );
     assert!(index.contains("identical disposable NixOS machines"));
     assert!(index.contains("https://github.com/ducks/agents-of-empires"));
     let archive = fs::read_to_string(output.join("archive/index.html")).expect("archive");
@@ -391,9 +396,9 @@ fn separates_current_compatibility_key_from_history() {
     let output = root.join("site");
     generate_reports(&root.join("matches"), &output).expect("reports");
     let index = fs::read_to_string(output.join("index.html")).expect("index");
-    assert!(index.contains("<h2>Current matches</h2>"));
-    assert!(index.contains("race-002"));
-    assert!(index.contains("race-003"));
+    assert!(!index.contains("<h2>Current matches</h2>"));
+    assert!(!index.contains("race-002"));
+    assert!(!index.contains("race-003"));
     assert!(!index.contains("race-001"));
     assert!(index.contains("href=\"archive/\""));
 
@@ -401,8 +406,9 @@ fn separates_current_compatibility_key_from_history() {
         fs::read_to_string(output.join("archive").join("index.html")).expect("archive index");
     assert!(archive.contains("<h2>Historical matches</h2>"));
     assert!(archive.contains("race-001"));
-    assert!(!archive.contains("race-002"));
-    assert!(!archive.contains("race-003"));
+    assert!(archive.contains("race-002"));
+    assert!(archive.contains("race-003"));
+    assert!(archive.contains("href=\"../matches/race-002/\""));
     assert!(archive.contains("Superseded manifest or verifier"));
     assert!(archive.contains("href=\"../matches/race-001/\""));
     let current_match =
@@ -531,9 +537,11 @@ fn generates_series_battle_card_and_round_links() {
     assert_eq!(generated.series, 1);
     assert_eq!(generated.benchmarks, 0);
     let index = fs::read_to_string(output.join("index.html")).expect("index");
-    assert!(index.contains("Seat-rotated races"));
-    assert!(index.contains("first-build-series"));
-    assert!(index.contains("deepseek"));
+    assert!(!index.contains("first-build-series"));
+    let archive = fs::read_to_string(output.join("archive/index.html")).expect("archive");
+    assert!(archive.contains("Seat-rotated races"));
+    assert!(archive.contains("href=\"../series/first-build-series/\""));
+    assert!(archive.contains("deepseek"));
     let page = fs::read_to_string(output.join("series/first-build-series/index.html"))
         .expect("series page");
     assert!(page.contains("Battle card"));
@@ -685,8 +693,10 @@ fn generates_benchmark_leaderboard_and_drill_down() {
     assert_eq!(generated.series, 1);
     assert_eq!(generated.benchmarks, 1);
     let index = fs::read_to_string(output.join("index.html")).expect("index");
-    assert!(index.contains("Cross-arena model benchmark"));
-    assert!(index.contains("benchmarks/infra-core/"));
+    assert!(!index.contains("Cross-arena model benchmark"));
+    assert!(!index.contains("benchmarks/infra-core/"));
+    let archive = fs::read_to_string(output.join("archive/index.html")).expect("archive");
+    assert!(archive.contains("href=\"../benchmarks/infra-core/\""));
     let page = fs::read_to_string(output.join("benchmarks/infra-core/index.html"))
         .expect("benchmark page");
     assert!(page.contains("Model leaderboard"));
