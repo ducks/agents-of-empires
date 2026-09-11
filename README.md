@@ -338,6 +338,10 @@ Ctrl-C stops the guests but retains an aborted, inspectable match log.
 
 ## Weekly season
 
+The [OpenCode adapter](docs/opencode-adapter.md) supports OpenCode-backed
+entrants alongside Claux. Harness and provider are explicit choices; cup
+labels do not switch the underlying harness.
+
 A season is a fleet of models and an arena pool. Each week is a bracket of
 three-seat heats: winners advance, and when the next round would not fill
 whole heats, the best non-winners by verified milestones are promoted as

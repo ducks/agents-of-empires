@@ -207,6 +207,13 @@ cargo run --release --bin agents-of-empires -- report matches \
 
 ## Configuration and adapters
 
+- `adapters/opencode.sh` runs OpenCode in the guest. See
+  `docs/opencode-adapter.md` for provider prefixes, pinned release, credential
+  preparation, and estimated-versus-billed cost. Its Python helper is
+  checksum-bound by the launcher; update that checksum after editing the
+  helper so the recorded adapter hash changes too. Offline tests run in
+  `make lint`.
+
 - A new harness is an adapter script implementing the environment and result
   contract in `crates/agent/src/protocol.rs`; see `adapters/claux.sh` and
   `adapters/test-claux.sh`. Map the harness's exit codes and any classified
