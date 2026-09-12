@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "analyzer": "aoe-controller/20260816.0.1",
+  "source_sha256": "634a4afc969bffdcb877b3b10c37c36f2df6402a2f1b7f55a903f776f376d079",
+  "agent": "kimi",
+  "territory": "failover-one",
+  "model": "moonshotai/kimi-k3",
+  "outcome": "running",
+  "metrics": {
+    "tool_calls": 8,
+    "tool_errors": 0,
+    "discoveries": 5,
+    "mutations": 2,
+    "lifecycle_actions": 0,
+    "validations": 1,
+    "first_mutation_after_ms": 9368,
+    "last_observed_after_ms": 16547
+  },
+  "architecture": {
+    "technologies": [
+      "Python",
+      "SQLite",
+      "systemd"
+    ],
+    "service_units": [
+      "etc/systemd/system/failover-proxy.service",
+      "etc/systemd/system/failover-replica.service",
+      "etc/systemd/system/failover-seed.service"
+    ],
+    "persistent_paths": [
+      "/etc/systemd/system",
+      "/etc/systemd/system/failover-proxy.service",
+      "/etc/systemd/system/failover-replica.service",
+      "/etc/systemd/system/failover-seed.service",
+      "/var/lib/failover",
+      "/var/lib/failover/primary.failed",
+      "/var/lib/failover/records.sqlite3",
+      "/var/lib/failover/replica.role",
+      "/var/lib/failover/upstream"
+    ]
+  },
+  "actions": [
+    {
+      "index": 0,
+      "tool_id": "Bash:0",
+      "kind": "discovery",
+      "started_after_ms": 2658,
+      "duration_ms": 91,
+      "description": "Inspect failover state directory",
+      "command": "ls -la /var/lib/failover/ 2>&1; echo ---; cat /var/lib/failover/upstream 2>&1; echo ---; cat /var/lib/failover/replica.role 2>&1; echo ---; cat /var/lib/failover/primary.failed 2>&1",
+      "success": true,
+      "output_excerpt": "total 28\ndrwxr-xr-x 2 root root  4096 Sep 12 02:28 .\ndrwxr-xr-x 9 root root  4096 Sep 12 02:28 ..\n-rw-r--r-- 1 root root     0 Sep 12 02:28 primary.failed\n-rw-r--r-- 1 root root 12288 Sep 12 02:28 records.sqlite3\n-rw-r--r-- 1 root root     8 Sep 12 02:28 replica.role\n-rw-r--r-- 1…"
+    },
+    {
+      "index": 1,
+      "tool_id": "Bash:1",
+      "kind": "validation",
+      "started_after_ms": 2749,
+      "duration_ms": 46,
+      "description": "Check listening ports and running processes",
+      "command": "ss -tlnp 2>/dev/null | head -20; echo ---; ps aux | grep -iE 'python|node|failover|proxy|record' | grep -v grep",
+      "success": true,
+      "output_excerpt": "State  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess\nLISTEN 0      4096         0.0.0.0:5355       0.0.0.0:*    users:((\"systemd-resolve\",pid=299,fd=14))\nLISTEN 0      5          127.0.0.1:8082       0.0.0.0:*    users:((\"python\",pid=554,fd=3))\nLISTEN 0      4096    …"
+    },
+    {
+      "index": 2,
+      "tool_id": "Read:2",
+      "kind": "discovery",
+      "started_after_ms": 5555,
+      "duration_ms": 3,
+      "description": null,
+      "command": "Read /nix/store/gy7xaavwyh9mbwz4ll8h6z3ban0s6g93-failover-proxy.py",
+      "success": true,
+      "output_excerpt": "1\timport http.client\n2\tfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n3\tUPSTREAM = \"/var/lib/failover/upstream\"\n4\tclass Handler(BaseHTTPRequestHandler):\n5\t    def forward(self):\n6\t        try:\n7\t            with open(UPSTREAM) as source: port = int(source.rea…"
+    },
+    {
+      "index": 3,
+      "tool_id": "Read:3",
+      "kind": "discovery",
+      "started_after_ms": 5557,
+      "duration_ms": 3,
+      "description": null,
+      "command": "Read /nix/store/3lf8if1z3ahcv9mdxqmwncn87hnwdymi-failover-replica.py",
+      "success": true,
+      "output_excerpt": "1\timport sqlite3\n2\tfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n3\tDB = \"/var/lib/failover/records.sqlite3\"\n4\tROLE = \"/var/lib/failover/replica.role\"\n5\tdef role():\n6\t    with open(ROLE) as source: return source.read().strip()\n7\tdef database():\n8\t    connecti…"
+    },
+    {
+      "index": 4,
+      "tool_id": "Bash:4",
+      "kind": "mutation",
+      "started_after_ms": 9368,
+      "duration_ms": 111,
+      "description": "Check existing records and service management",
+      "command": "sqlite3 /var/lib/failover/records.sqlite3 'SELECT id, value FROM records LIMIT 20;' 2>&1; echo ---; systemctl list-units --all 2>/dev/null | grep -iE 'failover|proxy|replica|record'; echo ---; ls /etc/systemd/system/ 2>/dev/null",
+      "success": true,
+      "output_excerpt": "customer-red-4a7|red-original\ncustomer-blue-8d2|blue-original\ncustomer-green-f31|green-original\n---\n  failover-proxy.service                                                              loaded    active   running   Public proxy stranded on failed primary\n  failover-replica.servic…"
+    },
+    {
+      "index": 5,
+      "tool_id": "Bash:5",
+      "kind": "discovery",
+      "started_after_ms": 11210,
+      "duration_ms": 159,
+      "description": "Read failover systemd units",
+      "command": "cat /etc/systemd/system/failover-seed.service; echo ===; cat /etc/systemd/system/failover-replica.service; echo ===; cat /etc/systemd/system/failover-proxy.service",
+      "success": true,
+      "output_excerpt": "[Unit]\nBefore=failover-replica.service failover-proxy.service\nDescription=Seed failed-primary topology and replicated state\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE=/nix/store/c59mcax29xrwyfdqs308wkmn2srnmzkn-glibc-locales-2.42-67/lib/locale/locale-archive\"\nEnvironment=\"PATH=/nix/s…"
+    },
+    {
+      "index": 6,
+      "tool_id": "Bash:6",
+      "kind": "discovery",
+      "started_after_ms": 13311,
+      "duration_ms": 91,
+      "description": "Read the seed script",
+      "command": "cat /nix/store/vnsdj3nml00cykxy4dmpcsgbwp76jspz-unit-script-failover-seed-start/bin/failover-seed-start",
+      "success": true,
+      "output_excerpt": "#!/nix/store/byi2zpy2bgcf3dr6y0l8m50rmjj8z7q1-bash-5.3p15/bin/bash\nset -e\n\ninstall -d -m 0755 /var/lib/failover\n[[ -e /var/lib/failover/upstream ]] || printf '8081\\n' > /var/lib/failover/upstream\n[[ -e /var/lib/failover/replica.role ]] || printf 'replica\\n' > /var/lib/failover/re…"
+    },
+    {
+      "index": 7,
+      "tool_id": "Bash:7",
+      "kind": "mutation",
+      "started_after_ms": 16371,
+      "duration_ms": 176,
+      "description": "Fence old primary, promote replica, switch proxy upstream",
+      "command": "set -e\ncd /var/lib/failover\n# Durable fence of the old primary (8081 is not listening; keep it that way)\ntouch primary.fenced\n# Promote replica atomically\nprintf 'primary\\n' > .replica.role.tmp && sync .replica.role.tmp && mv -f .replica.role.tmp replica.role && sync replica.role\n# Switch proxy upstream atomically\nprintf '8082\\n' > .upstream.tmp && sync .upstream.tmp && mv -f .upstream.tmp upstream && sync upstream\nsync\nls -la; echo ---; cat replica.role upstream; echo ---; ss -tln | grep -E '808[012]'",
+      "success": true,
+      "output_excerpt": "total 28\ndrwxr-xr-x 2 root root  4096 Sep 12 02:29 .\ndrwxr-xr-x 9 root root  4096 Sep 12 02:28 ..\n-rw-r--r-- 1 root root     0 Sep 12 02:28 primary.failed\n-rw-r--r-- 1 root root     0 Sep 12 02:29 primary.fenced\n-rw-r--r-- 1 root root 12288 Sep 12 02:28 records.sqlite3\n-rw-r--r--…"
+    }
+  ]
+}

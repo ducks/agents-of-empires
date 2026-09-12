@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "analyzer": "aoe-controller/20260816.0.1",
+  "source_sha256": "c468158548e93e6c3d08475d82c5c95cd1efff25cb5e8a633b3931658a6feb44",
+  "agent": "deepseek",
+  "territory": "failover-two",
+  "model": "deepseek/deepseek-v4.1-flash",
+  "outcome": "running",
+  "metrics": {
+    "tool_calls": 9,
+    "tool_errors": 0,
+    "discoveries": 6,
+    "mutations": 2,
+    "lifecycle_actions": 0,
+    "validations": 1,
+    "first_mutation_after_ms": 61679,
+    "last_observed_after_ms": 78938
+  },
+  "architecture": {
+    "technologies": [
+      "Python",
+      "SQLite",
+      "systemd"
+    ],
+    "service_units": [],
+    "persistent_paths": [
+      "/etc/systemd/system",
+      "/var/lib/failover",
+      "/var/lib/failover/records.sqlite3"
+    ]
+  },
+  "actions": [
+    {
+      "index": 0,
+      "tool_id": "call_28da6a71bcd64739851b539c",
+      "kind": "validation",
+      "started_after_ms": 11942,
+      "duration_ms": 91,
+      "description": "Inspect failover dir and listening ports",
+      "command": "ls -la /var/lib/failover/ 2>&1; echo \"---\"; cat /var/lib/failover/* 2>/dev/null | head -50; echo \"=== listening ===\"; (ss -ltnp 2>/dev/null || netstat -ltnp 2>/dev/null) | grep -E '8080|8081|8082'",
+      "success": true,
+      "output_excerpt": "[binary stdout suppressed: 12824 bytes]"
+    },
+    {
+      "index": 1,
+      "tool_id": "call_789344bf59904ccdae407634",
+      "kind": "discovery",
+      "started_after_ms": 12034,
+      "duration_ms": 58,
+      "description": "Inspect running processes and services",
+      "command": "ps aux | grep -iE 'proxy|replica|primary|failover|node|python|808' | grep -v grep; echo \"=== systemd ===\"; systemctl list-units --type=service 2>/dev/null | grep -iE 'fail|proxy|replica|primary' ; echo \"=== files ===\"; ls -la /root /opt /srv /etc/systemd/system 2>/dev/null | head -80",
+      "success": true,
+      "output_excerpt": "root         567  1.1  3.2 112160 23988 ?        Ss   02:30   0:00 /nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python /nix/store/gy7xaavwyh9mbwz4ll8h6z3ban0s6g93-failover-proxy.py\nroot         568  0.8  3.3  40360 24588 ?        Ss   02:30   0:00 /nix/store/3n4…"
+    },
+    {
+      "index": 2,
+      "tool_id": "call_3d970a3f927c428687d4d989",
+      "kind": "discovery",
+      "started_after_ms": 16815,
+      "duration_ms": 170,
+      "description": "List failover files with contents",
+      "command": "ls -la /var/lib/failover/; echo \"=== contents ===\"; for f in /var/lib/failover/*; do echo \"--- $f ---\"; file \"$f\"; head -c 300 \"$f\" | cat -v; echo; done",
+      "success": true,
+      "output_excerpt": "total 28\ndrwxr-xr-x 2 root root  4096 Sep 12 02:30 .\ndrwxr-xr-x 9 root root  4096 Sep 12 02:30 ..\n-rw-r--r-- 1 root root     0 Sep 12 02:30 primary.failed\n-rw-r--r-- 1 root root 12288 Sep 12 02:30 records.sqlite3\n-rw-r--r-- 1 root root     8 Sep 12 02:30 replica.role\n-rw-r--r-- 1…"
+    },
+    {
+      "index": 3,
+      "tool_id": "call_cb1d2a211fec4504a517b994",
+      "kind": "discovery",
+      "started_after_ms": 16985,
+      "duration_ms": 47,
+      "description": "Show unit files",
+      "command": "for s in failover-proxy failover-replica failover-seed; do echo \"===== $s =====\"; systemctl cat $s 2>/dev/null; done",
+      "success": true,
+      "output_excerpt": "===== failover-proxy =====\n# /etc/systemd/system/failover-proxy.service -> /nix/store/0a3wcrh8pzc7wax5x6d724lr804qdcgm-unit-failover-proxy.service/failover-proxy.service\n[Unit]\nAfter=failover-seed.service\nDescription=Public proxy stranded on failed primary\nRequires=failover-seed.…"
+    },
+    {
+      "index": 4,
+      "tool_id": "call_bdcb2ef2f39342eba137d8ec",
+      "kind": "discovery",
+      "started_after_ms": 22431,
+      "duration_ms": 135,
+      "description": "Read proxy and replica scripts",
+      "command": "echo \"===== PROXY =====\"; cat /nix/store/gy7xaavwyh9mbwz4ll8h6z3ban0s6g93-failover-proxy.py; echo; echo \"===== REPLICA =====\"; cat /nix/store/3lf8if1z3ahcv9mdxqmwncn87hnwdymi-failover-replica.py",
+      "success": true,
+      "output_excerpt": "===== PROXY =====\nimport http.client\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\nUPSTREAM = \"/var/lib/failover/upstream\"\nclass Handler(BaseHTTPRequestHandler):\n    def forward(self):\n        try:\n            with open(UPSTREAM) as source: port = int(source…"
+    },
+    {
+      "index": 5,
+      "tool_id": "call_7c3e41861b844327a50476d6",
+      "kind": "discovery",
+      "started_after_ms": 22567,
+      "duration_ms": 63,
+      "description": "Read seed script",
+      "command": "echo \"===== SEED =====\"; cat /nix/store/vnsdj3nml00cykxy4dmpcsgbwp76jspz-unit-script-failover-seed-start/bin/failover-seed-start",
+      "success": true,
+      "output_excerpt": "===== SEED =====\n#!/nix/store/byi2zpy2bgcf3dr6y0l8m50rmjj8z7q1-bash-5.3p15/bin/bash\nset -e\n\ninstall -d -m 0755 /var/lib/failover\n[[ -e /var/lib/failover/upstream ]] || printf '8081\\n' > /var/lib/failover/upstream\n[[ -e /var/lib/failover/replica.role ]] || printf 'replica\\n' > /va…"
+    },
+    {
+      "index": 6,
+      "tool_id": "call_9e7dec67daba4adf8d448e5f",
+      "kind": "mutation",
+      "started_after_ms": 61679,
+      "duration_ms": 63,
+      "description": "Check tooling",
+      "command": "which curl wget python3 sqlite3 nc 2>&1; echo \"---PATH py---\"; ls /nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/ 2>/dev/null | head",
+      "success": true,
+      "output_excerpt": "which: no wget in (/run/wrappers/bin:/root/.nix-profile/bin:/nix/profile/bin:/root/.local/state/nix/profile/bin:/etc/profiles/per-user/root/bin:/nix/var/nix/profiles/default/bin:/run/current-system/sw/bin)\n/run/current-system/sw/bin/curl\n/run/current-system/sw/bin/python3\n/run/cu…"
+    },
+    {
+      "index": 7,
+      "tool_id": "call_32486bc8e1814041903bd76e",
+      "kind": "discovery",
+      "started_after_ms": 61743,
+      "duration_ms": 229,
+      "description": "Probe current public and backend state",
+      "command": "P=/nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python\n$P - <<'PY'\nimport urllib.request as u\nfor path in [\"/health\",\"/role\"]:\n    try:\n        r=u.urlopen(\"http://127.0.0.1:8080\"+path,timeout=3); print(\"8080\",path,r.status,r.read())\n    except Exception as e: print(\"8080\",path,\"ERR\",e)\nfor port in (8081,8082):\n    try:\n        r=u.urlopen(f\"http://127.0.0.1:{port}/health\",timeout=3); print(port,\"/health\",r.status,r.read())\n    except Exception as e: print(port,\"ERR\",e)\nPY",
+      "success": true,
+      "output_excerpt": "8080 /health ERR HTTP Error 502: Bad Gateway\n8080 /role ERR HTTP Error 502: Bad Gateway\n8081 ERR <urlopen error [Errno 111] Connection refused>\n8082 /health 200 b'ready'"
+    },
+    {
+      "index": 8,
+      "tool_id": "call_480859904a1e4716bf583e74",
+      "kind": "mutation",
+      "started_after_ms": 78836,
+      "duration_ms": 102,
+      "description": "Snapshot existing records",
+      "command": "sqlite3 /var/lib/failover/records.sqlite3 \"SELECT id,value FROM records ORDER BY id;\"; echo \"rowcount=$(sqlite3 /var/lib/failover/records.sqlite3 'SELECT count(*) FROM records;')\"",
+      "success": true,
+      "output_excerpt": "customer-blue-8d2|blue-original\ncustomer-green-f31|green-original\ncustomer-red-4a7|red-original\nrowcount=3"
+    }
+  ]
+}
