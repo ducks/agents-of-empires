@@ -14,6 +14,8 @@ use crate::provenance::{MatchProvenance, read_provenance};
 use crate::season::{SeatOutcome, WeekDraw, WeekSummary};
 use crate::series::SeriesSummary;
 
+mod social;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReportSummary {
     pub matches: usize,
@@ -295,15 +297,30 @@ pub fn generate_reports_with_seasons(
         )?;
     }
     for report in &season_reports {
-        fs::write(report.report_dir.join("index.html"), render_season(report))?;
+        social::write_page(
+            &report.report_dir,
+            &format!("seasons/{}/", report.slug),
+            &render_season(report),
+            &social::Card::season(report),
+        )?;
         for week in &report.weeks {
             let dir = report.report_dir.join(&week.slug);
             fs::create_dir_all(&dir)?;
-            fs::write(dir.join("index.html"), render_week_page(report, week))?;
+            social::write_page(
+                &dir,
+                &format!("seasons/{}/{}/", report.slug, week.slug),
+                &render_week_page(report, week),
+                &social::Card::week(report, week),
+            )?;
         }
     }
     let index = output.join("index.html");
-    fs::write(&index, render_index(&season_reports))?;
+    social::write_page(
+        output,
+        "",
+        &render_index(&season_reports),
+        &social::Card::home(),
+    )?;
     fs::write(
         output.join("archive").join("index.html"),
         render_archive(&reports, &series_reports, &benchmark_reports),
