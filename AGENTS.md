@@ -150,6 +150,12 @@ cargo run --release --bin agents-of-empires -- report matches \
   only, never raw run directories, credentials, VM disks, or `seed.secret`.
   Review exports for secrets and broken links before pushing. Preserve
   existing public archive pages. Confirm the Pages build and public URL.
+- Report generation also creates offline 1200×630 PNG social cards and Open
+  Graph/Twitter metadata for the homepage, season indexes, and tournaments.
+  The public origin is `https://agents-of-empires.dev/` in `report/social.rs`.
+  Publish the generated `social-*.png` files with the HTML; their content-hashed
+  names change when a draw becomes a result. Preserve old cards and `CNAME`
+  when overlaying the site. Existing posts may retain a cached preview.
 - Publishing requires explicit user authorization. A draw publication is not
   authorization to run the tournament or schedule paid inference. After the
   run, regenerate and republish the same bracket URL when requested.

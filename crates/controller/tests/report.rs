@@ -907,9 +907,67 @@ fn generates_season_bracket_and_week_pages() {
     assert!(week_page.contains("season-infra-weekly-2026-W37-r1-h1-a2"));
     assert!(week_page.contains("Attempt 2 · Replay (final)"));
     assert!(week_page.contains("revealed-seed"));
+    assert!(week_page.contains("alpha takes the crown — 2026-W37"));
+    assert!(week_page.contains("Winning runs: 61.0s"));
+    let image_url = |html: &str| {
+        html.split("property=\"og:image\" content=\"")
+            .nth(1)
+            .expect("og image")
+            .split('"')
+            .next()
+            .unwrap()
+            .to_owned()
+    };
+    let completed_image = image_url(&week_page);
+    let image_path = output.join(
+        completed_image
+            .strip_prefix("https://agents-of-empires.dev/")
+            .unwrap(),
+    );
+    let png = fs::read(image_path).expect("social PNG");
+    assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
+    assert_eq!(u32::from_be_bytes(png[16..20].try_into().unwrap()), 1200);
+    assert_eq!(u32::from_be_bytes(png[20..24].try_into().unwrap()), 630);
     assert!(
         output
             .join("seasons/infra-weekly/2026-W37/artifacts/week.json")
             .is_file()
     );
+
+    // A checkpoint is not a completed tournament, even if it contains a champion.
+    let mut in_progress = summary;
+    in_progress.completed = false;
+    fs::write(
+        week_dir.join("week.json"),
+        serde_json::to_vec(&in_progress).unwrap(),
+    )
+    .unwrap();
+    aoe_controller::generate_reports_with_seasons(
+        &root.join("seasons"),
+        &[],
+        &[],
+        &[root.join("seasons/infra-weekly")],
+        &output,
+    )
+    .unwrap();
+    let progress =
+        fs::read_to_string(output.join("seasons/infra-weekly/2026-W37/index.html")).unwrap();
+    assert!(progress.contains("og:title\" content=\"The race is on"));
+    assert!(!progress.contains("takes the crown"));
+
+    fs::remove_file(week_dir.join("week.json")).unwrap();
+    aoe_controller::generate_reports_with_seasons(
+        &root.join("seasons"),
+        &[],
+        &[],
+        &[root.join("seasons/infra-weekly")],
+        &output,
+    )
+    .unwrap();
+    let drawn =
+        fs::read_to_string(output.join("seasons/infra-weekly/2026-W37/index.html")).unwrap();
+    assert!(drawn.contains("Crown unclaimed"));
+    assert!(drawn.contains("Heat 1: alpha / gamma / beta"));
+    assert_ne!(image_url(&drawn), completed_image);
+    assert!(!drawn.contains("takes the crown"));
 }
