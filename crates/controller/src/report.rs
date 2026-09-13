@@ -1046,7 +1046,14 @@ fn render_cards<'a>(reports: impl Iterator<Item = &'a MatchReport>) -> String {
             escape(&format!(
                 "{} · {}",
                 duration(report.state.elapsed_ms),
-                money(total_cost)
+                subscription_total(
+                    report
+                        .state
+                        .agents
+                        .values()
+                        .any(|agent| agent.model.starts_with("opencode-go/")),
+                    money(total_cost)
+                )
             ))
         );
     }
@@ -1081,7 +1088,14 @@ fn render_archived_cards<'a>(reports: impl Iterator<Item = &'a MatchReport>) -> 
             escape(&format!(
                 "{} · {}",
                 duration(report.state.elapsed_ms),
-                money(total_cost)
+                subscription_total(
+                    report
+                        .state
+                        .agents
+                        .values()
+                        .any(|agent| agent.model.starts_with("opencode-go/")),
+                    money(total_cost)
+                )
             ))
         );
     }
@@ -1678,7 +1692,7 @@ fn render_match(report: &MatchReport) -> String {
                 "n/a".into()
             },
             if usage_known {
-                money(agent.cost_microusd)
+                aoe_tui::format_model_cost(&agent.model, agent.cost_microusd)
             } else {
                 "n/a".into()
             },
@@ -1739,7 +1753,7 @@ fn render_match(report: &MatchReport) -> String {
         escape(&format!("{} won: {}", winner, state.finish_reason.as_deref().unwrap_or("outcome recorded"))),
         escape(winner),
         duration(state.elapsed_ms),
-        money(total_cost),
+        subscription_total(state.agents.values().any(|agent| agent.model.starts_with("opencode-go/")), money(total_cost)),
         grouped(total_tokens),
         report.events.len()
     );
@@ -2407,6 +2421,14 @@ fn replay_spend_missing(summary: &WeekSummary) -> bool {
         .any(|heat| heat.prior_attempts.len() < heat.attempts.saturating_sub(1))
 }
 
+fn subscription_total(has_subscription: bool, recorded: String) -> String {
+    if has_subscription {
+        format!("subscription; recorded spend {recorded} (not total billing)")
+    } else {
+        recorded
+    }
+}
+
 fn season_money(cost: u64, incomplete: bool) -> String {
     if incomplete {
         format!("{}+ (legacy replay spend missing)", money(cost))
@@ -2415,12 +2437,37 @@ fn season_money(cost: u64, incomplete: bool) -> String {
     }
 }
 
+// Prefer a date stamp within the week label over descriptive prefixes such as
+// "fixed". Labels without a date keep their existing lexical fallback.
+fn tournament_date(label: &str) -> &str {
+    label
+        .split('-')
+        .find(|part| {
+            part.len() == 8 && part.starts_with("20") && part.bytes().all(|b| b.is_ascii_digit())
+        })
+        .unwrap_or(label)
+}
+
+#[test]
+fn dated_tournaments_sort_after_older_descriptive_labels() {
+    assert!(
+        tournament_date("2026-W37-20260913-021918")
+            > tournament_date("2026-W37-fixed-20260910-153524")
+    );
+    assert_eq!(tournament_date("2026-W37"), "2026-W37");
+}
+
 fn render_season_cards(reports: &[SeasonReport]) -> String {
     let mut weeks: Vec<_> = reports
         .iter()
         .flat_map(|report| report.weeks.iter().map(move |week| (report, week)))
         .collect();
-    weeks.sort_by(|(a, x), (b, y)| y.week.cmp(&x.week).then_with(|| a.id.cmp(&b.id)));
+    weeks.sort_by(|(a, x), (b, y)| {
+        tournament_date(&y.week)
+            .cmp(tournament_date(&x.week))
+            .then_with(|| y.week.cmp(&x.week))
+            .then_with(|| a.id.cmp(&b.id))
+    });
     let completed = |week: &WeekReport| week.summary.as_ref().is_some_and(|s| s.completed);
     let mut body = String::new();
     let upcoming: Vec<_> = weeks.iter().filter(|(_, week)| !completed(week)).collect();
@@ -2549,7 +2596,13 @@ fn render_season(report: &SeasonReport) -> String {
                     },
                     summary.champion.clone().unwrap_or_else(|| "—".to_owned()),
                     acc.evaluated_pct(),
-                    season_money(cost, replay_spend_missing(summary)),
+                    subscription_total(
+                        summary
+                            .standings
+                            .iter()
+                            .any(|row| row.model.starts_with("opencode-go/")),
+                        season_money(cost, replay_spend_missing(summary)),
+                    ),
                 )
             }
             None => ("drawn", "—".to_owned(), "n/a".to_owned(), "n/a".to_owned()),
@@ -2595,7 +2648,11 @@ fn render_season(report: &SeasonReport) -> String {
             row.durable,
             row.milestone_points,
             row.forfeits,
-            season_money(row.cost_microusd, row.cost_incomplete),
+            if row.model.starts_with("opencode-go/") {
+                aoe_tui::format_model_cost(&row.model, row.cost_microusd)
+            } else {
+                season_money(row.cost_microusd, row.cost_incomplete)
+            },
         );
     }
     page(
@@ -2681,7 +2738,13 @@ fn render_week_page(season: &SeasonReport, week: &WeekReport) -> String {
                             label,
                             seat.milestone_points,
                             seat.durable_at_ms.map_or_else(|| "—".to_owned(), duration),
-                            money(seat.cost_microusd),
+                            aoe_tui::format_model_cost(
+                                draw.fleet
+                                    .iter()
+                                    .find(|entry| entry.id == seat.fleet_id)
+                                    .map_or("", |entry| entry.model.as_str()),
+                                seat.cost_microusd
+                            ),
                         );
                     }
                     let links = week
@@ -2716,10 +2779,7 @@ fn render_week_page(season: &SeasonReport, week: &WeekReport) -> String {
                         } else {
                             String::new()
                         },
-                        heat.winner.as_deref().map_or_else(
-                            || "No winner".to_owned(),
-                            |winner| format!("Winner: {winner}")
-                        ),
+                        escape(&crate::season::heat_outcome_label(heat)),
                         seats,
                         links,
                     );

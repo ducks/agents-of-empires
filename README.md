@@ -338,6 +338,10 @@ Ctrl-C stops the guests but retains an aborted, inspectable match log.
 
 ## Weekly season
 
+The [OpenCode adapter](docs/opencode-adapter.md) supports OpenCode-backed
+entrants alongside Claux. Harness and provider are explicit choices; cup
+labels do not switch the underlying harness.
+
 A season is a fleet of models and an arena pool. Each week is a bracket of
 three-seat heats: winners advance, and when the next round would not fill
 whole heats, the best non-winners by verified milestones are promoted as
@@ -373,8 +377,14 @@ checkpoint. A seat whose result is unavailable (provider or harness failure)
 earns the heat one automatic replay with the same seats; the original attempt
 stays under `heat-NN/` and the replay under `heat-NN.replay-1/` as evidence. If it happens again the seat
 forfeits: it is recorded, never counted as a loss, and cannot win or advance.
-A heat with no durable finisher goes to the best evaluated seat by milestone
-points, then earliest durable time, then lowest cost. Weeks draw arenas
+A heat without a durable finisher is a draw, not a milestone or alphabetical
+win. Sporting draws get one replay (`rules.draw_replays`), separately from
+the unavailable-seat replay allowance. A repeated draw in a knockout round
+leaves the cup completed without a champion if the next round cannot be filled;
+a drawn final likewise awards no title. Provider/harness failures are not
+sporting draws. Wildcards use verified milestones, then durable time, with a
+seeded lottery for ties (seed: `draw_seed/wildcards/round-N`), never cost or ID.
+Weeks draw arenas
 independently, so they are not comparable to each other as benchmarks; the
 benchmark suite remains the comparable measurement.
 

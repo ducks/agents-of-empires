@@ -64,9 +64,12 @@ demo:
 
 demo-check:
 	bash -n scripts/run-demo.sh
+	bash -n adapters/opencode.sh adapters/ssh-askpass.sh
+	bash -n scripts/prepare-opencode-credentials.sh
 
 test:
 	cargo test --workspace
+	python3 -m unittest discover -s adapters -p 'test_opencode*.py'
 
 clippy:
 	cargo clippy --workspace --all-targets

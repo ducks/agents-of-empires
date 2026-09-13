@@ -66,12 +66,20 @@ pub struct SeasonRules {
     /// After the last replay the unavailable seat forfeits.
     #[serde(default = "default_unavailable_replays")]
     pub unavailable_replays: usize,
+    /// Sporting draws get their own bounded replay allowance.
+    #[serde(default = "default_unavailable_replays")]
+    pub draw_replays: usize,
+    /// Optional per-VM memory floor, committed in the draw for every seat.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory_mib: Option<u64>,
 }
 
 impl Default for SeasonRules {
     fn default() -> Self {
         Self {
             unavailable_replays: default_unavailable_replays(),
+            draw_replays: 1,
+            memory_mib: None,
         }
     }
 }
@@ -135,6 +143,11 @@ impl SeasonManifest {
     }
 
     fn validate(&self) -> Result<(), SeasonError> {
+        if self.rules.memory_mib.is_some_and(|memory| memory < 128) {
+            return Err(SeasonError::Invalid(
+                "rules.memory_mib must be at least 128".into(),
+            ));
+        }
         if self.season.id.is_empty() || !safe_id(&self.season.id) {
             return Err(SeasonError::Invalid(
                 "season.id must be a non-empty [A-Za-z0-9._-] identifier".into(),
@@ -707,6 +720,16 @@ pub async fn run_week(options: WeekOptions) -> Result<WeekSummary, SeasonError> 
         return Ok(summary);
     }
     // Validate every committed arena before spending anything, including on resume.
+    crate::runner::preflight_opencode(
+        &options.adapters,
+        draw.fleet
+            .iter()
+            .filter(|entry| entry.adapter == "opencode" && entry.model.starts_with("opencode-go/"))
+            .map(|entry| entry.model.clone())
+            .collect(),
+    )
+    .await
+    .map_err(SeasonError::Invalid)?;
     for arena in &draw.arenas {
         load_committed_arena(arena)?;
     }
@@ -734,6 +757,20 @@ pub async fn run_week(options: WeekOptions) -> Result<WeekSummary, SeasonError> 
                 .collect();
             field.extend(previous.byes.iter().cloned());
             field.extend(previous.wildcards.iter().cloned());
+            if field.len() != shape.field
+                && previous
+                    .heats
+                    .iter()
+                    .any(|heat| is_sporting_draw(&heat.standings))
+            {
+                // An exhausted knockout draw cannot silently promote a tied seat.
+                summary.completed = true;
+                summary.champion = None;
+                summary.variation_seed = Some(secret.clone());
+                summary.standings = week_standings(&draw, &summary.rounds);
+                write_json_atomic(&summary_path, &summary)?;
+                return Ok(summary);
+            }
             validate_round_field(shape, field.len())?;
             rng.shuffle(&mut field);
             let heats = field.len() / draw.heat_size;
@@ -786,7 +823,7 @@ pub async fn run_week(options: WeekOptions) -> Result<WeekSummary, SeasonError> 
                 .join(format!("heat-{:02}", heat_draw.heat));
             let journal = heat_dir.with_extension("attempts.json");
             let mut previous = load_heat_attempt(&journal, heat_draw)?;
-            let result = loop {
+            let mut result = loop {
                 if let Some(result) = &previous
                     && !needs_replay(result, &draw.rules)
                 {
@@ -802,6 +839,7 @@ pub async fn run_week(options: WeekOptions) -> Result<WeekSummary, SeasonError> 
                 let mut heat_manifest = manifest.clone();
                 load_committed_arena(arena)?;
                 seat_manifest(&mut heat_manifest, heat_draw, &fleet)?;
+                apply_memory_floor(&mut heat_manifest, &draw.rules);
                 let (base_port, multicast_port) = heat_ports(
                     options.base_port,
                     options.multicast_port,
@@ -850,6 +888,10 @@ pub async fn run_week(options: WeekOptions) -> Result<WeekSummary, SeasonError> 
                 // A replay keeps the same seats; the earlier attempt's
                 // artifacts stay under their replay-N directory as evidence.
             };
+            if shape.round == draw.shape.len() {
+                result.winner = durable_heat_winner(&result);
+                write_json_atomic(&journal, &result)?;
+            }
             let aborted = result.aborted;
             heat_counter += 1;
             round_result.heats.push(result);
@@ -861,8 +903,8 @@ pub async fn run_week(options: WeekOptions) -> Result<WeekSummary, SeasonError> 
             }
         }
 
-        // Wildcards: best non-winners by milestones, then earliest durable,
-        // then lowest cost. Forfeited seats never advance.
+        // Wildcards: verified milestones, then durable time; ties use a
+        // separately seeded lottery. Forfeited seats never advance.
         if shape.wildcards > 0 && round_result.wildcards.is_empty() {
             let mut candidates: Vec<&SeatResult> = round_result
                 .heats
@@ -874,7 +916,10 @@ pub async fn run_week(options: WeekOptions) -> Result<WeekSummary, SeasonError> 
                 })
                 .filter(|seat| seat.outcome != SeatOutcome::Forfeit)
                 .collect();
-            candidates.sort_by(|a, b| seat_rank(b, a));
+            rank_wildcards(
+                &mut candidates,
+                &format!("{}/wildcards/round-{}", draw.draw_seed, shape.round),
+            );
             round_result.wildcards = candidates
                 .into_iter()
                 .take(shape.wildcards)
@@ -969,16 +1014,92 @@ fn final_champion(draw: &WeekDraw, rounds: &[RoundResult]) -> Result<Option<Stri
         .ok_or_else(|| {
             SeasonError::Invalid("final has not been played; week remains incomplete".into())
         })?;
-    Ok(final_round.heats[0].winner.clone())
+    Ok(durable_heat_winner(&final_round.heats[0]))
+}
+
+fn durable_heat_winner(heat: &HeatResult) -> Option<String> {
+    heat.winner
+        .as_ref()
+        .filter(|winner| {
+            heat.standings.iter().any(|seat| {
+                &seat.fleet_id == *winner
+                    && seat.outcome == SeatOutcome::Durable
+                    && seat.durable_at_ms.is_some()
+            })
+        })
+        .cloned()
+}
+
+fn apply_memory_floor(manifest: &mut ArenaManifest, rules: &SeasonRules) {
+    if let Some(memory) = rules.memory_mib {
+        for class in &mut manifest.classes {
+            class.resources.memory_mib = class.resources.memory_mib.max(memory);
+        }
+    }
 }
 
 fn needs_replay(result: &HeatResult, rules: &SeasonRules) -> bool {
-    !result.aborted
-        && result.attempts <= rules.unavailable_replays
-        && result
-            .standings
+    if result.aborted {
+        return false;
+    }
+    let unavailable = |seats: &[SeatResult]| {
+        seats
             .iter()
             .any(|seat| seat.outcome == SeatOutcome::Forfeit)
+    };
+    if unavailable(&result.standings) {
+        let attempts = 1 + result
+            .prior_attempts
+            .iter()
+            .filter(|seats| unavailable(seats))
+            .count();
+        attempts <= rules.unavailable_replays
+    } else if is_sporting_draw(&result.standings) {
+        let attempts = 1 + result
+            .prior_attempts
+            .iter()
+            .filter(|seats| is_sporting_draw(seats))
+            .count();
+        attempts <= rules.draw_replays
+    } else {
+        false
+    }
+}
+
+fn is_sporting_draw(seats: &[SeatResult]) -> bool {
+    !seats.is_empty()
+        && !seats
+            .iter()
+            .any(|seat| seat.outcome == SeatOutcome::Forfeit)
+        && decide_winner(seats).is_none()
+}
+
+/// Human-readable heat outcome, keeping sporting draws separate from failures.
+#[must_use]
+pub fn heat_outcome_label(heat: &HeatResult) -> String {
+    if heat.aborted {
+        "Aborted".into()
+    } else if let Some(winner) = &heat.winner {
+        format!("Winner: {winner}")
+    } else if is_sporting_draw(&heat.standings) {
+        "Draw: no durable winner".into()
+    } else {
+        "No contest: unavailable seats, no durable winner".into()
+    }
+}
+
+fn rank_wildcards(candidates: &mut [&SeatResult], seed: &str) {
+    // Canonical input + a separately seeded shuffle makes ties reproducible
+    // without coupling the lottery to checkpoint/resume RNG consumption.
+    candidates.sort_by(|a, b| a.fleet_id.cmp(&b.fleet_id));
+    DrawRng::from_seed(seed).shuffle(candidates);
+    candidates.sort_by(|a, b| {
+        b.milestone_points.cmp(&a.milestone_points).then_with(|| {
+            a.durable_at_ms
+                .unwrap_or(u64::MAX)
+                .cmp(&b.durable_at_ms.unwrap_or(u64::MAX))
+        })
+    });
 }
 
 fn load_heat_attempt(path: &Path, heat: &HeatDraw) -> Result<Option<HeatResult>, SeasonError> {
@@ -1146,18 +1267,22 @@ pub fn heat_result(
     }
 }
 
-/// Without a durable finisher, the heat goes to the best evaluated seat by
-/// milestones, then earliest durable time, then lowest cost. All-forfeit
-/// heats have no winner.
+/// Only a verified durable deployment wins a heat. Other evaluated results draw.
 fn decide_winner(standings: &[SeatResult]) -> Option<String> {
     let mut evaluated: Vec<&SeatResult> = standings
         .iter()
-        .filter(|seat| seat.outcome != SeatOutcome::Forfeit)
+        .filter(|seat| seat.outcome == SeatOutcome::Durable && seat.durable_at_ms.is_some())
         .collect();
     if evaluated.is_empty() {
         return None;
     }
-    evaluated.sort_by(|a, b| seat_rank(b, a));
+    evaluated.sort_by_key(|seat| seat.durable_at_ms);
+    if evaluated
+        .get(1)
+        .is_some_and(|seat| seat.durable_at_ms == evaluated[0].durable_at_ms)
+    {
+        return None;
+    }
     Some(evaluated[0].fleet_id.clone())
 }
 
@@ -1310,16 +1435,16 @@ pub fn render_week(summary: &WeekSummary) -> String {
         for heat in &round.heats {
             let _ = writeln!(
                 out,
-                "  heat {} ({} attempt{}): winner {}",
+                "  heat {} ({} attempt{}): {}",
                 heat.heat,
                 heat.attempts,
                 plural(heat.attempts),
-                heat.winner.as_deref().unwrap_or("none")
+                heat_outcome_label(heat)
             );
             for seat in &heat.standings {
                 let _ = writeln!(
                     out,
-                    "    {:<24} {:<10} {:>4} pts  {}  ${:.3}",
+                    "    {:<24} {:<10} {:>4} pts  {}  {}",
                     seat.fleet_id,
                     format!("{:?}", seat.outcome).to_lowercase(),
                     seat.milestone_points,
@@ -1327,7 +1452,14 @@ pub fn render_week(summary: &WeekSummary) -> String {
                         || "      -".to_owned(),
                         |ms| format!("{:>5.1}s", ms as f64 / 1000.0)
                     ),
-                    seat.cost_microusd as f64 / 1_000_000.0
+                    aoe_tui::format_model_cost(
+                        summary
+                            .standings
+                            .iter()
+                            .find(|row| row.fleet_id == seat.fleet_id)
+                            .map_or("", |row| row.model.as_str()),
+                        seat.cost_microusd
+                    )
                 );
             }
         }
@@ -1340,6 +1472,8 @@ pub fn render_week(summary: &WeekSummary) -> String {
     }
     if let Some(champion) = &summary.champion {
         let _ = writeln!(out, "champion: {champion}");
+    } else if summary.completed {
+        let _ = writeln!(out, "champion: none (no durable final winner)");
     }
     let _ = writeln!(out);
     let _ = writeln!(
@@ -1350,7 +1484,7 @@ pub fn render_week(summary: &WeekSummary) -> String {
     for row in &summary.standings {
         let _ = writeln!(
             out,
-            "{:<24} {:>5} {:>5} {:>4} {:>7} {:>4} {:>8} {:>9.3}",
+            "{:<24} {:>5} {:>5} {:>4} {:>7} {:>4} {:>8} {:>9}",
             row.fleet_id,
             row.reached_round,
             row.heats,
@@ -1358,7 +1492,7 @@ pub fn render_week(summary: &WeekSummary) -> String {
             row.durable_deployments,
             row.milestone_points,
             row.forfeits,
-            row.cost_microusd as f64 / 1_000_000.0
+            aoe_tui::format_model_cost(&row.model, row.cost_microusd)
         );
     }
     if let Some(seed) = &summary.variation_seed {
@@ -1376,6 +1510,23 @@ mod tests {
     use super::*;
     use aoe_domain::AgentTerminalState;
     use aoe_replay::{AgentView, TerritoryView};
+
+    #[test]
+    fn opencode_cup_has_six_go_models_and_no_excluded_providers() {
+        let manifest = SeasonManifest::load(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../suites/opencode-cup.toml"),
+        )
+        .unwrap();
+        assert_eq!(manifest.fleet.len(), 6);
+        for entry in &manifest.fleet {
+            assert_eq!(entry.adapter, "opencode");
+            assert!(entry.model.starts_with("opencode-go/"));
+            assert!(!entry.model.contains("grok"));
+            assert!(!entry.model.contains("muse"));
+            assert!(!entry.model.contains("llama"));
+        }
+        assert_eq!(bracket_shape(6, 3).unwrap().len(), 2);
+    }
 
     fn temporary_directory() -> PathBuf {
         let path =
@@ -1395,6 +1546,119 @@ mod tests {
             standings: vec![seat("m0", SeatOutcome::Durable, 100, Some(1), 5)],
             aborted: false,
         }
+    }
+
+    #[test]
+    fn final_title_requires_a_durable_winner() {
+        let draw = draw_with(3);
+        let mut rounds = vec![RoundResult {
+            round: 1,
+            arena_id: "test".into(),
+            heats: vec![test_heat(1, Some("m0"))],
+            byes: vec![],
+            wildcards: vec![],
+        }];
+        assert_eq!(
+            final_champion(&draw, &rounds).unwrap().as_deref(),
+            Some("m0")
+        );
+        for outcome in [
+            SeatOutcome::Failed,
+            SeatOutcome::Incomplete,
+            SeatOutcome::Forfeit,
+        ] {
+            rounds[0].heats[0].standings[0].outcome = outcome;
+            assert_eq!(final_champion(&draw, &rounds).unwrap(), None);
+        }
+        rounds[0].heats[0].standings[0].outcome = SeatOutcome::Durable;
+        rounds[0].heats[0].standings[0].durable_at_ms = None;
+        assert_eq!(final_champion(&draw, &rounds).unwrap(), None);
+    }
+
+    #[test]
+    fn sporting_draw_and_unavailable_replays_have_separate_limits() {
+        let rules = SeasonRules::default();
+        let draw_seats = vec![seat("m0", SeatOutcome::Failed, 5, None, 0)];
+        let unavailable = vec![seat("m0", SeatOutcome::Forfeit, 5, None, 0)];
+        let mut result = test_heat(1, None);
+        result.standings = draw_seats.clone();
+        assert!(needs_replay(&result, &rules));
+        assert!(heat_outcome_label(&result).starts_with("Draw:"));
+        result.prior_attempts.push(unavailable.clone());
+        result.attempts = 2;
+        assert!(
+            needs_replay(&result, &rules),
+            "infrastructure retry does not consume draw replay"
+        );
+        result.prior_attempts.push(draw_seats.clone());
+        result.attempts = 3;
+        assert!(!needs_replay(&result, &rules));
+        result.prior_attempts = vec![draw_seats];
+        result.standings = unavailable.clone();
+        result.attempts = 2;
+        assert!(needs_replay(&result, &rules));
+        assert!(heat_outcome_label(&result).starts_with("No contest:"));
+        result.prior_attempts.push(unavailable);
+        result.attempts = 3;
+        assert!(!needs_replay(&result, &rules));
+        result.aborted = true;
+        assert!(!needs_replay(&result, &rules));
+    }
+
+    #[test]
+    fn wildcard_lottery_is_reproducible_and_does_not_use_cost_or_id() {
+        let seats = [
+            seat("a", SeatOutcome::Failed, 5, None, 0),
+            seat("b", SeatOutcome::Incomplete, 5, None, 999),
+            seat("c", SeatOutcome::Incomplete, 20, None, 9999),
+        ];
+        let mut winners = BTreeSet::new();
+        for seed in 0..20 {
+            let seed = format!("cup/week/wildcards/round-{seed}");
+            let mut a: Vec<_> = seats.iter().collect();
+            let mut b: Vec<_> = seats.iter().rev().collect();
+            rank_wildcards(&mut a, &seed);
+            rank_wildcards(&mut b, &seed);
+            assert_eq!(
+                a.iter().map(|s| &s.fleet_id).collect::<Vec<_>>(),
+                b.iter().map(|s| &s.fleet_id).collect::<Vec<_>>()
+            );
+            assert_eq!(a[0].fleet_id, "c", "verified points still come first");
+            winners.insert(a[1].fleet_id.clone());
+        }
+        assert_eq!(
+            winners.len(),
+            2,
+            "neither alphabetical ID nor lower cost always wins"
+        );
+    }
+
+    #[test]
+    fn cup_memory_floor_is_committed_and_never_reduces_resources() {
+        let mut manifest = load_committed_arena(&committed_arena()).unwrap();
+        let original = manifest.clone();
+        apply_memory_floor(&mut manifest, &SeasonRules::default());
+        assert_eq!(manifest, original);
+        let rules = SeasonRules {
+            memory_mib: Some(2048),
+            ..SeasonRules::default()
+        };
+        apply_memory_floor(&mut manifest, &rules);
+        assert!(
+            manifest
+                .classes
+                .iter()
+                .all(|class| class.resources.memory_mib >= 2048)
+        );
+        manifest.classes[0].resources.memory_mib = 4096;
+        apply_memory_floor(&mut manifest, &rules);
+        assert_eq!(manifest.classes[0].resources.memory_mib, 4096);
+        assert!(
+            !serde_json::to_string(&SeasonRules::default())
+                .unwrap()
+                .contains("memory_mib")
+        );
+        assert!(serde_json::to_string(&rules).unwrap().contains("2048"));
     }
 
     fn committed_arena() -> DrawArena {
@@ -1482,10 +1746,35 @@ mod tests {
         assert!(
             matches!(result, Err(SeasonError::Invalid(message)) if message.contains("only 2 advanced"))
         );
-        let saved: WeekSummary = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+        let saved: WeekSummary = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         assert!(!saved.completed);
         assert!(saved.champion.is_none());
         assert!(saved.variation_seed.is_none());
+
+        // An exhausted sporting draw is terminal, unlike an unavailable field.
+        let mut drawn = saved;
+        drawn.rounds[0].heats[1].standings[0].outcome = SeatOutcome::Failed;
+        drawn.rounds[0].heats[1].attempts = 2;
+        drawn.rounds[0].heats[1].prior_attempts = vec![drawn.rounds[0].heats[1].standings.clone()];
+        write_json_atomic(&path, &drawn).unwrap();
+        let result = run_week(WeekOptions {
+            week_dir: path.parent().unwrap().to_path_buf(),
+            adapters: HashMap::new(),
+            credentials: HashMap::new(),
+            base_port: 26000,
+            multicast_port: 23977,
+            color: false,
+        })
+        .await
+        .unwrap();
+        assert!(result.completed);
+        assert!(result.champion.is_none());
+        assert!(result.variation_seed.is_some());
+        assert_eq!(
+            result.rounds.len(),
+            1,
+            "do not invent a final or run inference"
+        );
     }
 
     #[test]
@@ -1645,13 +1934,13 @@ mod tests {
     }
 
     #[test]
-    fn heats_without_a_finisher_go_to_milestones_then_time_then_cost() {
+    fn heats_without_a_finisher_draw_and_durable_finishers_win_by_time() {
         let standings = vec![
             seat("a", SeatOutcome::Incomplete, 30, None, 500),
             seat("b", SeatOutcome::Incomplete, 30, None, 400),
             seat("c", SeatOutcome::Forfeit, 90, None, 1),
         ];
-        assert_eq!(decide_winner(&standings).as_deref(), Some("b"));
+        assert_eq!(decide_winner(&standings), None);
         let all_forfeit = vec![seat("a", SeatOutcome::Forfeit, 0, None, 0)];
         assert_eq!(decide_winner(&all_forfeit), None);
         let durable_first = vec![
@@ -1886,7 +2175,7 @@ mod tests {
         ]);
         let heat = draw_for(&[("one", "alpha"), ("two", "beta"), ("three", "gamma")]);
         let result = heat_result(&heat, PathBuf::from("x"), 2, &state);
-        assert_eq!(result.winner.as_deref(), Some("beta"), "forfeits never win");
+        assert_eq!(result.winner, None, "non-durable seats never win");
         assert_eq!(result.attempts, 2);
     }
 

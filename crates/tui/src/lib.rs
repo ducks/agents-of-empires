@@ -166,7 +166,7 @@ fn render_build_table(output: &mut String, state: &WorldState, color: bool) {
         });
         let cost = usage.map_or_else(
             || "n/a".to_owned(),
-            |agent| format_money(agent.cost_microusd),
+            |agent| format_model_cost(&agent.model, agent.cost_microusd),
         );
         let _ = writeln!(
             output,
@@ -383,6 +383,38 @@ fn usage_summary(
         .saturating_add(output_tokens.unwrap_or(0));
     let cost = cost_microusd.map_or_else(|| "cost n/a".into(), format_money);
     format!("{agent} usage +{tokens} tokens, {cost}, {resource_units} resources")
+}
+
+/// Format recorded cost without presenting subscription usage as free inference.
+/// The model namespace identifies the route, not the user's overage settings.
+#[must_use]
+pub fn format_model_cost(model: &str, microusd: u64) -> String {
+    if model.starts_with("opencode-go/") {
+        if microusd == 0 {
+            "subscription".into()
+        } else {
+            format!("subscription + {} recorded", format_money(microusd))
+        }
+    } else {
+        format_money(microusd)
+    }
+}
+
+#[cfg(test)]
+mod subscription_tests {
+    #[test]
+    fn subscription_is_not_free_and_preserves_recorded_cost() {
+        assert_eq!(
+            super::format_model_cost("opencode-go/glm-5.3", 0),
+            "subscription"
+        );
+        assert_eq!(
+            super::format_model_cost("opencode-go/glm-5.3", 1200),
+            "subscription + $0.0012 recorded"
+        );
+        assert_eq!(super::format_model_cost("opencode/glm-5.3", 0), "$0.0000");
+        assert_eq!(super::format_model_cost("z-ai/glm-5.3", 1200), "$0.0012");
+    }
 }
 
 fn format_money(microusd: u64) -> String {
