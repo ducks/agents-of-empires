@@ -29,7 +29,7 @@ Usage:
   agents-of-empires report MATCH_OR_MATCHES_DIR [--series SERIES_OR_SERIES_DIR]
       [--benchmark BENCHMARK_OR_BENCHMARKS_DIR] [--season SEASON_OR_WEEK_DIR] [--output DIR]
   agents-of-empires trajectory MATCH_OR_MATCHES_DIR [--output DIR]
-  agents-of-empires season draw SEASON --week LABEL [--salt TEXT] [--output DIR]
+  agents-of-empires season draw SEASON --week LABEL [--entrants N] [--salt TEXT] [--output DIR]
   agents-of-empires season run WEEK_DIR --adapter NAME=PATH [--credential TERRITORY=PATH]
       [--base-port PORT] [--multicast-port PORT] [--no-color]
   agents-of-empires doctor [--json]
@@ -193,6 +193,7 @@ async fn execute() -> Result<(), Box<dyn std::error::Error>> {
                     season,
                     week,
                     salt,
+                    entrants,
                     output,
                 },
         } => {
@@ -200,6 +201,7 @@ async fn execute() -> Result<(), Box<dyn std::error::Error>> {
                 season,
                 week,
                 salt,
+                entrants,
                 output: output.clone(),
             })?;
             print!("{}", render_draw(&draw));

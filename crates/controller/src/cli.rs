@@ -81,6 +81,7 @@ pub enum SeasonCommand {
         season: PathBuf,
         week: String,
         salt: Option<String>,
+        entrants: Option<usize>,
         output: PathBuf,
     },
     Run {
@@ -188,6 +189,11 @@ fn parse_season(mut args: Vec<String>) -> Result<Command, ParseError> {
             } else {
                 None
             };
+            let entrants = if args.iter().any(|arg| arg == "--entrants") {
+                Some(numeric_flag(&mut args, "--entrants", 0_usize)?)
+            } else {
+                None
+            };
             let output = if args.iter().any(|arg| arg == "--output") {
                 PathBuf::from(take_flag_value(&mut args, "--output")?)
             } else {
@@ -198,6 +204,7 @@ fn parse_season(mut args: Vec<String>) -> Result<Command, ParseError> {
                 season,
                 week,
                 salt,
+                entrants,
                 output,
             }
         }

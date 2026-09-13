@@ -4,6 +4,38 @@ use aoe_controller::cli::SeasonCommand;
 use aoe_controller::{ArenaCommand, Cli, Command, ParseError};
 
 #[test]
+fn parses_entrant_count_and_rejects_non_numeric_counts() {
+    for count in ["6", "invalid", "-1"] {
+        let parsed = Cli::parse(
+            [
+                "season",
+                "draw",
+                "cup.toml",
+                "--week",
+                "test",
+                "--entrants",
+                count,
+            ]
+            .into_iter()
+            .map(str::to_owned),
+        );
+        if count == "6" {
+            assert!(matches!(
+                parsed.unwrap().command,
+                Command::Season {
+                    command: SeasonCommand::Draw {
+                        entrants: Some(6),
+                        ..
+                    }
+                }
+            ));
+        } else {
+            assert!(parsed.is_err());
+        }
+    }
+}
+
+#[test]
 fn parses_season_draw_with_default_output() {
     let cli = Cli::parse(
         [
@@ -24,6 +56,7 @@ fn parses_season_draw_with_default_output() {
                 season: PathBuf::from("suites/weekly-season.toml"),
                 week: "2026-W37".into(),
                 salt: None,
+                entrants: None,
                 output: PathBuf::from("seasons/2026-W37"),
             },
         }

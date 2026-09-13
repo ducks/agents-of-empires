@@ -66,9 +66,11 @@ demo-check:
 	bash -n scripts/run-demo.sh
 	bash -n adapters/opencode.sh adapters/ssh-askpass.sh
 	bash -n scripts/prepare-opencode-credentials.sh
+	bash -n scripts/prepare-infra-core-credentials.sh adapters/claux.sh
 
 test:
 	cargo test --workspace
+	bash adapters/test-claux.sh
 	python3 -m unittest discover -s adapters -p 'test_opencode*.py'
 
 clippy:

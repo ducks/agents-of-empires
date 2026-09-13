@@ -18,15 +18,40 @@ set -a
 # shellcheck source=/dev/null
 source "$AOE_CREDENTIAL_FILE"
 set +a
-: "${OPENROUTER_API_KEY:?credential file must set OPENROUTER_API_KEY}"
 : "${AOE_SSH_PASSWORD:?credential file must set AOE_SSH_PASSWORD}"
+
+# Keep routing in the recorded model ID, not an invisible host override.
+provider=openrouter
+key_env=OPENROUTER_API_KEY
+upstream=https://openrouter.ai
+api_path=/api/v1
+model="$AOE_MODEL"
+if [[ "$model" == vercel/* ]]; then
+  provider=vercel
+  key_env=AI_GATEWAY_API_KEY
+  upstream=https://ai-gateway.vercel.sh
+  api_path=/v1
+  model="${model#vercel/}"
+fi
+[[ "$model" =~ ^[A-Za-z0-9][A-Za-z0-9._:/-]*$ && "$model" == */* ]] || {
+  echo 'model must be a provider/model ID using safe identifier characters' >&2
+  exit 2
+}
+[[ "$AOE_REASONING_EFFORT" =~ ^[a-z]+$ ]] || {
+  echo 'invalid reasoning effort' >&2
+  exit 2
+}
+[[ -n "${!key_env:-}" ]] || {
+  echo "credential file must set ${key_env}" >&2
+  exit 2
+}
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 claux_version="20260908.0.0"
 claux_sha256="8e386c95dc489f3388c7c8dfb6fdf79d774d706125fa02af79b4d0f4116de33e"
 default_claux="${HOME}/.cache/agents-of-empires/claux/v${claux_version}/claux-linux-x86_64"
 claux="${AOE_CLAUX_BINARY:-$default_claux}"
-proxy="${AOE_OPENROUTER_PROXY:-${repo_root}/../replaybook/integrations/host/openrouter_proxy.py}"
+proxy="${AOE_CLAUX_PROXY:-${AOE_OPENROUTER_PROXY:-${repo_root}/../replaybook/integrations/host/openrouter_proxy.py}}"
 
 if [[ -z "${AOE_CLAUX_BINARY:-}" ]]; then
   actual_sha256=""
@@ -58,7 +83,7 @@ fi
   exit 2
 }
 [[ -f "$proxy" ]] || {
-  echo "OpenRouter credential proxy is missing: ${proxy}" >&2
+  echo "Claux credential proxy is missing: ${proxy}" >&2
   exit 2
 }
 
@@ -186,7 +211,9 @@ until "${ssh_command[@]}" true 2>/dev/null; do
   sleep 1
 done
 
-python "$proxy" --port 0 --ready-file "$ready_file" >"$proxy_log" 2>&1 &
+# Explicit selection prevents an inherited generic proxy key/upstream from
+# silently sending this match to a different provider. The key is never argv.
+REPLAYBOOK_OPENAI_API_KEY="${!key_env}" python "$proxy" --upstream "$upstream" --port 0 --ready-file "$ready_file" >"$proxy_log" 2>&1 &
 proxy_pid=$!
 deadline=$((SECONDS + 30))
 until [[ -s "$ready_file" ]]; do
@@ -229,18 +256,24 @@ done
 checkpoint_usage &
 checkpoint_pid=$!
 
+# `default` deliberately omits an effort request for models without that knob.
+effort_assignment="${AOE_REASONING_EFFORT}"
+if [[ "$effort_assignment" == default ]]; then
+  effort_assignment=""
+fi
+
 set +e
 "${ssh_command[@]}" \
   "chmod 0700 '${remote_root}/claux' && \
    cd /root && \
-   OPENROUTER_API_KEY=arena-proxy-placeholder '${remote_root}/claux' config init --provider openrouter --model '${AOE_MODEL}' >/dev/null && \
-   sed -i 's#^base_url = .*#base_url = \"http://127.0.0.1:${remote_port}/api/v1\"#' /root/.config/claux/config.toml && \
+   ${key_env}=arena-proxy-placeholder '${remote_root}/claux' config init --provider ${provider} --model '${model}' >/dev/null && \
+   sed -i 's#^base_url = .*#base_url = \"http://127.0.0.1:${remote_port}${api_path}\"#' /root/.config/claux/config.toml && \
    sed -i 's/^native_tool_filesystem_policy = .*/native_tool_filesystem_policy = \"unrestricted\"/' /root/.config/claux/config.toml && \
    sed -i 's/^bash_filesystem_policy = .*/bash_filesystem_policy = \"unrestricted\"/' /root/.config/claux/config.toml && \
    profile=\$(sed -n 's/^default_profile = \"\([^\"]*\)\"/\1/p' /root/.config/claux/config.toml) && \
-   awk -v section=\"[model_profiles.\${profile}]\" -v effort='${AOE_REASONING_EFFORT}' '{ print; if (\$0 == section) print \"reasoning_effort = \\\"\" effort \"\\\"\" }' /root/.config/claux/config.toml > /root/.config/claux/config.toml.partial && \
+   awk -v section=\"[model_profiles.\${profile}]\" -v effort='${effort_assignment}' '{ print; if (\$0 == section && effort != \"\") print \"reasoning_effort = \\\"\" effort \"\\\"\" }' /root/.config/claux/config.toml > /root/.config/claux/config.toml.partial && \
    mv /root/.config/claux/config.toml.partial /root/.config/claux/config.toml && \
-   OPENROUTER_API_KEY=arena-proxy-placeholder '${remote_root}/claux' --print \"\$(cat '${remote_root}/instruction.md')\"${remote_image_args} --permission-mode bypass --output-format json --transcript '${remote_root}/transcript.json' > '${remote_root}/result.json'"
+   ${key_env}=arena-proxy-placeholder '${remote_root}/claux' --print \"\$(cat '${remote_root}/instruction.md')\"${remote_image_args} --permission-mode bypass --output-format json --transcript '${remote_root}/transcript.json' > '${remote_root}/result.json'"
 status=$?
 set -e
 
