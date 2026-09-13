@@ -171,6 +171,13 @@ cargo run --release --bin agents-of-empires -- report matches \
 - Heats and matches stop at the first durable deployment
   (`stop_on_first_durable`). Losing the race is the result; do not add
   post-win evaluation to arenas.
+- Tournament heats without a durable winner are sporting draws when all
+  seats were evaluated; unavailable seats remain a separate no-contest case.
+  `rules.draw_replays` and `rules.unavailable_replays` have independent bounded
+  retry allowances. Never advance a milestone-only heat winner. An exhausted
+  knockout draw that prevents a full next round completes without a champion.
+  Wildcards rank by verified milestones and durable time; tied ranks use the
+  published `draw_seed/wildcards/round-N` lottery, not cost or alphabetical ID.
 - Draws are reproducible from their published seed. Never default a run to a
   floating "latest" harness release; `adapters/claux.sh` pins a release and
   its SHA-256 together, and a bump is a deliberate cohort boundary.

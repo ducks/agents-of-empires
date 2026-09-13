@@ -24,6 +24,52 @@ ROUTES = {
 MAX_EVENTS = 64 * 1024 * 1024
 
 
+def go_model(model):
+    provider, _, identifier = model.partition("/")
+    if provider != "opencode-go":
+        raise ValueError(f"preflight requires an explicit OpenCode Go model, got {model!r}")
+    catalog = json.loads(Path(__file__).with_name("opencode-go-models.json").read_text())
+    if identifier not in catalog:
+        raise ValueError(f"model {model!r} has no pinned definition; update the catalog explicitly (no substitutions)")
+    return identifier, catalog[identifier]
+
+
+def preflight(models):
+    """Resolve the entire fleet without credentials, model requests, or VMs."""
+    definitions = dict(go_model(model) for model in sorted(set(models)))
+    if not definitions:
+        raise ValueError("preflight needs at least one model")
+    response = subprocess.run(["curl", "--fail", "--silent", "--show-error", "--max-time", "20",
+                               "https://opencode.ai/zen/go/v1/models"], capture_output=True, text=True, timeout=25)
+    if response.returncode:
+        raise ValueError(f"cannot check Go model catalog: {response.stderr.strip()}")
+    advertised = {entry["id"] for entry in json.loads(response.stdout)["data"]}
+    missing = sorted(set(definitions) - advertised)
+    if missing:
+        raise ValueError(f"OpenCode Go does not advertise: {', '.join(missing)}")
+    executable = binary()
+    with tempfile.TemporaryDirectory(prefix="aoe-opencode-preflight-") as directory:
+        root = Path(directory)
+        config = {"enabled_providers": ["opencode-go"], "autoupdate": False, "share": "disabled",
+                  "provider": {"opencode-go": {"models": definitions,
+                      "options": {"apiKey": "preflight-no-credential", "baseURL": "http://127.0.0.1:1"}}}}
+        config_path = root / "opencode.json"
+        config_path.write_text(json.dumps(config))
+        env = {"PATH": os.environ.get("PATH", ""), "NO_COLOR": "1",
+               "XDG_CONFIG_HOME": str(root / "config"), "XDG_DATA_HOME": str(root / "data"),
+               "XDG_CACHE_HOME": str(root / "cache"), "OPENCODE_CONFIG": str(config_path),
+               "OPENCODE_DISABLE_MODELS_FETCH": "true", "OPENCODE_DISABLE_AUTOUPDATE": "true"}
+        result = subprocess.run([str(executable), "models", "opencode-go"], cwd=root, env=env,
+                                capture_output=True, text=True, timeout=45)
+        if result.returncode:
+            raise ValueError(f"pinned OpenCode rejected model configuration: {result.stderr[-4000:]}")
+        resolved = set(result.stdout.splitlines())
+        for identifier in definitions:
+            if f"opencode-go/{identifier}" not in resolved:
+                raise ValueError(f"pinned OpenCode cannot resolve opencode-go/{identifier}")
+    print(f"OpenCode preflight passed: {', '.join(sorted(definitions))} (catalog/configuration only; account quota not checked)")
+
+
 def normalize(data, exit_code=None, reboot=False):
     """A truncated final JSONL record is expected when SSH/guest is interrupted."""
     events = []
@@ -57,12 +103,19 @@ def normalize(data, exit_code=None, reboot=False):
         unavailable = (code in (401, 402, 403, 404, 408, 429) or
                        isinstance(code, int) and code >= 500 or
                        name in ("ProviderAuthError", "ProviderModelNotFoundError"))
-        status = "unavailable" if unavailable else "failed"
+        if unavailable:
+            status = "unavailable"
+        elif name == "ContextOverflowError":
+            status = "failed"
+        else:
+            status = "harness_error"
     elif exit_code is not None:
         if reboot and exit_code == 255:
             status, summary = "interrupted", "agent session was interrupted by the referee's host reboot"
         elif exit_code == 255:
             status, summary = "harness_error", "OpenCode SSH disconnected; cause unknown; partial evidence retained"
+        elif exit_code == 137:
+            status, summary = "harness_error", "OpenCode was killed (exit 137); possible OOM or external SIGKILL; inspect VM console"
         elif exit_code in (130, 143):
             status, summary = "interrupted", "OpenCode adapter was interrupted"
         elif exit_code == 0 and steps and steps[-1].get("reason") in ("stop", "end_turn"):
@@ -210,10 +263,13 @@ def main():
         config = {"$schema": "https://opencode.ai/config.json", "enabled_providers": [provider], "model": model,
                   "autoupdate": False, "share": "disabled", "permission": "allow",
                   "provider": {provider: {"options": {"apiKey": "arena-proxy-placeholder", "baseURL": f"http://127.0.0.1:{remote_port}"}}}}
+        if provider == "opencode-go":
+            identifier, definition = go_model(model)
+            config["provider"][provider]["models"] = {identifier: definition}
         config_path = root / "opencode-config.json"
         atomic_json(config_path, config)
         setup([*scp, str(config_path), f"{host}:{remote}/opencode.json"])
-        args = [f"{remote}/opencode", "run", "--pure", "--format", "json", "--auto", "--dir", "/root", "--model", model]
+        args = [f"{remote}/opencode", "--print-logs", "--log-level", "DEBUG", "run", "--pure", "--format", "json", "--auto", "--dir", "/root", "--model", model]
         if values["REASONING_EFFORT"]:
             args.extend(["--variant", values["REASONING_EFFORT"]])
         artifacts = json.loads(os.environ.get("AOE_PLAYER_ARTIFACTS_JSON", "[]"))
@@ -228,9 +284,10 @@ def main():
             args.extend(["--file", destination])
         command = (f"chmod 700 {remote}/opencode; "
                    f"export XDG_CONFIG_HOME={remote}/config XDG_DATA_HOME={remote}/data XDG_CACHE_HOME={remote}/cache; "
-                   f"export OPENCODE_CONFIG={remote}/opencode.json OPENCODE_DISABLE_AUTOUPDATE=true; "
+                   f"export OPENCODE_CONFIG={remote}/opencode.json OPENCODE_DISABLE_AUTOUPDATE=true OPENCODE_DISABLE_MODELS_FETCH=true; "
                    f"{shlex.join(args)} -- \"$(cat {remote}/instruction.md)\" > {remote}/events.jsonl")
         with (root / "stderr.log").open("ab") as log:
+            os.chmod(root / "stderr.log", 0o600)
             agent = subprocess.Popen([*ssh, command], env=env, stdout=subprocess.DEVNULL, stderr=log)
         children.append(agent)
         raw = root / "opencode-events.jsonl"
@@ -279,10 +336,20 @@ def main():
                     child.wait()
         if secret:
             summary = summary.replace(secret, "[redacted]")
+            diagnostic = root / "stderr.log"
+            if diagnostic.exists():
+                diagnostic.write_bytes(diagnostic.read_bytes().replace(secret.encode(), b"[redacted]"))
         atomic_json(Path(values["RESULT_FILE"]), dict(identity, status=status, summary=summary, usage=usage,
                     transcript=str(transcript_path) if transcript_path.exists() else None))
     return 0 if status == "completed" else 1
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    if len(sys.argv) > 1 and sys.argv[1] == "--preflight":
+        try:
+            preflight(sys.argv[2:])
+        except Exception as error:
+            print(f"OpenCode preflight failed: {error}", file=sys.stderr)
+            sys.exit(2)
+    else:
+        sys.exit(main())

@@ -13,6 +13,13 @@ STEP = {"type": "step_finish", "part": {"reason": "stop", "tokens": {"input": 12
 
 
 class NormalizeTests(unittest.TestCase):
+    def test_unknown_server_error_and_sigkill_are_not_player_failures(self):
+        error = {"type": "error", "error": {"name": "UnknownError", "data": {"message": "Unexpected server error. Check server logs for details."}}}
+        self.assertEqual(normalize(stream(error), 0)[0], "harness_error")
+        for data in (b"", stream(STEP)):
+            self.assertEqual(normalize(data, 137)[0], "harness_error")
+        self.assertEqual(normalize(stream(STEP), 137)[2]["input_tokens"], 12)
+
     def test_success_keeps_estimate_separate_from_actual_spend(self):
         status, text, usage, transcript = normalize(stream(STEP, {"type": "text", "part": {"text": "done"}}), 0)
         self.assertEqual((status, text), ("completed", "done"))

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
-use aoe_domain::TerritoryConfig;
+use aoe_domain::{ArenaManifest, TerritoryConfig};
 use async_trait::async_trait;
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
@@ -13,6 +13,7 @@ use crate::{NetworkAssignment, RuntimeError, TerritoryDriver, TerritoryHandle};
 pub struct NixVmDriver {
     state_root: PathBuf,
     children: Mutex<HashMap<String, Child>>,
+    memory_mib: HashMap<String, u64>,
 }
 
 impl NixVmDriver {
@@ -21,7 +22,34 @@ impl NixVmDriver {
         Self {
             state_root: state_root.into(),
             children: Mutex::new(HashMap::new()),
+            memory_mib: HashMap::new(),
         }
+    }
+
+    /// Apply the validated manifest's memory allocation to each VM runner.
+    #[must_use]
+    pub fn with_manifest_memory(mut self, manifest: &ArenaManifest) -> Self {
+        self.memory_mib = manifest
+            .territories
+            .iter()
+            .filter_map(|territory| {
+                manifest
+                    .classes
+                    .iter()
+                    .find(|class| class.id == territory.class)
+                    .map(|class| (territory.id.clone(), class.resources.memory_mib))
+            })
+            .collect();
+        self
+    }
+
+    fn qemu_options(&self, territory: &str, network: &NetworkAssignment) -> String {
+        let mut options = network.qemu_opts();
+        if let Some(memory) = self.memory_mib.get(territory) {
+            // The NixOS runner places QEMU_OPTS after its compiled defaults.
+            options.push_str(&format!(" -m {memory}"));
+        }
+        options
     }
 
     async fn build_runner(&self, territory: &TerritoryConfig) -> Result<PathBuf, RuntimeError> {
@@ -85,7 +113,7 @@ impl TerritoryDriver for NixVmDriver {
         command
             .current_dir(vm_state)
             .env("QEMU_NET_OPTS", network.qemu_net_opts())
-            .env("QEMU_OPTS", network.qemu_opts())
+            .env("QEMU_OPTS", self.qemu_options(&territory.id, network))
             .stdin(Stdio::null())
             .stdout(Stdio::from(stdout))
             .stderr(Stdio::from(stderr))
@@ -146,6 +174,21 @@ mod tests {
     use std::fs;
 
     use super::find_runner;
+
+    #[test]
+    fn manifest_memory_overrides_compiled_vm_defaults() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../arenas/zero-downtime-rollout/arena.toml");
+        let mut manifest = aoe_domain::ArenaManifest::load(&path).unwrap();
+        manifest.classes[0].resources.memory_mib = 2048;
+        let plan = crate::NetworkPlan::from_manifest(&manifest, 26000, 23977).unwrap();
+        let driver = super::NixVmDriver::new("unused").with_manifest_memory(&manifest);
+        for network in &plan.assignments {
+            let options = driver.qemu_options(&network.territory, network);
+            assert!(options.ends_with(" -m 2048"));
+            assert!(options.starts_with(&network.qemu_opts()));
+        }
+    }
 
     #[test]
     fn finds_exactly_one_vm_runner() {

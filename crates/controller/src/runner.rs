@@ -111,8 +111,21 @@ pub(crate) async fn run_match_with_manifest(
     .map_err(|error| RunError::Provenance(error.to_string()))?;
     resolve_nixos_configs(&options.manifest, &mut manifest);
     validate_adapters(&manifest, &options.adapters)?;
+    preflight_opencode(
+        &options.adapters,
+        manifest
+            .agents
+            .iter()
+            .filter(|agent| agent.adapter == "opencode" && agent.model.starts_with("opencode-go/"))
+            .map(|agent| agent.model.clone())
+            .collect(),
+    )
+    .await
+    .map_err(RunError::Preflight)?;
     let plan = NetworkPlan::from_manifest(&manifest, options.base_port, options.multicast_port)?;
-    let driver = Arc::new(NixVmDriver::new(options.output.join("territories")));
+    let driver = Arc::new(
+        NixVmDriver::new(options.output.join("territories")).with_manifest_memory(&manifest),
+    );
     let mut supervisor = ArenaSupervisor::new(driver);
     supervisor.boot_all(&manifest, &plan).await?;
 
@@ -428,8 +441,15 @@ async fn run_booted_build_match(
                     )
                     .await?;
                 }
-                let result =
-                    run_milestone_verifier(options, plan, territory, milestone, &check_world).await;
+                let result = run_milestone_verifier(
+                    options,
+                    plan,
+                    territory,
+                    milestone,
+                    &check_world,
+                    manifest.rules.duration_seconds,
+                )
+                .await;
                 Ok((territory.id.clone(), result))
             });
             record_milestone_checks(
@@ -718,6 +738,7 @@ async fn run_milestone_verifier(
     territory: &aoe_domain::TerritoryConfig,
     milestone: &MilestoneConfig,
     world: &WorldState,
+    match_duration_seconds: u64,
 ) -> Result<serde_json::Value, String> {
     let assignment = plan
         .assignments
@@ -758,6 +779,10 @@ async fn run_milestone_verifier(
             )
             .env("AOE_PREVIOUS_EVIDENCE", previous_file)
             .env("AOE_EVIDENCE_FILE", &evidence_file)
+            .env(
+                "AOE_MATCH_DURATION_SECONDS",
+                match_duration_seconds.to_string(),
+            )
             .envs(
                 options
                     .scenario_seed
@@ -1127,6 +1152,34 @@ fn credential_value(path: &Path, key: &str) -> Result<String, RunError> {
         .ok_or_else(|| RunError::Preflight(format!("{} does not define {key}", path.display())))
 }
 
+pub(crate) async fn preflight_opencode(
+    adapters: &HashMap<String, PathBuf>,
+    mut models: Vec<String>,
+) -> Result<(), String> {
+    if models.is_empty() {
+        return Ok(());
+    }
+    models.sort();
+    models.dedup();
+    let adapter = adapters
+        .get("opencode")
+        .ok_or("OpenCode adapter mapping is missing")?;
+    let mut command = tokio::process::Command::new(adapter);
+    command.arg("--preflight").args(&models).kill_on_drop(true);
+    let output = tokio::time::timeout(Duration::from_secs(120), command.output())
+        .await
+        .map_err(|_| "OpenCode model preflight timed out".to_owned())?
+        .map_err(|error| format!("OpenCode model preflight could not start: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "OpenCode model preflight failed before VM boot: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    eprint!("{}", String::from_utf8_lossy(&output.stdout));
+    Ok(())
+}
+
 fn validate_adapters(
     manifest: &ArenaManifest,
     adapters: &HashMap<String, PathBuf>,
@@ -1382,6 +1435,19 @@ fn elapsed_ms(started: Instant) -> u64 {
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn opencode_preflight_failure_is_returned_before_boot() {
+        let adapters = std::collections::HashMap::from([(
+            "opencode".to_owned(),
+            std::path::PathBuf::from("/bin/false"),
+        )]);
+        let error = super::preflight_opencode(&adapters, vec!["opencode-go/invalid".into()])
+            .await
+            .unwrap_err();
+        assert!(error.contains("before VM boot"));
+        assert!(super::preflight_opencode(&adapters, vec![]).await.is_ok());
+    }
+
     use aoe_agent::{AgentResult, AgentStatus, AgentUsage, AgentUsageCheckpoint};
     use aoe_domain::{ArenaManifest, Event, FailureSource, MatchState};
     use aoe_referee::{BuildReferee, Referee};

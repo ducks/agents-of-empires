@@ -18,6 +18,7 @@ from pathlib import Path
 if "-N" in sys.argv:
     time.sleep(60)
 elif "events.jsonl" in sys.argv[-1]:
+    print("diagnostic test-controller-secret", file=sys.stderr)
     Path(os.environ["TEST_COMMAND"]).write_text(sys.argv[-1])
     if os.environ["TEST_REBOOT"] == "1":
         Path(os.environ["AOE_RESULT_FILE"]).with_name("referee-reboot").touch()
@@ -48,7 +49,7 @@ time.sleep(60)
                 events.append({"type": "error", "error": {"name": "APIError", "data": {"statusCode": 429, "message": "busy"}}})
             env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ["PATH"],
                        AOE_AGENT_ID="test", AOE_TERRITORY_ID="one", AOE_TERRITORY_HOST="127.0.0.1", AOE_SSH_PORT="26000",
-                       AOE_MODEL="opencode-go/test-model", AOE_REASONING_EFFORT="high", AOE_INSTRUCTION_FILE=str(instruction),
+                       AOE_MODEL="opencode-go/glm-5.3", AOE_REASONING_EFFORT="high", AOE_INSTRUCTION_FILE=str(instruction),
                        AOE_CREDENTIAL_FILE=str(credential), AOE_RESULT_FILE=str(root / "result.json"),
                        AOE_USAGE_FILE=str(root / "usage.json"), AOE_OPENCODE_BINARY="/bin/true", AOE_OPENCODE_PROXY=str(proxy),
                        TEST_EXIT=str(code), TEST_EVENTS="".join(json.dumps(e)+"\n" for e in events),
@@ -56,13 +57,17 @@ time.sleep(60)
             process = subprocess.run(["bash", str(Path(__file__).with_name("opencode.sh"))], env=env,
                                      capture_output=True, timeout=20)
             result = json.loads((root / "result.json").read_text())
-            for artifact in ("result.json", "usage.json", "transcript.json", "opencode-config.json", "command.txt"):
+            for artifact in ("result.json", "usage.json", "transcript.json", "opencode-config.json", "command.txt", "stderr.log"):
                 self.assertNotIn("test-controller-secret", (root / artifact).read_text())
             self.assertNotIn(b"test-controller-secret", process.stdout + process.stderr)
             config = json.loads((root / "opencode-config.json").read_text())
             self.assertEqual(config["enabled_providers"], ["opencode-go"])
+            self.assertEqual(config["provider"]["opencode-go"]["models"]["glm-5.3"]["id"], "glm-5.3")
             self.assertTrue(config["provider"]["opencode-go"]["options"]["baseURL"].startswith("http://127.0.0.1:"))
             command = (root / "command.txt").read_text()
+            self.assertIn("--print-logs --log-level DEBUG", command)
+            self.assertIn("diagnostic [redacted]", (root / "stderr.log").read_text())
+            self.assertEqual((root / "stderr.log").stat().st_mode & 0o777, 0o600)
             self.assertIn("--variant high", command)
             self.assertIn("--format json", command)
             return result
