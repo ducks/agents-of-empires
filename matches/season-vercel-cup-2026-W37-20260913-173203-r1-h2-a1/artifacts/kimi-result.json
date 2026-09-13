@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "agent": "kimi",
+  "territory": "rollout-three",
+  "status": "completed",
+  "summary": "The v2 slot fails because `/opt/rollout/v2.py` doesn't exist yet. I'll create it, start the service, then atomically flip the upstream file.v2 is fully verified on 8082. Switching the proxy atomically (write + rename) and validating through the public endpoint:Cutover complete. Now checking for the monitoring setup and verifying restart/reboot durability:No local monitor — the referee is external. Both services are enabled. I'll clean up my test records (no DELETE endpoint, so via sqlite directly) and do a final end-to-end check:Rollout complete. Summary:\n\n**What was done**\n1. **Diagnosed** the dormant slot: `rollout-v2.service` was in `start-limit-hit` because `/opt/rollout/v2.py` didn't exist.\n2. **Implemented v2** at `/opt/rollout/v2.py` — same SQLite-backed record store as v1 (`/var/lib/rollout/records.sqlite3`), listening on `127.0.0.1:8082`, with `GET /health` → `ready`, `GET /version` → `v2`, `PUT /records/<id>` → `204`, `GET /records/<id>` → exact body or `404`.\n3. **Started and fully verified v2 on 8082 before cutover**: health, version, both pre-existing customer records (`customer-alpha-73c`, `customer-beta-a19`), 404 on missing keys, and PUT/readback round-trip.\n4. **Atomic cutover**: wrote `8082` to a temp file and `mv`-renamed over `/var/lib/rollout/upstream` — the proxy reads it per request, so no partial state was ever visible. v1 and proxy were never stopped or restarted.\n5. **Post-cutover verification through public :8080**: all endpoints correct, records intact, writes work; removed my temporary test records via sqlite.\n\n**Durability**\n- `rollout-v2.service` and `rollout-proxy.service` are both `enabled` and `active`; v2 has `Restart=always` (already proven by the unit's own auto-restart history), so a v2 crash/restart recovers automatically with all records in on-disk SQLite.\n- Reboot survival needs nothing extra: the unit, `/opt/rollout/v2.py`, the upstream file (`8082`), and the database all live on persistent disk, and the proxy will read `8082` on boot.",
+  "usage": {
+    "rounds": null,
+    "tool_calls": null,
+    "input_tokens": 12760,
+    "output_tokens": 3933,
+    "cost_microusd": 108968,
+    "resource_units": 1
+  },
+  "transcript": "seasons/vercel-cup/2026-W37-20260913-173203/round-01/heat-02/agents/kimi/transcript.json"
+}

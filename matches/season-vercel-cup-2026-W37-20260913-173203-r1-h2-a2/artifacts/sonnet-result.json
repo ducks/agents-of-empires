@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "agent": "sonnet",
+  "territory": "rollout-two",
+  "status": "completed",
+  "summary": "Now I'll write v2.py, using the same sqlite DB for record persistence (preserving existing records) but reporting version v2.v2 is running. Let's verify its endpoints directly, then check an existing record via v1/proxy before cutover.v2 correctly sees existing records via the shared DB. Now let's do the atomic cutover of the upstream file, with a tight monitoring loop around it to confirm zero downtime.Atomic rename via `mv` on the same filesystem, and the monitor shows 200 for every request throughout — no outage. Let's confirm the switch took effect and verify version/records/health end-to-end through the public port.All working through the public endpoint on v2. Now confirm v1/proxy are untouched (not restarted) and check service states and enablement.v1 and proxy were never restarted since the initial boot — cutover was seamless. Now verify persistence across a v2 restart and confirm the record file/service will survive reboot.Records and service survive a v2 restart. Everything is enabled for boot persistence (`/opt/rollout/v2.py` is a plain file on disk, `/etc/systemd/system/rollout-v2.service` is enabled, and the sqlite DB is on persistent storage), so it will also survive a full reboot without agent help.\n\n**Summary:**\n- Implemented `/opt/rollout/v2.py`: same sqlite-backed records store as v1 (shared DB at `/var/lib/rollout/records.sqlite3`, preserving all existing records), reporting `v2` on `/version`, listening on `127.0.0.1:8082`.\n- Started `rollout-v2.service` (was crash-looping due to missing file) and verified `/health`, `/version`, and all pre-existing records matched v1 exactly before cutover.\n- Atomically switched `/var/lib/rollout/upstream` from `8081` to `8082` via `mv` (same-filesystem rename) while running a 200ms-resolution monitor against the public port 8080 — every single request returned `200` throughout, confirming zero-downtime cutover.\n- Confirmed via `systemctl show` that `rollout-v1.service` and `rollout-proxy.service` were never restarted or stopped during the whole process.\n- Verified end-to-end through the public endpoint post-cutover: version=`v2`, health=`ready`, both pre-existing records intact, and a new write/read round-trips correctly.\n- Restarted `rollout-v2.service` and confirmed records and health survive it; all three services remain `enabled` for reboot persistence.",
+  "usage": {
+    "rounds": null,
+    "tool_calls": null,
+    "input_tokens": 110000,
+    "output_tokens": 3572,
+    "cost_microusd": 255720,
+    "resource_units": 1
+  },
+  "transcript": "seasons/vercel-cup/2026-W37-20260913-173203/round-01/heat-02.replay-1/agents/sonnet/transcript.json"
+}

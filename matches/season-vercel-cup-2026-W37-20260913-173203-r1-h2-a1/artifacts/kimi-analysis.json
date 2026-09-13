@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "analyzer": "aoe-controller/20260816.0.1",
+  "source_sha256": "b30cf26629029499642857a7af9e8146cd45be21d12f3360752060678ff7d8ca",
+  "agent": "kimi",
+  "territory": "rollout-three",
+  "model": "vercel/moonshotai/kimi-k3",
+  "outcome": "completed",
+  "metrics": {
+    "tool_calls": 7,
+    "tool_errors": 0,
+    "discoveries": 1,
+    "mutations": 3,
+    "lifecycle_actions": 1,
+    "validations": 2,
+    "first_mutation_after_ms": 6925,
+    "last_observed_after_ms": 43676
+  },
+  "architecture": {
+    "technologies": [
+      "Python",
+      "SQLite",
+      "systemd"
+    ],
+    "service_units": [
+      "etc/systemd/system/rollout-v2.service",
+      "rollout-proxy.service",
+      "rollout-v1.service",
+      "rollout-v2.service"
+    ],
+    "persistent_paths": [
+      "/etc/systemd/system/rollout-v2.service",
+      "/opt/rollout",
+      "/opt/rollout/v2.py",
+      "/var/lib/rollout",
+      "/var/lib/rollout/records.sqlite3",
+      "/var/lib/rollout/upstream",
+      "/var/lib/rollout/upstream.tmp"
+    ]
+  },
+  "actions": [
+    {
+      "index": 0,
+      "tool_id": "Bash_0_8e4aad82",
+      "kind": "validation",
+      "started_after_ms": 2499,
+      "duration_ms": 91,
+      "description": "Check service status and directories",
+      "command": "systemctl status rollout-proxy.service rollout-v1.service rollout-v2.service 2>&1 | head -50; ls /opt/rollout/ /var/lib/rollout/ 2>&1",
+      "success": true,
+      "output_excerpt": "● rollout-proxy.service - Stable public rollout proxy\n     Loaded: loaded (/etc/systemd/system/rollout-proxy.service; enabled; preset: ignored)\n     Active: active (running) since Sun 2026-09-13 17:35:41 UTC; 9s ago\n Invocation: bdf499e64e9249fe8fd1f0692a77dd52\n   Main PID: 550 (…"
+    },
+    {
+      "index": 1,
+      "tool_id": "Bash_0_dbffbb7c",
+      "kind": "mutation",
+      "started_after_ms": 6925,
+      "duration_ms": 92,
+      "description": "Inspect v1, proxy, unit, db",
+      "command": "cat /nix/store/13qi755lbgrlrh6c5jqjdlpf1f7nvffv-rollout-v1.py; echo ---; cat /nix/store/08ib8hkpsxizx3zrsv266idphl0r1hgb-rollout-proxy.py; echo ---; cat /etc/systemd/system/rollout-v2.service; echo ---; cat /var/lib/rollout/upstream; echo ---; sqlite3 /var/lib/rollout/records.sqlite3 '.schema' 'select * from records limit 20;' 2>&1 || python3 -c \"\nimport sqlite3; c=sqlite3.connect('/var/lib/rollout/records.sqlite3')\nprint(c.execute(\\\"select name,sql from sqlite_master\\\").fetchall())\nfor t in [r[0] for r in c.execute(\\\"select name from sqlite_master where type='table'\\\")]:\n    print(t, c.execute(f'select * from {t}').fetchmany(10))\"",
+      "success": true,
+      "output_excerpt": "import sqlite3\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n\nDB = \"/var/lib/rollout/records.sqlite3\"\n\ndef database():\n    connection = sqlite3.connect(DB, timeout=10)\n    connection.execute(\"CREATE TABLE IF NOT EXISTS records (id TEXT PRIMARY KEY, value TEX…"
+    },
+    {
+      "index": 2,
+      "tool_id": "Write_0_9064b125",
+      "kind": "mutation",
+      "started_after_ms": 16055,
+      "duration_ms": 0,
+      "description": null,
+      "command": "Write /opt/rollout/v2.py",
+      "success": true,
+      "output_excerpt": "Successfully wrote to /opt/rollout/v2.py"
+    },
+    {
+      "index": 3,
+      "tool_id": "Bash_0_024207f9",
+      "kind": "lifecycle",
+      "started_after_ms": 20428,
+      "duration_ms": 503,
+      "description": "Start v2 and verify all endpoints on 8082",
+      "command": "systemctl reset-failed rollout-v2.service && systemctl start rollout-v2.service\nfor i in $(seq 1 20); do\n  out=$(curl -fsS --max-time 1 http://127.0.0.1:8082/health 2>/dev/null) && [ \"$out\" = \"ready\" ] && break\n  sleep 0.2\ndone\necho \"health: $out\"\necho \"version: $(curl -fsS http://127.0.0.1:8082/version)\"\necho \"alpha: $(curl -fsS http://127.0.0.1:8082/records/customer-alpha-73c)\"\necho \"beta: $(curl -fsS http://127.0.0.1:8082/records/customer-beta-a19)\"\ncurl -s -o /dev/null -w 'missing: %{http_code}\\n' http://127.0.0.1:8082/records/does-not-exist\ncurl -s -o /dev/null -w 'put: %{http_code}\\n' -X PUT --data 'v2-selftest' http://127.0.0.1:8082/records/selftest-v2\necho \"readback: $(curl -fsS http…",
+      "success": true,
+      "output_excerpt": "health: ready\nversion: v2\nalpha: alpha-original\nbeta: beta-original\nmissing: 404\nput: 204\nreadback: v2-selftest"
+    },
+    {
+      "index": 4,
+      "tool_id": "Bash_0_1e2f33ee",
+      "kind": "mutation",
+      "started_after_ms": 25761,
+      "duration_ms": 275,
+      "description": "Atomic upstream switch and public endpoint verification",
+      "command": "printf '8082\\n' > /var/lib/rollout/upstream.tmp && mv /var/lib/rollout/upstream.tmp /var/lib/rollout/upstream\ncat /var/lib/rollout/upstream\necho \"health: $(curl -fsS http://127.0.0.1:8080/health)\"\necho \"version: $(curl -fsS http://127.0.0.1:8080/version)\"\necho \"alpha: $(curl -fsS http://127.0.0.1:8080/records/customer-alpha-73c)\"\necho \"beta: $(curl -fsS http://127.0.0.1:8080/records/customer-beta-a19)\"\necho \"selftest: $(curl -fsS http://127.0.0.1:8080/records/selftest-v2)\"\ncurl -s -o /dev/null -w 'put-new: %{http_code}\\n' -X PUT --data 'post-cutover' http://127.0.0.1:8080/records/post-cutover-check\necho \"readback: $(curl -fsS http://127.0.0.1:8080/records/post-cutover-check)\"\ncurl -s -o /dev…",
+      "success": true,
+      "output_excerpt": "8082\nhealth: ready\nversion: v2\nalpha: alpha-original\nbeta: beta-original\nselftest: v2-selftest\nput-new: 204\nreadback: post-cutover\nmissing: 404"
+    },
+    {
+      "index": 5,
+      "tool_id": "Bash_0_8dcc5810",
+      "kind": "discovery",
+      "started_after_ms": 32486,
+      "duration_ms": 123,
+      "description": "Look for monitor and check enablement",
+      "command": "ps aux | grep -iE 'monitor|referee|poll' | grep -v grep; systemctl list-units --all | grep -iE 'monitor|referee|seed'; systemctl is-enabled rollout-v2.service rollout-proxy.service",
+      "success": true,
+      "output_excerpt": "root         900  0.5  6.4 128380 46824 ?        Sl   17:35   0:00 /var/tmp/agents-of-empires-kimi/claux --print Roll the live stateful service from v1 to v2 using the contract appended below. Preserve every request and existing record during cutover. Speed matters, but any exter…"
+    },
+    {
+      "index": 6,
+      "tool_id": "Bash_0_7da23a2d",
+      "kind": "validation",
+      "started_after_ms": 43460,
+      "duration_ms": 216,
+      "description": "Clean test records and final verification",
+      "command": "python3 -c \"\nimport sqlite3\nc = sqlite3.connect('/var/lib/rollout/records.sqlite3', timeout=10)\nc.execute(\\\"DELETE FROM records WHERE id IN ('selftest-v2','post-cutover-check')\\\")\nc.commit()\nprint(c.execute('SELECT id, value FROM records').fetchall())\nc.close()\"\nsystemctl is-active rollout-proxy.service rollout-v1.service rollout-v2.service\necho \"upstream: $(cat /var/lib/rollout/upstream)\"\necho \"health: $(curl -fsS http://127.0.0.1:8080/health)\"\necho \"version: $(curl -fsS http://127.0.0.1:8080/version)\"\necho \"alpha: $(curl -fsS http://127.0.0.1:8080/records/customer-alpha-73c)\"\necho \"beta: $(curl -fsS http://127.0.0.1:8080/records/customer-beta-a19)\"",
+      "success": true,
+      "output_excerpt": "[('customer-alpha-73c', 'alpha-original'), ('customer-beta-a19', 'beta-original')]\nactive\nactive\nactive\nupstream: 8082\nhealth: ready\nversion: v2\nalpha: alpha-original\nbeta: beta-original"
+    }
+  ]
+}
