@@ -10,6 +10,10 @@ cat >"$root/bin/python" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 while (( $# )); do
+  if [[ "$1" == "--upstream" ]]; then
+    [[ "$2" == "${TEST_UPSTREAM:-https://openrouter.ai}" ]]
+    [[ "$REPLAYBOOK_OPENAI_API_KEY" == "${TEST_PROXY_KEY:-controller-only-secret}" ]]
+  fi
   if [[ "$1" == "--ready-file" ]]; then
     printf '%s\n' 41000 >"$2"
     break
@@ -23,6 +27,18 @@ cat >"$root/bin/ssh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 for argument in "$@"; do
+  if [[ "$argument" == *"--output-format json"* ]]; then
+    [[ "$argument" != *controller-only-secret* && "$argument" != *gateway-test-secret* ]]
+    [[ "$argument" == *"--provider ${TEST_PROVIDER:-openrouter} --model 'test/model'"* ]]
+    [[ "$argument" == *"${TEST_KEY_ENV:-OPENROUTER_API_KEY}=arena-proxy-placeholder"* ]]
+    [[ "$argument" == *"http://127.0.0.1:18000${TEST_API_PATH:-/api/v1}"* ]]
+    if [[ "$AOE_REASONING_EFFORT" == default ]]; then
+      [[ "$argument" == *"-v effort=''"* ]]
+      [[ "$argument" == *'effort != ""'* ]]
+    else
+      [[ "$argument" == *"-v effort='${AOE_REASONING_EFFORT}'"* ]]
+    fi
+  fi
   if [[ "$argument" == "-N" ]]; then
     sleep 30
   fi
@@ -247,3 +263,59 @@ jq -e '.status == "failed" and .summary == "Claux exited with status 1: somethin
 run_adapter_case TEST_REMOTE_EXIT=0
 [[ "$last_status" == 0 ]]
 jq -e '.status == "completed" and .summary == "held the line"' "$root/run/result.json" >/dev/null
+
+# Gateway routes retain the same result/usage contract and never forward keys.
+run_adapter_case AOE_MODEL=vercel/test/model AI_GATEWAY_API_KEY=gateway-test-secret \
+  TEST_UPSTREAM=https://ai-gateway.vercel.sh TEST_PROXY_KEY=gateway-test-secret \
+  TEST_PROVIDER=vercel TEST_KEY_ENV=AI_GATEWAY_API_KEY TEST_API_PATH=/v1 \
+  REPLAYBOOK_OPENAI_API_KEY=wrong-inherited-key
+[[ "$last_status" == 0 ]]
+jq -e '.status == "completed" and .usage.cost_microusd == 1200' "$root/run/result.json" >/dev/null
+
+run_adapter_case AOE_MODEL=vercel/test/model AI_GATEWAY_API_KEY=gateway-test-secret \
+  TEST_UPSTREAM=https://ai-gateway.vercel.sh TEST_PROXY_KEY=gateway-test-secret \
+  TEST_PROVIDER=vercel TEST_KEY_ENV=AI_GATEWAY_API_KEY TEST_API_PATH=/v1 \
+  TEST_REMOTE_EXIT=12 TEST_NO_NATIVE_RESULT=1
+[[ "$last_status" == 12 ]]
+jq -e '.status == "unavailable"' "$root/run/result.json" >/dev/null
+
+run_adapter_case AOE_MODEL=vercel/test/model AI_GATEWAY_API_KEY=
+[[ "$last_status" == 2 ]]
+run_adapter_case AOE_MODEL=vercel/ AI_GATEWAY_API_KEY=gateway-test-secret
+[[ "$last_status" == 2 ]]
+
+if rg -q 'gateway-test-secret' "$root/run"; then
+  echo 'Gateway credential leaked into adapter artifacts' >&2
+  exit 1
+fi
+
+# Credential preparation uses the requested provider only and quotes keys.
+run_adapter_case AOE_MODEL=vercel/test/model AI_GATEWAY_API_KEY=gateway-test-secret \
+  TEST_UPSTREAM=https://ai-gateway.vercel.sh TEST_PROXY_KEY=gateway-test-secret \
+  TEST_PROVIDER=vercel TEST_KEY_ENV=AI_GATEWAY_API_KEY TEST_API_PATH=/v1 \
+  AOE_REASONING_EFFORT=default
+[[ "$last_status" == 0 ]]
+jq -e '.status == "completed"' "$root/run/result.json" >/dev/null
+
+# Credential preparation uses the requested provider only and quotes keys.
+credential_helper="$(dirname "$adapter")/../scripts/prepare-infra-core-credentials.sh"
+for route in openrouter vercel; do
+  prepared="$(TMPDIR="$root" OPENROUTER_API_KEY='router test $key' \
+    AI_GATEWAY_API_KEY='gateway test $key' bash "$credential_helper" "$route")"
+  [[ "$(stat -c %a "$prepared")" == 700 ]]
+  files=("$prepared"/*.env)
+  [[ "${#files[@]}" == 12 ]]
+  for file in "${files[@]}"; do
+    [[ "$(stat -c %a "$file")" == 600 ]]
+    (
+      unset OPENROUTER_API_KEY AI_GATEWAY_API_KEY
+      source "$file"
+      if [[ "$route" == vercel ]]; then
+        [[ "$AI_GATEWAY_API_KEY" == 'gateway test $key' && -z "${OPENROUTER_API_KEY:-}" ]]
+      else
+        [[ "$OPENROUTER_API_KEY" == 'router test $key' && -z "${AI_GATEWAY_API_KEY:-}" ]]
+      fi
+      [[ "$AOE_SSH_PASSWORD" == "$(basename "$file" .env)-race" ]]
+    )
+  done
+done

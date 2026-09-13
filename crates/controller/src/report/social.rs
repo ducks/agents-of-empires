@@ -36,9 +36,13 @@ impl Card {
 
     pub(super) fn season(season: &SeasonReport) -> Self {
         Self {
-            title: format!("{} — Agents of Empires", season.id),
+            title: format!(
+                "{} — Agents of Empires",
+                super::cups::identity(&season.id).0
+            ),
             label: "THE TOURNAMENT CIRCUIT".into(),
-            headline: season.id.clone(),
+            headline: super::cups::identity(&season.id).0.into(),
+            description: super::cups::identity(&season.id).2.into(),
             subtitle: "New brackets. Unscripted outcomes.".into(),
             ..Self::home()
         }

@@ -332,6 +332,8 @@ pub struct DrawOptions {
     pub week: String,
     /// Optional extra entropy published with the draw.
     pub salt: Option<String>,
+    /// Number sampled from the eligible fleet; None enters the whole fleet.
+    pub entrants: Option<usize>,
     pub output: PathBuf,
 }
 
@@ -350,6 +352,9 @@ pub struct WeekDraw {
     pub heat_size: usize,
     pub rules: SeasonRules,
     pub fleet: Vec<FleetEntry>,
+    /// Pool snapshot for sampled draws; absent in legacy/full-pool draws.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub eligible_pool: Option<Vec<FleetEntry>>,
     pub arenas: Vec<DrawArena>,
     pub shape: Vec<RoundShape>,
     /// Arena drawn for each round, by index into `arenas`.
@@ -437,7 +442,14 @@ pub fn draw_week(options: &DrawOptions) -> Result<WeekDraw, SeasonError> {
         });
     }
     let heat_size = heat_size.expect("validated non-empty arena pool");
-    let shape = bracket_shape(season.fleet.len(), heat_size)?;
+    let count = options.entrants.unwrap_or(season.fleet.len());
+    if count > season.fleet.len() {
+        return Err(SeasonError::Invalid(format!(
+            "requested {count} entrants but the pool has {}",
+            season.fleet.len()
+        )));
+    }
+    let shape = bracket_shape(count, heat_size)?;
 
     let draw_seed = match &options.salt {
         Some(salt) if !salt.is_empty() => {
@@ -446,12 +458,13 @@ pub fn draw_week(options: &DrawOptions) -> Result<WeekDraw, SeasonError> {
         _ => format!("{}/{}", season.season.id, options.week),
     };
     let mut rng = DrawRng::from_seed(&draw_seed);
+    let fleet = select_entrants(&season.fleet, options.entrants, &draw_seed);
 
     // Round arenas: one independent pick per round.
     let round_arenas: Vec<usize> = (0..shape.len()).map(|_| rng.below(arenas.len())).collect();
 
     // Round one: shuffle the fleet, chunk into heats, seat each heat.
-    let mut order: Vec<String> = season.fleet.iter().map(|entry| entry.id.clone()).collect();
+    let mut order: Vec<String> = fleet.iter().map(|entry| entry.id.clone()).collect();
     rng.shuffle(&mut order);
     let first = &shape[0];
     let mut heats = Vec::with_capacity(first.heats);
@@ -476,7 +489,8 @@ pub fn draw_week(options: &DrawOptions) -> Result<WeekDraw, SeasonError> {
         variation_seed_commitment: commitment,
         heat_size,
         rules: season.rules.clone(),
-        fleet: season.fleet.clone(),
+        fleet,
+        eligible_pool: options.entrants.map(|_| season.fleet.clone()),
         arenas,
         shape,
         round_arenas,
@@ -491,6 +505,17 @@ pub fn draw_week(options: &DrawOptions) -> Result<WeekDraw, SeasonError> {
     write_private(&options.output.join(SECRET_SEED_FILE), secret.as_bytes())?;
     write_json_atomic(&draw_path, &draw)?;
     Ok(draw)
+}
+
+/// Sample independently of arena and seating randomness; legacy order stays intact.
+fn select_entrants(pool: &[FleetEntry], count: Option<usize>, seed: &str) -> Vec<FleetEntry> {
+    let mut selected = pool.to_vec();
+    if let Some(count) = count {
+        selected.sort_by(|a, b| a.id.cmp(&b.id));
+        DrawRng::from_seed(&format!("{seed}/entrants")).shuffle(&mut selected);
+        selected.truncate(count);
+    }
+    selected
 }
 
 /// Assign the given fleet members to territories in a seeded random order.
@@ -1535,6 +1560,87 @@ mod tests {
         path
     }
 
+    #[test]
+    fn entrant_sampling_is_stable_unique_and_preserves_legacy_order() {
+        let pool = fleet(12);
+        let selected = select_entrants(&pool, Some(6), "cup/week");
+        assert_eq!(selected.len(), 6);
+        assert_eq!(
+            selected
+                .iter()
+                .map(|e| &e.id)
+                .collect::<BTreeSet<_>>()
+                .len(),
+            6
+        );
+        let mut reversed = pool.clone();
+        reversed.reverse();
+        assert_eq!(selected, select_entrants(&reversed, Some(6), "cup/week"));
+        assert_eq!(pool, select_entrants(&pool, None, "cup/week"));
+        assert!((1..10).any(|i| select_entrants(&pool, Some(6), &format!("cup/{i}")) != selected));
+    }
+
+    #[test]
+    fn sampled_draw_freezes_six_entrants_and_rejects_invalid_counts() {
+        let output = temporary_directory();
+        let mut options = DrawOptions {
+            season: Path::new(env!("CARGO_MANIFEST_DIR")).join("../../suites/vercel-cup.toml"),
+            week: "pool-test".into(),
+            salt: None,
+            entrants: Some(6),
+            output: output.clone(),
+        };
+        let draw = draw_week(&options).unwrap();
+        assert_eq!(draw.fleet.len(), 6);
+        assert_eq!(draw.eligible_pool.as_ref().unwrap().len(), 12);
+        assert_eq!(draw.shape.len(), 2);
+        let loaded: WeekDraw =
+            serde_json::from_slice(&fs::read(output.join("draw.json")).unwrap()).unwrap();
+        assert_eq!(draw, loaded);
+        let seated: BTreeSet<_> = draw
+            .first_round
+            .heats
+            .iter()
+            .flat_map(|h| h.seats.values())
+            .collect();
+        assert_eq!(seated, draw.fleet.iter().map(|e| &e.id).collect());
+        for count in [0, 2, 13] {
+            options.entrants = Some(count);
+            options.output = output.join(format!("invalid-{count}"));
+            assert!(draw_week(&options).is_err());
+            assert!(!options.output.exists());
+        }
+        fs::remove_dir_all(output).unwrap();
+    }
+
+    #[test]
+    fn vercel_cup_has_twelve_claux_models_and_three_rounds() {
+        let manifest = SeasonManifest::load(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../suites/vercel-cup.toml"),
+        )
+        .unwrap();
+        assert_eq!(manifest.fleet.len(), 12);
+        for entry in &manifest.fleet {
+            assert_eq!(entry.adapter, "claux");
+            assert!(entry.model.starts_with("vercel/"));
+            assert!(!entry.model.starts_with("vercel/meta/"));
+            assert!(!entry.model.starts_with("vercel/xai/"));
+            assert!(!entry.model.starts_with("vercel/spacexai/"));
+        }
+        let shape = bracket_shape(12, 3).unwrap();
+        assert_eq!(
+            shape.iter().map(|round| round.heats).collect::<Vec<_>>(),
+            vec![4, 2, 1]
+        );
+        assert_eq!(
+            shape
+                .iter()
+                .map(|round| round.wildcards)
+                .collect::<Vec<_>>(),
+            vec![2, 1, 0]
+        );
+    }
+
     fn test_heat(id: usize, winner: Option<&str>) -> HeatResult {
         HeatResult {
             heat: id,
@@ -2201,6 +2307,7 @@ mod tests {
             heat_size: 3,
             rules: SeasonRules::default(),
             fleet: fleet(n),
+            eligible_pool: None,
             arenas: vec![],
             shape: bracket_shape(n, 3).expect("shape"),
             round_arenas: vec![],

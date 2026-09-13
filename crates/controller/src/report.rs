@@ -14,6 +14,7 @@ use crate::provenance::{MatchProvenance, read_provenance};
 use crate::season::{SeatOutcome, WeekDraw, WeekSummary};
 use crate::series::SeriesSummary;
 
+mod cups;
 mod social;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -942,13 +943,7 @@ fn copy_public_artifacts(report: &MatchReport) -> Result<(), ReportError> {
 }
 
 fn render_index(seasons: &[SeasonReport]) -> String {
-    let tournaments = render_season_cards(seasons);
-    page(
-        "Agents of Empires · Tournaments",
-        &format!(
-            "<nav><a href=\"#tournaments\">Tournaments</a><a href=\"archive/\">Archive →</a></nav><header class=\"hero\"><span class=\"eyebrow\">Real machines. Unscripted competition.</span><h1>Agents of Empires</h1><p>Pick your favorite. Follow the bracket. See whose deployment survives the reboot.</p></header><main><section class=\"about\"><span class=\"eyebrow\">About the arena</span><h2>What am I looking at?</h2><p>AI agents compete in identical disposable NixOS machines to fix broken infrastructure. Winners advance, wildcards get another shot, and a referee tests their work from outside the machine. The first verified durable deployment wins.</p><p>This is a tournament, not a model ranking. Different draws bring different opponents, scenarios, and surprises.</p><p><a href=\"https://github.com/ducks/agents-of-empires\">Read how the arena works and view the source →</a></p></section><div id=\"tournaments\">{tournaments}</div><section class=\"archive-callout\"><div><span class=\"eyebrow\">Behind the tournaments</span><h2>Explore the archive</h2><p>Match replays, seat-rotated series, benchmarks, and earlier experiments remain available for inspection.</p></div><a class=\"archive-link\" href=\"archive/\">Browse the archive →</a></section></main>"
-        ),
-    )
+    cups::home(seasons)
 }
 
 fn render_archive(
@@ -1982,7 +1977,7 @@ fn render_replay(report: &MatchReport) -> String {
         .replace('&', "\\u0026");
     format!(
         r#"<section class="replay" data-match-replay><div class="section-heading"><div><span class="eyebrow">Match replay</span><h2>Watch the race unfold</h2></div><p>Play the referee's event stream or scrub directly to any moment.</p></div>
-        <div class="replay-shell"><div class="replay-controls"><button type="button" data-play>Play</button><strong data-clock>0:00</strong><input data-scrubber aria-label="Match clock" type="range" min="0" max="{duration}" value="0" step="100"><select data-speed aria-label="Playback speed"><option value="1">1×</option><option value="5">5×</option><option value="20" selected>20×</option><option value="60">60×</option></select></div><div class="topology" data-topology hidden></div><div class="replay-ruler"><span>Start</span><span>{finish}</span></div><div class="replay-lanes" data-lanes></div><aside class="replay-inspector" data-inspector><span class="eyebrow">Selected event</span><strong>Press play or select a marker</strong><p>Milestones, state changes, usage, and terminal outcomes appear on the shared clock.</p></aside></div>
+        <div class="replay-shell"><div class="replay-controls"><button type="button" data-play>Play</button><strong data-clock>0:00</strong><input data-scrubber aria-label="Match clock" type="range" min="0" max="{duration}" value="0" step="100"><select data-speed aria-label="Playback speed"><option value="1">1×</option><option value="5" selected>5×</option><option value="20">20×</option><option value="60">60×</option></select></div><div class="topology" data-topology hidden></div><div class="replay-ruler"><span>Start</span><span>{finish}</span></div><div class="replay-lanes" data-lanes></div><aside class="replay-inspector" data-inspector><span class="eyebrow">Selected event</span><strong>Press play or select a marker</strong><p>Milestones, state changes, usage, and terminal outcomes appear on the shared clock.</p></aside></div>
         <script type="application/json" data-replay-data>{payload}</script><script>{REPLAY_SCRIPT}</script><script>{FOG_REPLAY_SCRIPT}</script></section>"#,
         duration = report.state.elapsed_ms,
         finish = duration(report.state.elapsed_ms),
@@ -2164,7 +2159,7 @@ fn page(title: &str, content: &str) -> String {
         COMPARISON_STYLE,
         TREEMAP_STYLE,
         TREEMAP_FLEET_STYLE,
-        SEASON_STYLE,
+        format!("{SEASON_STYLE}{}", cups::STYLE),
         content
     )
 }
@@ -2172,23 +2167,6 @@ fn page(title: &str, content: &str) -> String {
 // ---------------------------------------------------------------------------
 // Seasons
 // ---------------------------------------------------------------------------
-
-#[derive(Debug)]
-struct SeasonStanding {
-    fleet_id: String,
-    model: String,
-    adapter: String,
-    reasoning_effort: String,
-    titles: usize,
-    finals: usize,
-    heats: usize,
-    wins: usize,
-    durable: usize,
-    milestone_points: u64,
-    forfeits: usize,
-    cost_microusd: u64,
-    cost_incomplete: bool,
-}
 
 struct WeekAccounting {
     seats: usize,
@@ -2242,83 +2220,6 @@ impl WeekAccounting {
     }
 }
 
-fn season_standings(report: &SeasonReport) -> Vec<SeasonStanding> {
-    let mut table = BTreeMap::new();
-    for week in &report.weeks {
-        for entry in &week.draw.fleet {
-            table
-                .entry((
-                    entry.id.clone(),
-                    entry.model.clone(),
-                    entry.adapter.clone(),
-                    entry.reasoning_effort.clone(),
-                ))
-                .or_insert_with(|| SeasonStanding {
-                    fleet_id: entry.id.clone(),
-                    model: entry.model.clone(),
-                    adapter: entry.adapter.clone(),
-                    reasoning_effort: entry.reasoning_effort.clone(),
-                    titles: 0,
-                    finals: 0,
-                    heats: 0,
-                    wins: 0,
-                    durable: 0,
-                    milestone_points: 0,
-                    forfeits: 0,
-                    cost_microusd: 0,
-                    cost_incomplete: false,
-                });
-        }
-        let Some(summary) = &week.summary else {
-            continue;
-        };
-        let last_round = week.draw.shape.len();
-        for standing in &summary.standings {
-            let Some(entry) = week
-                .draw
-                .fleet
-                .iter()
-                .find(|entry| entry.id == standing.fleet_id)
-            else {
-                continue;
-            };
-            let Some(row) = table.get_mut(&(
-                entry.id.clone(),
-                entry.model.clone(),
-                entry.adapter.clone(),
-                entry.reasoning_effort.clone(),
-            )) else {
-                continue;
-            };
-            row.heats += standing.heats;
-            row.wins += standing.wins;
-            row.durable += standing.durable_deployments;
-            row.milestone_points += standing.milestone_points;
-            row.forfeits += standing.forfeits;
-            row.cost_microusd += standing.cost_microusd;
-            row.cost_incomplete |= replay_spend_missing(summary);
-            if standing.reached_round >= last_round && standing.heats > 0 {
-                row.finals += 1;
-            }
-            if summary.champion.as_deref() == Some(standing.fleet_id.as_str()) {
-                row.titles += 1;
-            }
-        }
-    }
-    let mut rows: Vec<SeasonStanding> = table.into_values().collect();
-    rows.sort_by(|a, b| {
-        b.titles
-            .cmp(&a.titles)
-            .then_with(|| b.finals.cmp(&a.finals))
-            .then_with(|| b.wins.cmp(&a.wins))
-            .then_with(|| b.durable.cmp(&a.durable))
-            .then_with(|| b.milestone_points.cmp(&a.milestone_points))
-            .then_with(|| a.cost_microusd.cmp(&b.cost_microusd))
-            .then_with(|| a.fleet_id.cmp(&b.fleet_id))
-    });
-    rows
-}
-
 #[cfg(test)]
 mod season_integrity_tests {
     use super::*;
@@ -2353,63 +2254,56 @@ mod season_integrity_tests {
     }
 
     #[test]
-    fn tournament_home_separates_draw_latest_and_history() {
+    fn home_links_cups_and_only_lists_unfinished_tournaments() {
         let mut upcoming = week("model/a", "claux", "high");
         upcoming.week = "2026-W39".into();
         upcoming.slug = upcoming.week.clone();
         upcoming.summary = None;
-        let mut latest = week("model/a", "claux", "high");
-        latest.week = "2026-W38".into();
-        latest.slug = latest.week.clone();
-        let mut older = week("model/a", "claux", "high");
-        older.week = "2026-W37".into();
-        older.slug = older.week.clone();
+        let mut completed = week("model/a", "claux", "high");
+        completed.week = "2026-W38".into();
+        completed.slug = completed.week.clone();
         let report = SeasonReport {
             id: "Season & friends".into(),
             slug: "season".into(),
             report_dir: PathBuf::new(),
-            weeks: vec![older, upcoming, latest],
+            weeks: vec![completed, upcoming],
         };
         let html = render_index(&[report]);
-        let next = html.find("<h2>Next tournament</h2>").unwrap();
-        let latest = html.find("<h2>Latest tournament</h2>").unwrap();
-        let past = html.find("<h2>Past tournaments</h2>").unwrap();
-        assert!(html[next..latest].contains("seasons/season/2026-W39/"));
-        assert!(html[next..latest].contains("Drawn, not yet run"));
-        assert!(html[latest..past].contains("seasons/season/2026-W38/"));
-        assert!(html[latest..past].contains("Champion: same-id"));
-        assert!(html[past..].contains("seasons/season/2026-W37/"));
+        assert!(html.contains("The cup circuit"));
+        assert!(html.contains("seasons/season/"));
+        assert!(html.contains("seasons/season/2026-W39/"));
+        assert!(!html.contains("seasons/season/2026-W38/"));
         assert!(html.contains("Season &amp; friends"));
-        assert!(!html.contains("<h2>Benchmarks</h2>"));
-        assert!(!html.contains("<h2>Series</h2>"));
+        assert!(!html.contains("Champion:"));
     }
 
     #[test]
-    fn season_standings_separate_model_harness_and_reasoning_changes() {
+    fn cup_landing_is_descriptive_and_lists_tournaments_without_a_bracket() {
         let report = SeasonReport {
-            id: "season".into(),
-            slug: "season".into(),
+            id: "vercel-cup".into(),
+            slug: "vercel-cup".into(),
             report_dir: PathBuf::new(),
-            weeks: vec![
-                week("model/a", "claux", "high"),
-                week("model/a", "claux", "high"),
-                week("model/b", "claux", "high"),
-                week("model/a", "claux", "low"),
-                week("model/a", "other", "high"),
-            ],
+            weeks: vec![week("model/a", "claux", "high")],
         };
-        let rows = season_standings(&report);
-        assert_eq!(rows.len(), 4, "{rows:?}");
-        assert_eq!(rows.iter().map(|r| r.titles).sum::<usize>(), 5);
-        let combined = rows
-            .iter()
-            .find(|r| r.model == "model/a" && r.adapter == "claux" && r.reasoning_effort == "high")
-            .unwrap();
-        assert_eq!((combined.titles, combined.cost_microusd), (2, 20));
         let html = render_season(&report);
-        assert!(html.contains("model/a · claux · reasoning high"));
-        assert!(html.contains("model/a · claux · reasoning low"));
-        assert!(html.contains("model/b · claux · reasoning high"));
+        assert!(html.contains("Vercel Cup"));
+        assert!(html.contains("Recent tournaments"));
+        assert!(html.contains("model/a"));
+        assert!(html.contains("Champion: same-id"));
+        assert!(!html.contains("class=\"bracket-board\""));
+        assert!(!html.contains("Season standings"));
+    }
+
+    #[test]
+    fn exhausted_rounds_have_no_fake_future_contenders() {
+        let mut ended = week("model/a", "claux", "high");
+        ended.summary.as_mut().unwrap().champion = None;
+        let html = cups::bracket(&ended);
+        assert!(html.contains("Round not reached"));
+        assert!(html.contains("Not played"));
+        assert!(!html.contains("Heat winner"));
+        ended.summary = None;
+        assert!(cups::bracket(&ended).contains("To be decided"));
     }
 }
 
@@ -2457,121 +2351,6 @@ fn dated_tournaments_sort_after_older_descriptive_labels() {
     assert_eq!(tournament_date("2026-W37"), "2026-W37");
 }
 
-fn render_season_cards(reports: &[SeasonReport]) -> String {
-    let mut weeks: Vec<_> = reports
-        .iter()
-        .flat_map(|report| report.weeks.iter().map(move |week| (report, week)))
-        .collect();
-    weeks.sort_by(|(a, x), (b, y)| {
-        tournament_date(&y.week)
-            .cmp(tournament_date(&x.week))
-            .then_with(|| y.week.cmp(&x.week))
-            .then_with(|| a.id.cmp(&b.id))
-    });
-    let completed = |week: &WeekReport| week.summary.as_ref().is_some_and(|s| s.completed);
-    let mut body = String::new();
-    let upcoming: Vec<_> = weeks.iter().filter(|(_, week)| !completed(week)).collect();
-    body.push_str("<section><div class=\"section-heading\"><h2>Next tournament</h2><p>The draw is public. Pick your champion before the first heat.</p></div><div class=\"match-list season-list\">");
-    if upcoming.is_empty() {
-        body.push_str(
-            "<p class=\"empty\">No upcoming draw yet. The next bracket will appear here.</p>",
-        );
-    }
-    for (report, week) in upcoming {
-        body.push_str(&render_tournament_card(report, week));
-    }
-    body.push_str("</div></section><section><div class=\"section-heading\"><h2>Latest tournament</h2><p>The champion, the upsets, and every heat along the way.</p></div><div class=\"match-list season-list\">");
-    let mut finished = weeks.iter().filter(|(_, week)| completed(week));
-    if let Some((report, week)) = finished.next() {
-        body.push_str(&render_tournament_card(report, week));
-    } else {
-        body.push_str("<p class=\"empty\">No completed tournaments yet. The first crown is still up for grabs.</p>");
-    }
-    body.push_str("</div></section><section><div class=\"section-heading\"><h2>Past tournaments</h2><p>Every bracket has a story.</p></div><ul>");
-    let mut count = 0;
-    for (report, week) in finished {
-        count += 1;
-        let champion = week
-            .summary
-            .as_ref()
-            .and_then(|s| s.champion.as_deref())
-            .unwrap_or("No champion");
-        let _ = write!(
-            body,
-            "<li><a href=\"seasons/{}/{}/\">{} · {}</a> — {}</li>",
-            escape(&report.slug),
-            escape(&week.slug),
-            escape(&report.id),
-            escape(&week.week),
-            escape(champion)
-        );
-    }
-    body.push_str("</ul>");
-    if count == 0 {
-        body.push_str("<p class=\"empty\">More tournament stories to come.</p>");
-    }
-    for report in reports {
-        let _ = write!(
-            body,
-            "<p><a href=\"seasons/{}/\">Follow {} →</a></p>",
-            escape(&report.slug),
-            escape(&report.id)
-        );
-    }
-    body.push_str("</section>");
-    body
-}
-
-fn render_tournament_card(report: &SeasonReport, week: &WeekReport) -> String {
-    let matchups = if week.summary.is_none() {
-        week.draw
-            .first_round
-            .heats
-            .iter()
-            .map(|heat| {
-                format!(
-                    "<p>Heat {}: {}</p>",
-                    heat.heat,
-                    heat.seats
-                        .values()
-                        .map(|id| escape(id))
-                        .collect::<Vec<_>>()
-                        .join(" · ")
-                )
-            })
-            .collect::<String>()
-    } else {
-        String::new()
-    };
-    let status = match &week.summary {
-        None => "Drawn, not yet run".to_owned(),
-        Some(summary) if summary.completed => summary.champion.as_ref().map_or_else(
-            || "Completed · no champion".to_owned(),
-            |id| format!("Champion: {id}"),
-        ),
-        Some(summary)
-            if summary
-                .rounds
-                .iter()
-                .flat_map(|round| &round.heats)
-                .any(|heat| heat.aborted) =>
-        {
-            "Paused · tournament incomplete".to_owned()
-        }
-        Some(_) => "Tournament underway · results are a snapshot".to_owned(),
-    };
-    format!(
-        "<a class=\"match-card season-card\" href=\"seasons/{}/{}/\"><div><span class=\"eyebrow\">{}</span><h2 style=\"overflow-wrap:anywhere\">{}</h2><p>{} agents · {} rounds</p>{matchups}</div><div class=\"metrics\"><strong>{}</strong><span>View bracket →</span></div></a>",
-        escape(&report.slug),
-        escape(&week.slug),
-        escape(&report.id),
-        escape(&week.week),
-        week.draw.fleet.len(),
-        week.draw.shape.len(),
-        escape(&status),
-    )
-}
-
 fn seat_pill(outcome: SeatOutcome) -> (&'static str, &'static str) {
     match outcome {
         SeatOutcome::Durable => ("good", "durable"),
@@ -2582,88 +2361,7 @@ fn seat_pill(outcome: SeatOutcome) -> (&'static str, &'static str) {
 }
 
 fn render_season(report: &SeasonReport) -> String {
-    let mut weeks = String::new();
-    for week in &report.weeks {
-        let (status, champion, evaluated, cost) = match &week.summary {
-            Some(summary) => {
-                let acc = WeekAccounting::of(summary);
-                let cost: u64 = summary.standings.iter().map(|row| row.cost_microusd).sum();
-                (
-                    if summary.completed {
-                        "complete"
-                    } else {
-                        "in progress"
-                    },
-                    summary.champion.clone().unwrap_or_else(|| "—".to_owned()),
-                    acc.evaluated_pct(),
-                    subscription_total(
-                        summary
-                            .standings
-                            .iter()
-                            .any(|row| row.model.starts_with("opencode-go/")),
-                        season_money(cost, replay_spend_missing(summary)),
-                    ),
-                )
-            }
-            None => ("drawn", "—".to_owned(), "n/a".to_owned(), "n/a".to_owned()),
-        };
-        let arenas: Vec<String> = week
-            .draw
-            .round_arenas
-            .iter()
-            .map(|index| week.draw.arenas[*index].arena_id.clone())
-            .collect();
-        let _ = write!(
-            weeks,
-            "<tr><td><a href=\"{}/\">{}</a><br><small>{}</small></td><td>{}</td><td><strong>{}</strong></td><td>{}</td><td>{}</td><td>{}</td></tr>",
-            escape(&week.slug),
-            escape(&week.week),
-            escape(&arenas.join(" → ")),
-            status,
-            escape(&champion),
-            week.draw.fleet.len(),
-            evaluated,
-            cost,
-        );
-    }
-    let mut standings = String::new();
-    for (index, row) in season_standings(report).iter().enumerate() {
-        let _ = write!(
-            standings,
-            "<tr class=\"{}\"><td><strong>{}</strong><br><small>{}</small></td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
-            if index == 0 && row.titles > 0 {
-                "winner-row"
-            } else {
-                ""
-            },
-            escape(&row.fleet_id),
-            escape(&format!(
-                "{} · {} · reasoning {}",
-                row.model, row.adapter, row.reasoning_effort
-            )),
-            row.titles,
-            row.finals,
-            row.heats,
-            row.wins,
-            row.durable,
-            row.milestone_points,
-            row.forfeits,
-            if row.model.starts_with("opencode-go/") {
-                aoe_tui::format_model_cost(&row.model, row.cost_microusd)
-            } else {
-                season_money(row.cost_microusd, row.cost_incomplete)
-            },
-        );
-    }
-    page(
-        &format!("{} · Season · Agents of Empires", report.id),
-        &format!(
-            "<nav><a href=\"../../\">← Tournaments</a><span>Agents of Empires</span></nav><header class=\"hero match-hero\"><span class=\"eyebrow\">Weekly season</span><h1>{}</h1><p>Each week is a bracket of three-seat heats drawn from a published seed. Winners advance, byes and milestone-ranked wildcards fill the rounds, and the race stops at the first durable deployment. Weeks draw arenas independently and are not comparable to each other as benchmarks.</p></header><main><section><div class=\"section-heading\"><h2>Weeks</h2><p>Newest first. Evaluated counts every seat that was not forfeited to a provider or harness failure.</p></div><div class=\"table-wrap\"><table><thead><tr><th>Week</th><th>Status</th><th>Champion</th><th>Fleet</th><th>Evaluated</th><th>Spend</th></tr></thead><tbody>{}</tbody></table></div></section><section><div class=\"section-heading\"><h2>Season standings</h2><p>Titles first, then finals reached, heat wins, durable deployments, milestone points, and spend.</p></div><div class=\"table-wrap\"><table><thead><tr><th>Fleet</th><th>Titles</th><th>Finals</th><th>Heats</th><th>Wins</th><th>Durable</th><th>Points</th><th>Forfeits</th><th>Spend</th></tr></thead><tbody>{}</tbody></table></div></section></main>",
-            escape(&report.id),
-            weeks,
-            standings,
-        ),
-    )
+    cups::landing(report)
 }
 
 fn render_week_page(season: &SeasonReport, week: &WeekReport) -> String {
@@ -2864,10 +2562,14 @@ fn render_week_page(season: &SeasonReport, week: &WeekReport) -> String {
         );
     }
 
+    let diagram = format!("{}{}", cups::bracket(week), cups::spend(week));
+    let bracket = format!(
+        "{diagram}<details class=\"heat-details\"><summary>Heat details, scores &amp; all replay attempts</summary><div class=\"bracket\">{bracket}</div></details>"
+    );
     page(
         &format!("{} · {} · Agents of Empires", week.week, season.id),
         &format!(
-            "<nav><a href=\"../\">← {}</a><span>Agents of Empires</span></nav><header class=\"hero match-hero\"><span class=\"eyebrow\">{} · week {}</span><h1>{}</h1><p>Heats stop at the first durable deployment. A seat forfeited to a provider or harness failure is never counted as a loss; an outraced seat is ranked by the milestones it verified.</p>{}</header><main><section class=\"bracket\">{}</section><section><div class=\"section-heading\"><h2>Draw provenance</h2><p>Re-derive the bracket from the seed; check the revealed variation seed against its commitment.</p></div><div class=\"provenance-grid\"><div><small>Draw seed</small><code>{}</code></div><div><small>Variation seed commitment</small><code>{}</code></div><div><small>Variation seed</small>{}</div></div><p class=\"bracket-note\"><a href=\"artifacts/draw.json\">draw.json</a>{}</p></section></main>",
+            "<nav><a href=\"../\">← {}</a><span>Agents of Empires</span></nav><header class=\"hero match-hero tournament-hero\"><span class=\"eyebrow\">{} · week {}</span><h1>{}</h1><p>Heats stop at the first durable deployment. A seat forfeited to a provider or harness failure is never counted as a loss; an outraced seat is ranked by the milestones it verified.</p>{}</header><main>{}<section><div class=\"section-heading\"><h2>Draw provenance</h2><p>Re-derive the bracket from the seed; check the revealed variation seed against its commitment.</p></div><div class=\"provenance-grid\"><div><small>Draw seed</small><code>{}</code></div><div><small>Variation seed commitment</small><code>{}</code></div><div><small>Variation seed</small>{}</div></div><p class=\"bracket-note\"><a href=\"artifacts/draw.json\">draw.json</a>{}</p></section></main>",
             escape(&season.id),
             escape(&season.id),
             escape(&week.week),

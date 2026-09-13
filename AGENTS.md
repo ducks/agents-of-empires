@@ -113,10 +113,16 @@ concurrent match from that base.
 ## Tournament workflow and publishing
 
 - AoE is a spectator tournament, not a model-ranking product. The homepage
-  leads with the next draw, latest completed tournament, and past brackets.
+  explains the arena, links to cup landing pages, and lists unfinished draws.
+  Cup pages describe the cup and list tournaments; permanent tournament pages
+  contain the visual bracket, scores, provenance, and all replay attempts.
   Series, benchmarks, and standalone matches remain accessible in the archive.
 - CLI terminology remains `season draw` / `season run`: a season is the
   recurring fleet and arena pool; each week directory is one tournament.
+- `season draw --entrants N` samples N entrants from the manifest's eligible
+  fleet. Omission preserves full-fleet behavior. Use `--entrants 6` for the
+  Vercel pool's usual two-round cup. Selection and the eligible pool are frozen
+  in the draw; never resample at run time.
 - A morning draw and a later run are separate operations. Draw-only reports
   are supported: they show the opening matchups without scores or a champion.
   Drawing and rendering spend no inference; running the bracket does.
@@ -219,6 +225,13 @@ cargo run --release --bin agents-of-empires -- report matches \
   user asks.
 
 ## Configuration and adapters
+
+- `adapters/claux.sh` defaults to OpenRouter. Prefix the recorded model ID
+  with `vercel/` to route through Vercel AI Gateway; only that routing prefix
+  is removed before calling Claux. Prepare host-only credentials with
+  `scripts/prepare-infra-core-credentials.sh vercel` using the exported
+  `AI_GATEWAY_API_KEY`. See `docs/claux-gateway.md`. Do not switch providers
+  using an unrecorded environment override or reuse an existing draw.
 
 - `adapters/opencode.sh` runs OpenCode in the guest. See
   `docs/opencode-adapter.md` for provider prefixes, pinned release, credential

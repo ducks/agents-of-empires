@@ -169,14 +169,15 @@ fn generates_archive_and_match_artifacts() {
     assert_eq!(summary.matches, 1);
     let index = fs::read_to_string(output.join("index.html")).expect("index");
     assert!(!index.contains("build-race-001"));
-    assert!(index.contains("Browse the archive"));
-    assert!(index.contains("No upcoming draw yet"));
-    assert!(index.contains("No completed tournaments yet"));
-    assert!(index.contains("What am I looking at?"));
+    assert!(index.contains("Replays &amp; experiments"));
+    assert!(index.contains("No upcoming draw has been published"));
+    assert!(index.contains("Cups appear here when their first draw is published"));
+    assert!(index.contains("How the arena works"));
     assert!(
-        index.find("About the arena").unwrap() < index.find("<h2>Next tournament</h2>").unwrap()
+        index.find("How the arena works").unwrap()
+            < index.find("<h2>The cup circuit</h2>").unwrap()
     );
-    assert!(index.contains("identical disposable NixOS machines"));
+    assert!(index.contains("disposable NixOS machines"));
     assert!(index.contains("https://github.com/ducks/agents-of-empires"));
     let archive = fs::read_to_string(output.join("archive/index.html")).expect("archive");
     assert!(archive.contains("build-race-001"));
@@ -193,6 +194,8 @@ fn generates_archive_and_match_artifacts() {
     assert!(match_page.contains("Match finished"));
     assert!(match_page.contains("Watch the race unfold"));
     assert!(match_page.contains("data-match-replay"));
+    assert!(match_page.contains("<option value=\"5\" selected>5×</option>"));
+    assert!(!match_page.contains("<option value=\"20\" selected>"));
     assert!(match_page.contains("data-scrubber"));
     assert!(match_page.contains("match_finished"));
     assert!(match_page.contains("Service map"));
@@ -772,6 +775,7 @@ fn generates_season_bracket_and_week_pages() {
         heat_size: 3,
         rules: SeasonRules::default(),
         fleet: fleet.clone(),
+        eligible_pool: None,
         arenas: vec![DrawArena {
             arena_id: "first-build-real".into(),
             manifest: "arenas/first-build/agents-real.toml".into(),
@@ -890,17 +894,22 @@ fn generates_season_bracket_and_week_pages() {
 
     let index = fs::read_to_string(output.join("index.html")).expect("index");
     assert!(index.contains("seasons/infra-weekly/"));
-    assert!(index.contains("Champion: alpha"));
+    assert!(index.contains("OpenRouter Cup"));
+    assert!(!index.contains("Champion: alpha"));
 
     let season_page =
         fs::read_to_string(output.join("seasons/infra-weekly/index.html")).expect("season page");
     assert!(season_page.contains("2026-W37"));
-    assert!(season_page.contains("legacy replay spend missing"));
-    assert!(season_page.contains("67%"), "two of three seats evaluated");
+    assert!(season_page.contains("Recent tournaments"));
+    assert!(season_page.contains("Champion: alpha"));
+    assert!(!season_page.contains("class=\"bracket-board\""));
 
     let week_page = fs::read_to_string(output.join("seasons/infra-weekly/2026-W37/index.html"))
         .expect("week page");
     assert!(week_page.contains("Champion: alpha"));
+    assert!(week_page.contains("class=\"bracket-board\""));
+    assert!(week_page.contains("legacy replay spend missing"));
+    assert!(week_page.contains("67%"), "two of three seats evaluated");
     assert!(week_page.contains("pill good\">durable"));
     assert!(week_page.contains("pill warn\">outraced"));
     assert!(week_page.contains("pill muted\">forfeit"));
