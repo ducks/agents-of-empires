@@ -28,10 +28,16 @@ def go_model(model):
     provider, _, identifier = model.partition("/")
     if provider != "opencode-go":
         raise ValueError(f"preflight requires an explicit OpenCode Go model, got {model!r}")
-    catalog = json.loads(Path(__file__).with_name("opencode-go-models.json").read_text())
-    if identifier not in catalog:
+    registry = json.loads((Path(__file__).resolve().parent.parent / "suites/model-pool.json").read_text())
+    if registry.get("schema_version") != 1:
+        raise ValueError("unsupported model registry version")
+    definitions = [route["definition"] for entry in registry["models"]
+                   if (route := entry.get("routes", {}).get("opencode-go"))
+                   and route["model"] == identifier and route.get("definition")]
+    if len(definitions) != 1 or definitions[0].get("id") != identifier:
         raise ValueError(f"model {model!r} has no pinned definition; update the catalog explicitly (no substitutions)")
-    return identifier, catalog[identifier]
+    # Eligibility governs new draws, not previously committed runs.
+    return identifier, definitions[0]
 
 
 def preflight(models):
@@ -270,7 +276,7 @@ def main():
         atomic_json(config_path, config)
         setup([*scp, str(config_path), f"{host}:{remote}/opencode.json"])
         args = [f"{remote}/opencode", "--print-logs", "--log-level", "DEBUG", "run", "--pure", "--format", "json", "--auto", "--dir", "/root", "--model", model]
-        if values["REASONING_EFFORT"]:
+        if values["REASONING_EFFORT"] and values["REASONING_EFFORT"] != "default":
             args.extend(["--variant", values["REASONING_EFFORT"]])
         artifacts = json.loads(os.environ.get("AOE_PLAYER_ARTIFACTS_JSON", "[]"))
         if not isinstance(artifacts, list) or not all(isinstance(p, str) for p in artifacts):

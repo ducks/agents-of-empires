@@ -72,6 +72,7 @@ test:
 	cargo test --workspace
 	bash adapters/test-claux.sh
 	python3 -m unittest discover -s adapters -p 'test_opencode*.py'
+	python3 -m unittest discover -s scripts -p 'test_model_pool*.py'
 
 clippy:
 	cargo clippy --workspace --all-targets

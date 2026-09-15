@@ -226,6 +226,13 @@ cargo run --release --bin agents-of-empires -- report matches \
 
 ## Configuration and adapters
 
+- The shared model registry is `suites/model-pool.json`. Cup `[pool]` sections
+  select provider slices; adapters do not maintain separate model lists.
+  See `docs/model-pool.md` for `scripts/refresh-model-pool.py` (dry run),
+  `--check` (CI), and `--write` (metadata plus launcher checksum). New discoveries
+  stay disabled. Preserve access blocks and premium-model opt-ins; never
+  refresh mid-tournament. Use `--entrants 6` to avoid entering the whole pool.
+
 - `adapters/claux.sh` defaults to OpenRouter. Prefix the recorded model ID
   with `vercel/` to route through Vercel AI Gateway; only that routing prefix
   is removed before calling Claux. Prepare host-only credentials with
