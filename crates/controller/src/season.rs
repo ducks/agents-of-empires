@@ -36,6 +36,20 @@ pub const SEASON_SCHEMA_VERSION: u32 = 1;
 pub const DRAW_SCHEMA_VERSION: u32 = 1;
 pub const WEEK_SCHEMA_VERSION: u32 = 1;
 const SECRET_SEED_FILE: &str = "seed.secret";
+mod model_pool;
+
+// Input indirection is deliberately absent from the resolved/frozen data types.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SeasonFile {
+    schema_version: u32,
+    season: SeasonConfig,
+    #[serde(default)]
+    rules: SeasonRules,
+    fleet: Option<Vec<FleetEntry>>,
+    pool: Option<model_pool::Selection>,
+    arenas: Vec<SeasonArena>,
+}
 
 // ---------------------------------------------------------------------------
 // Season manifest
@@ -125,14 +139,30 @@ impl SeasonManifest {
             path: path.to_path_buf(),
             source,
         })?;
-        let mut manifest: Self = toml::from_str(&text)?;
+        let input: SeasonFile = toml::from_str(&text)?;
+        let base = path.parent().unwrap_or_else(|| Path::new("."));
+        let fleet = match (input.fleet, input.pool) {
+            (Some(fleet), None) => fleet,
+            (None, Some(pool)) => pool.resolve(base)?,
+            _ => {
+                return Err(SeasonError::Invalid(
+                    "specify exactly one of fleet or pool".into(),
+                ));
+            }
+        };
+        let mut manifest = Self {
+            schema_version: input.schema_version,
+            season: input.season,
+            rules: input.rules,
+            fleet,
+            arenas: input.arenas,
+        };
         if manifest.schema_version != SEASON_SCHEMA_VERSION {
             return Err(SeasonError::Invalid(format!(
                 "schema_version is {}, expected {SEASON_SCHEMA_VERSION}",
                 manifest.schema_version
             )));
         }
-        let base = path.parent().unwrap_or_else(|| Path::new("."));
         for arena in &mut manifest.arenas {
             if arena.manifest.is_relative() {
                 arena.manifest = base.join(&arena.manifest);
@@ -1537,12 +1567,12 @@ mod tests {
     use aoe_replay::{AgentView, TerritoryView};
 
     #[test]
-    fn opencode_cup_has_six_go_models_and_no_excluded_providers() {
+    fn opencode_cup_resolves_shared_go_pool_without_excluded_providers() {
         let manifest = SeasonManifest::load(
             &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../suites/opencode-cup.toml"),
         )
         .unwrap();
-        assert_eq!(manifest.fleet.len(), 6);
+        assert!(manifest.fleet.len() > 6);
         for entry in &manifest.fleet {
             assert_eq!(entry.adapter, "opencode");
             assert!(entry.model.starts_with("opencode-go/"));
@@ -1592,7 +1622,8 @@ mod tests {
         };
         let draw = draw_week(&options).unwrap();
         assert_eq!(draw.fleet.len(), 6);
-        assert_eq!(draw.eligible_pool.as_ref().unwrap().len(), 12);
+        let pool_size = SeasonManifest::load(&options.season).unwrap().fleet.len();
+        assert_eq!(draw.eligible_pool.as_ref().unwrap().len(), pool_size);
         assert_eq!(draw.shape.len(), 2);
         let loaded: WeekDraw =
             serde_json::from_slice(&fs::read(output.join("draw.json")).unwrap()).unwrap();
@@ -1604,7 +1635,7 @@ mod tests {
             .flat_map(|h| h.seats.values())
             .collect();
         assert_eq!(seated, draw.fleet.iter().map(|e| &e.id).collect());
-        for count in [0, 2, 13] {
+        for count in [0, 2, pool_size + 1] {
             options.entrants = Some(count);
             options.output = output.join(format!("invalid-{count}"));
             assert!(draw_week(&options).is_err());
@@ -1614,12 +1645,18 @@ mod tests {
     }
 
     #[test]
-    fn vercel_cup_has_twelve_claux_models_and_three_rounds() {
+    fn vercel_cup_resolves_shared_pool_and_retains_arbitrary_bracket_sizes() {
         let manifest = SeasonManifest::load(
             &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../suites/vercel-cup.toml"),
         )
         .unwrap();
-        assert_eq!(manifest.fleet.len(), 12);
+        assert!(manifest.fleet.len() > 12);
+        assert!(
+            !manifest
+                .fleet
+                .iter()
+                .any(|entry| matches!(entry.id.as_str(), "opus" | "sol" | "astra" | "terra"))
+        );
         for entry in &manifest.fleet {
             assert_eq!(entry.adapter, "claux");
             assert!(entry.model.starts_with("vercel/"));

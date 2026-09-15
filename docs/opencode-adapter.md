@@ -81,9 +81,10 @@ Run it directly without inference:
 adapters/opencode.sh --preflight opencode-go/deepseek-v4.1-flash
 ```
 
-`adapters/opencode-go-models.json` contains the six cup definitions sourced
-from `https://models.dev/api.json` (`opencode-go.models`). The launcher hashes
-both this catalog and the helper; update both hashes when changing them.
+`suites/model-pool.json` contains the shared pool, including pinned Go client
+definitions sourced from `https://models.dev/api.json` (`opencode-go.models`).
+The launcher hashes both this registry and the helper. The registry refresh
+command updates its checksum; update the helper checksum after code edits.
 The same definitions are installed into each guest config, with automatic
 model fetching disabled. Missing definitions fail explicitly; no model is
 silently substituted. Non-Go routes do not yet have this catalog preflight.

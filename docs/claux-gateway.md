@@ -18,10 +18,10 @@ No binary upgrade or new agent harness is required.
 
 ## Preparing a run
 
-The bundled `suites/vercel-cup.toml` defines a 12-model eligible pool: DeepSeek V4.1
-Flash, GPT 5.6 Luna, GLM 5.3, Kimi K3, Qwen 3.8 Max, MiniMax M3, Claude
-Sonnet 5, Claude Opus 5, Gemini 3.8 Flash, Devstral 2, Mercury 2.5, and
-Nemotron 3.5 Lightning. No Meta or xAI/SpaceXAI models are included.
+The bundled `suites/vercel-cup.toml` selects Vercel routes from the
+[shared model registry](model-pool.md), initially 25 eligible routes.
+Sol, Astra, and Terra are disabled opt-ins; Vercel Opus is blocked after
+observed access failures. No Meta or xAI/SpaceXAI models are included.
 
 Pass `--entrants 6` to `season draw` for the usual six-player, two-round cup.
 The count is configurable, not a fixed limit. Omit it to enter the whole pool.
@@ -31,10 +31,9 @@ IDs. Sampled draws freeze both the eligible pool and selected fleet in
 Counts below the arena heat size or above the pool size are rejected; other
 sizes use the existing bye/wildcard bracket rules.
 
-This is a broad Gateway cup, not a budget-priced pool. In particular, Opus
-can cost materially more than the Flash models. Promotion prices are not
-hardcoded into the manifest. The fleet uses 768 MiB per guest, with three
-concurrent seats, not twelve concurrent VMs.
+This is a broad Gateway cup, not a budget-priced pool. Promotion prices are
+metadata, not spending guarantees. The fleet uses 768 MiB per guest, with
+three concurrent seats regardless of pool size.
 
 `reasoning_effort = "default"` tells this Claux adapter to omit the effort
 request. It does not mean reasoning is disabled: the provider/model chooses
@@ -42,8 +41,9 @@ its default. The fleet uses this when Gateway lists no effort selector;
 Qwen uses `xhigh` because its listed values do not include `high`. Other
 entrants request `high`. These settings do not equalize reasoning budgets.
 
-In a new cup manifest, use a distinct season ID such as `vercel-cup`, keep
-`adapter = "claux"`, and prefix each verified Gateway model ID with `vercel/`.
+In a new cup manifest, use a distinct season ID and select `[pool]` with
+`provider = "vercel"`. The loader selects Claux and adds the `vercel/` prefix.
+For inline fleets, keep `adapter = "claux"` and add that prefix yourself.
 Do not edit an existing committed draw to change providers. Model availability
 and account access still need checking before drawing the real fleet; this
 change does not add a Gateway catalog or account-quota preflight.
