@@ -1047,7 +1047,17 @@ fn render_cards<'a>(reports: impl Iterator<Item = &'a MatchReport>) -> String {
                         .agents
                         .values()
                         .any(|agent| agent.model.starts_with("opencode-go/")),
-                    money(total_cost)
+                    aoe_tui::format_usage_cost(
+                        "",
+                        total_cost,
+                        Some(
+                            report
+                                .state
+                                .agents
+                                .values()
+                                .all(|a| a.cost_complete == Some(true))
+                        )
+                    )
                 )
             ))
         );
@@ -1089,7 +1099,17 @@ fn render_archived_cards<'a>(reports: impl Iterator<Item = &'a MatchReport>) -> 
                         .agents
                         .values()
                         .any(|agent| agent.model.starts_with("opencode-go/")),
-                    money(total_cost)
+                    aoe_tui::format_usage_cost(
+                        "",
+                        total_cost,
+                        Some(
+                            report
+                                .state
+                                .agents
+                                .values()
+                                .all(|a| a.cost_complete == Some(true))
+                        )
+                    )
                 )
             ))
         );
@@ -1687,7 +1707,7 @@ fn render_match(report: &MatchReport) -> String {
                 "n/a".into()
             },
             if usage_known {
-                aoe_tui::format_model_cost(&agent.model, agent.cost_microusd)
+                aoe_tui::format_usage_cost(&agent.model, agent.cost_microusd, agent.cost_complete)
             } else {
                 "n/a".into()
             },
@@ -1748,7 +1768,7 @@ fn render_match(report: &MatchReport) -> String {
         escape(&format!("{} won: {}", winner, state.finish_reason.as_deref().unwrap_or("outcome recorded"))),
         escape(winner),
         duration(state.elapsed_ms),
-        subscription_total(state.agents.values().any(|agent| agent.model.starts_with("opencode-go/")), money(total_cost)),
+        subscription_total(state.agents.values().any(|agent| agent.model.starts_with("opencode-go/")), aoe_tui::format_usage_cost("", total_cost, Some(state.agents.values().all(|a| a.cost_complete == Some(true))))),
         grouped(total_tokens),
         report.events.len()
     );
@@ -2436,12 +2456,13 @@ fn render_week_page(season: &SeasonReport, week: &WeekReport) -> String {
                             label,
                             seat.milestone_points,
                             seat.durable_at_ms.map_or_else(|| "—".to_owned(), duration),
-                            aoe_tui::format_model_cost(
+                            aoe_tui::format_usage_cost(
                                 draw.fleet
                                     .iter()
                                     .find(|entry| entry.id == seat.fleet_id)
                                     .map_or("", |entry| entry.model.as_str()),
-                                seat.cost_microusd
+                                seat.cost_microusd,
+                                seat.cost_complete
                             ),
                         );
                     }

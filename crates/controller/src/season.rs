@@ -673,6 +673,8 @@ pub struct SeatResult {
     pub durable_at_ms: Option<u64>,
     pub cost_microusd: u64,
     #[serde(default)]
+    pub cost_complete: Option<bool>,
+    #[serde(default)]
     pub failure_source: Option<FailureSource>,
     #[serde(default)]
     pub detail: Option<String>,
@@ -691,6 +693,8 @@ pub struct WeekStanding {
     pub milestone_points: u64,
     pub forfeits: usize,
     pub cost_microusd: u64,
+    #[serde(default)]
+    pub cost_complete: Option<bool>,
 }
 
 #[derive(Debug, Error)]
@@ -1300,6 +1304,7 @@ pub fn heat_result(
             milestone_points: view.map_or(0, |view| view.milestone_points),
             durable_at_ms,
             cost_microusd: agent.map_or(0, |agent| agent.cost_microusd),
+            cost_complete: agent.and_then(|agent| agent.cost_complete),
             failure_source,
             detail: agent.and_then(|agent| agent.terminal_detail.clone()),
         });
@@ -1373,6 +1378,7 @@ fn week_standings(draw: &WeekDraw, rounds: &[RoundResult]) -> Vec<WeekStanding> 
                     milestone_points: 0,
                     forfeits: 0,
                     cost_microusd: 0,
+                    cost_complete: Some(true),
                 },
             )
         })
@@ -1382,6 +1388,8 @@ fn week_standings(draw: &WeekDraw, rounds: &[RoundResult]) -> Vec<WeekStanding> 
             for seat in heat.prior_attempts.iter().flatten() {
                 if let Some(row) = table.get_mut(&seat.fleet_id) {
                     row.cost_microusd += seat.cost_microusd;
+                    row.cost_complete =
+                        Some(row.cost_complete == Some(true) && seat.cost_complete == Some(true));
                 }
             }
             for seat in &heat.standings {
@@ -1392,6 +1400,8 @@ fn week_standings(draw: &WeekDraw, rounds: &[RoundResult]) -> Vec<WeekStanding> 
                 row.reached_round = row.reached_round.max(round.round);
                 row.milestone_points += seat.milestone_points;
                 row.cost_microusd += seat.cost_microusd;
+                row.cost_complete =
+                    Some(row.cost_complete == Some(true) && seat.cost_complete == Some(true));
                 if seat.outcome == SeatOutcome::Durable {
                     row.durable_deployments += 1;
                 }
@@ -1507,13 +1517,14 @@ pub fn render_week(summary: &WeekSummary) -> String {
                         || "      -".to_owned(),
                         |ms| format!("{:>5.1}s", ms as f64 / 1000.0)
                     ),
-                    aoe_tui::format_model_cost(
+                    aoe_tui::format_usage_cost(
                         summary
                             .standings
                             .iter()
                             .find(|row| row.fleet_id == seat.fleet_id)
                             .map_or("", |row| row.model.as_str()),
-                        seat.cost_microusd
+                        seat.cost_microusd,
+                        seat.cost_complete
                     )
                 );
             }
@@ -1547,7 +1558,7 @@ pub fn render_week(summary: &WeekSummary) -> String {
             row.durable_deployments,
             row.milestone_points,
             row.forfeits,
-            aoe_tui::format_model_cost(&row.model, row.cost_microusd)
+            aoe_tui::format_usage_cost(&row.model, row.cost_microusd, row.cost_complete)
         );
     }
     if let Some(seed) = &summary.variation_seed {
@@ -2071,6 +2082,7 @@ mod tests {
             milestone_points: points,
             durable_at_ms: durable,
             cost_microusd: cost,
+            cost_complete: Some(true),
             failure_source: None,
             detail: None,
         }

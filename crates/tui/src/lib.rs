@@ -166,7 +166,7 @@ fn render_build_table(output: &mut String, state: &WorldState, color: bool) {
         });
         let cost = usage.map_or_else(
             || "n/a".to_owned(),
-            |agent| format_model_cost(&agent.model, agent.cost_microusd),
+            |agent| format_usage_cost(&agent.model, agent.cost_microusd, agent.cost_complete),
         );
         let _ = writeln!(
             output,
@@ -400,8 +400,41 @@ pub fn format_model_cost(model: &str, microusd: u64) -> String {
     }
 }
 
+/// Preserve unknown and partially recorded cost instead of displaying free usage.
+#[must_use]
+pub fn format_usage_cost(model: &str, microusd: u64, complete: Option<bool>) -> String {
+    if model.starts_with("opencode-go/") || complete == Some(true) {
+        return format_model_cost(model, microusd);
+    }
+    if microusd == 0 {
+        "n/a".into()
+    } else {
+        format!("{} recorded; total n/a", format_money(microusd))
+    }
+}
+
 #[cfg(test)]
 mod subscription_tests {
+    #[test]
+    fn unknown_cost_is_not_free() {
+        assert_eq!(super::format_usage_cost("vendor/model", 0, None), "n/a");
+        assert_eq!(
+            super::format_usage_cost("vendor/model", 0, Some(false)),
+            "n/a"
+        );
+        assert_eq!(
+            super::format_usage_cost("vendor/model", 0, Some(true)),
+            "$0.0000"
+        );
+        assert_eq!(
+            super::format_usage_cost("vendor/model", 1200, Some(false)),
+            "$0.0012 recorded; total n/a"
+        );
+        assert_eq!(
+            super::format_usage_cost("opencode-go/model", 0, Some(false)),
+            "subscription"
+        );
+    }
     #[test]
     fn subscription_is_not_free_and_preserves_recorded_cost() {
         assert_eq!(

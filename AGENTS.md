@@ -226,6 +226,12 @@ cargo run --release --bin agents-of-empires -- report matches \
 
 ## Configuration and adapters
 
+- `adapters/term-llm.sh` is a pinned guest harness adapter with explicit
+  `openrouter/` and `vercel/` routes. See `docs/term-llm-adapter.md` for free
+  preflight, localhost tests, and the three-harness exhibition. Update its
+  helper checksum after edits. Unknown dollar cost stays null; a JSONL `done`
+  event is not proof of success. No paid exhibition or publishing is implicit.
+
 - The shared model registry is `suites/model-pool.json`. Cup `[pool]` sections
   select provider slices; adapters do not maintain separate model lists.
   See `docs/model-pool.md` for `scripts/refresh-model-pool.py` (dry run),

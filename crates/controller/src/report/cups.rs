@@ -348,7 +348,12 @@ pub(super) fn bracket(week: &WeekReport) -> String {
 pub(super) fn spend(week: &WeekReport) -> String {
     week.summary.as_ref().map_or_else(String::new, |summary| {
         let total = summary.standings.iter().fold(0_u64, |sum, s| sum.saturating_add(s.cost_microusd));
-        let cost = subscription_total(summary.standings.iter().any(|s| s.model.starts_with("opencode-go/")), season_money(total, replay_spend_missing(summary)));
+        let recorded = if summary.standings.iter().all(|s| s.cost_complete == Some(true)) {
+            season_money(total, replay_spend_missing(summary))
+        } else {
+            aoe_tui::format_usage_cost("", total, Some(false))
+        };
+        let cost = subscription_total(summary.standings.iter().any(|s| s.model.starts_with("opencode-go/")), recorded);
         format!("<p class=\"bracket-note\">Recorded tournament spend: {} · includes retained replay attempts; missing provider costs are not free inference.</p>", escape(&cost))
     })
 }

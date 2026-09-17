@@ -800,6 +800,7 @@ fn generates_season_bracket_and_week_pages() {
         milestone_points: points,
         durable_at_ms: durable,
         cost_microusd: 1_500,
+        cost_complete: Some(true),
         failure_source: None,
         detail: None,
     };
@@ -844,6 +845,7 @@ fn generates_season_bracket_and_week_pages() {
                 milestone_points: 100,
                 forfeits: 0,
                 cost_microusd: 1_500,
+                cost_complete: Some(true),
             },
             WeekStanding {
                 fleet_id: "beta".into(),
@@ -855,6 +857,7 @@ fn generates_season_bracket_and_week_pages() {
                 milestone_points: 30,
                 forfeits: 0,
                 cost_microusd: 1_500,
+                cost_complete: Some(true),
             },
             WeekStanding {
                 fleet_id: "gamma".into(),
@@ -866,6 +869,7 @@ fn generates_season_bracket_and_week_pages() {
                 milestone_points: 0,
                 forfeits: 1,
                 cost_microusd: 1_500,
+                cost_complete: Some(true),
             },
         ],
     };
