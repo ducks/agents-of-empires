@@ -108,7 +108,7 @@ normalize_usage() {
   jq \
     --arg agent "$AOE_AGENT_ID" \
     --arg territory "$AOE_TERRITORY_ID" \
-    '{schema_version:1,agent:$agent,territory:$territory,usage:{rounds:(.usage.rounds // null),tool_calls:(.usage.tool_calls // null),input_tokens:(.usage.input_tokens // null),output_tokens:(.usage.output_tokens // null),cost_microusd:(if .usage.cost_usd == null then null else (.usage.cost_usd * 1000000 | round) end),resource_units:1}}' \
+    '{schema_version:1,agent:$agent,territory:$territory,usage:{rounds:(.usage.rounds // null),tool_calls:(.usage.tool_calls // null),input_tokens:(if .usage.input_tokens == null then null else (.usage.input_tokens + (.usage.cache_read_tokens // 0) + (.usage.cache_creation_tokens // 0)) end),output_tokens:(.usage.output_tokens // null),cost_microusd:(if .usage.cost_usd == null then null else (.usage.cost_usd * 1000000 | round) end),resource_units:1}}' \
     "$source" >"${AOE_USAGE_FILE}.partial" 2>/dev/null || return 0
   mv "${AOE_USAGE_FILE}.partial" "$AOE_USAGE_FILE"
 }
@@ -382,7 +382,7 @@ write_usage_result() {
         usage: {
           rounds: null,
           tool_calls: null,
-          input_tokens: (.usage.input_tokens // null),
+          input_tokens: (if .usage.input_tokens == null then null else (.usage.input_tokens + (.usage.cache_read_tokens // 0) + (.usage.cache_creation_tokens // 0)) end),
           output_tokens: (.usage.output_tokens // null),
           cost_microusd: (if .usage.cost_usd == null then null else (.usage.cost_usd * 1000000 | round) end),
           resource_units: 1

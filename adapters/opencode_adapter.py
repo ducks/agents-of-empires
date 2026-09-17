@@ -99,6 +99,10 @@ def normalize(data, exit_code=None, reboot=False):
         values = [s.get("tokens", {}).get(field) for s in steps]
         if values and all(type(v) is int and v >= 0 for v in values):
             usage[name] = sum(values)
+    if usage["input_tokens"] is not None:
+        cached = [s.get("tokens", {}).get("cache", {}).get(k, 0) for s in steps for k in ("read", "write")]
+        usage["input_tokens"] = (usage["input_tokens"] + sum(cached)
+                                 if all(type(v) is int and v >= 0 for v in cached) else None)
     status, summary = "running", "OpenCode is running"
     if errors:
         error = errors[-1]

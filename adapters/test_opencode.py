@@ -13,6 +13,10 @@ STEP = {"type": "step_finish", "part": {"reason": "stop", "tokens": {"input": 12
 
 
 class NormalizeTests(unittest.TestCase):
+    def test_input_includes_cache_reads_and_writes(self):
+        step = {"type": "step_finish", "part": {"reason": "stop", "tokens": {"input": 3, "output": 4, "cache": {"read": 100, "write": 20}}}}
+        self.assertEqual(normalize(stream(step), 0)[2]["input_tokens"], 123)
+
     def test_unknown_server_error_and_sigkill_are_not_player_failures(self):
         error = {"type": "error", "error": {"name": "UnknownError", "data": {"message": "Unexpected server error. Check server logs for details."}}}
         self.assertEqual(normalize(stream(error), 0)[0], "harness_error")

@@ -33,6 +33,8 @@ pub enum AgentStatus {
 pub struct AgentUsage {
     pub rounds: Option<u64>,
     pub tool_calls: Option<u64>,
+    /// Total input, including cache reads/writes (new adapter cohorts).
+    /// Historical logs retain the accounting emitted by their pinned adapter.
     pub input_tokens: Option<u64>,
     pub output_tokens: Option<u64>,
     pub cost_microusd: Option<u64>,

@@ -31,6 +31,9 @@ pub struct AgentView {
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub cost_microusd: u64,
+    /// Whether the latest cumulative usage report included cost.
+    #[serde(default)]
+    pub cost_complete: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -213,7 +216,7 @@ pub fn reduce(state: &mut WorldState, envelope: &EventEnvelope) {
                 *resource_units,
                 input_tokens.unwrap_or(0),
                 output_tokens.unwrap_or(0),
-                cost_microusd.unwrap_or(0),
+                *cost_microusd,
             );
         }
         Event::PostMatchDrainStarted { .. } | Event::PostMatchDrainFinished { .. } => {}
@@ -362,13 +365,42 @@ fn apply_usage(
     resource_units: u64,
     input_tokens: u64,
     output_tokens: u64,
-    cost_microusd: u64,
+    cost_microusd: Option<u64>,
 ) {
     let view = state.agents.entry(agent.to_owned()).or_default();
     view.resource_units_used = view.resource_units_used.saturating_add(resource_units);
     view.input_tokens = view.input_tokens.saturating_add(input_tokens);
     view.output_tokens = view.output_tokens.saturating_add(output_tokens);
-    view.cost_microusd = view.cost_microusd.saturating_add(cost_microusd);
+    view.cost_microusd = view
+        .cost_microusd
+        .saturating_add(cost_microusd.unwrap_or(0));
+    if cost_microusd.is_some() || input_tokens > 0 || output_tokens > 0 {
+        view.cost_complete = Some(cost_microusd.is_some());
+    }
+}
+
+/// Reduce a complete ordered event sequence.
+#[cfg(test)]
+mod accounting_tests {
+    use super::*;
+
+    #[test]
+    fn cost_metadata_tracks_cumulative_checkpoints_without_inventing_zero() {
+        let mut state = WorldState::default();
+        apply_usage(&mut state, "a", 1, 0, 0, None);
+        assert_eq!(state.agents["a"].cost_complete, None);
+        apply_usage(&mut state, "a", 0, 10, 2, None);
+        assert_eq!(state.agents["a"].cost_complete, Some(false));
+        apply_usage(&mut state, "a", 0, 5, 2, Some(100));
+        assert_eq!(state.agents["a"].cost_complete, Some(true));
+        apply_usage(&mut state, "a", 0, 0, 0, None);
+        assert_eq!(state.agents["a"].cost_complete, Some(true));
+        apply_usage(&mut state, "a", 0, 5, 2, None);
+        assert_eq!(state.agents["a"].cost_complete, Some(false));
+        assert_eq!(state.agents["a"].cost_microusd, 100);
+        apply_usage(&mut state, "zero", 0, 5, 2, Some(0));
+        assert_eq!(state.agents["zero"].cost_complete, Some(true));
+    }
 }
 
 /// Reduce a complete ordered event sequence.

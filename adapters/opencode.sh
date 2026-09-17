@@ -2,7 +2,7 @@
 set -euo pipefail
 helper="$(dirname "${BASH_SOURCE[0]}")/opencode_adapter.py"
 # Bind the helper to this launcher, whose hash is recorded in match provenance.
-expected="90b551033ff2bd7c50ff9d29a8343793d2ed0b0f36c9c3e6d87d9713554c9135"
+expected="9d2ea586c7b02a8ae19d0c10e94d3ec57a288bcd534b092b6c62852b86b6dc9a"
 actual="$(sha256sum "$helper" | cut -d' ' -f1)"
 [[ "$actual" == "$expected" ]] || { echo 'OpenCode helper checksum mismatch' >&2; exit 2; }
 catalog="$(dirname "$helper")/../suites/model-pool.json"

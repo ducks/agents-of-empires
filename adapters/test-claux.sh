@@ -65,12 +65,12 @@ if [[ "${TEST_FAIL_SETUP_SCP_ONCE:-}" == 1 && "$source_path" != *:* && ! -e "${T
   exit 255
 fi
 if [[ "$source_path" == *:*/transcript.json && "${TEST_NO_TRANSCRIPT:-}" != 1 ]]; then
-  printf '%s' '{"schema_version":2,"usage":{"input_tokens":120,"output_tokens":8,"cost_usd":0.0012}}' >"$destination"
+  printf '%s' '{"schema_version":2,"usage":{"input_tokens":120,"cache_read_tokens":100,"cache_creation_tokens":20,"output_tokens":8,"cost_usd":0.0012}}' >"$destination"
 elif [[ "$source_path" == *:*/result.json && "${TEST_NO_NATIVE_RESULT:-}" != 1 ]]; then
   if [[ -n "${TEST_NATIVE_RESULT_JSON:-}" ]]; then
     printf '%s' "$TEST_NATIVE_RESULT_JSON" >"$destination"
   else
-    printf '%s' '{"result":"held the line","usage":{"input_tokens":120,"output_tokens":8,"cost_usd":0.0012}}' >"$destination"
+    printf '%s' '{"result":"held the line","usage":{"input_tokens":120,"cache_read_tokens":100,"cache_creation_tokens":20,"output_tokens":8,"cost_usd":0.0012}}' >"$destination"
   fi
 fi
 EOF
@@ -110,7 +110,7 @@ jq -e '
   and .territory == "test-territory"
   and .status == "completed"
   and .summary == "held the line"
-  and .usage.input_tokens == 120
+  and .usage.input_tokens == 240
   and .usage.output_tokens == 8
   and .usage.cost_microusd == 1200
   and .usage.resource_units == 1
@@ -118,7 +118,7 @@ jq -e '
 jq -e '
   .schema_version == 1
   and .agent == "test-agent"
-  and .usage.input_tokens == 120
+  and .usage.input_tokens == 240
   and .usage.output_tokens == 8
   and .usage.cost_microusd == 1200
 ' "$root/run/usage.json" >/dev/null
