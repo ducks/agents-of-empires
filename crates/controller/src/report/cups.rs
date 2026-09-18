@@ -4,6 +4,33 @@ use super::*;
 pub(super) const STYLE: &str = include_str!("cups.css");
 const BRACKET_SCRIPT: &str = include_str!("bracket.js");
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn single_round_cup_is_only_listed_with_selected_evidence() {
+        let reports = [SeasonReport {
+            id: "harness-cup".into(),
+            slug: "harness-cup".into(),
+            report_dir: PathBuf::new(),
+            weeks: Vec::new(),
+        }];
+        assert!(home(&reports, None).contains("First tournament coming soon"));
+        assert!(!landing(&reports[0], None).contains("Champion:"));
+        let slug = "harness-exhibition-20260915-225225";
+        let index = home(&reports, Some(slug));
+        assert!(index.contains("1 completed tournament"));
+        assert!(!index.contains("First tournament coming soon"));
+        let html = landing(&reports[0], Some(slug));
+        assert!(html.contains(&format!("href=\"../../matches/{slug}/\"")));
+        assert!(html.contains("Champion: term-llm · 45.216s"));
+        assert!(html.contains("Single-round tournament"));
+        assert!(html.contains("unresolved reboot/SSH disconnect"));
+        assert!(!html.contains("first crown is still up for grabs"));
+    }
+}
+
 pub(super) fn identity(id: &str) -> (&str, &str, &str) {
     match id {
         "infra-weekly" => (
@@ -84,12 +111,13 @@ fn tournament_link(report: &SeasonReport, week: &WeekReport, prefix: &str) -> St
     )
 }
 
-pub(super) fn home(reports: &[SeasonReport]) -> String {
+pub(super) fn home(reports: &[SeasonReport], harness_final: Option<&str>) -> String {
     let mut cards = String::new();
     for (i, report) in reports.iter().enumerate() {
         let (name, tagline, description) = identity(&report.id);
-        let count = report.weeks.iter().filter(|w| complete(w)).count();
-        let label = if report.weeks.is_empty() {
+        let count = report.weeks.iter().filter(|w| complete(w)).count()
+            + usize::from(report.id == "harness-cup" && harness_final.is_some());
+        let label = if report.weeks.is_empty() && count == 0 {
             "First tournament coming soon".into()
         } else {
             format!(
@@ -139,17 +167,26 @@ pub(super) fn home(reports: &[SeasonReport]) -> String {
     )
 }
 
-pub(super) fn landing(report: &SeasonReport) -> String {
+pub(super) fn landing(report: &SeasonReport, harness_final: Option<&str>) -> String {
     let (name, tagline, description) = identity(&report.id);
     if report.id == "harness-cup" && report.weeks.is_empty() {
+        let label = if harness_final.is_some() {
+            "The inaugural cup"
+        } else {
+            "First tournament coming soon"
+        };
+        let recent = harness_final.map_or_else(
+            || "<p class=\"empty\">The first crown is still up for grabs. Published tournaments will appear here with their brackets and replays.</p>".into(),
+            |slug| format!(r#"<a class="tournament-link" href="../../matches/{}/"><div><span class="eyebrow">September 15, 2026 · Single-round tournament</span><h3>Harness Cup #1</h3><p>Claux · OpenCode · term-llm<br>OpenRouter GPT-5.6 Luna · high reasoning · 1 vCPU / 768 MiB</p></div><div class="tournament-result"><strong>Champion: term-llm · 45.216s</strong><span>Watch the final ↗</span></div></a><p class="bracket-note">Originally recorded as a harness exhibition; published as a three-entrant, single-round cup. The original replay and artifacts are unchanged. No opening heats or seeded draw were run.</p><p class="bracket-note">Review notes: term-llm passed all four referee milestones, including host reboot. Claux had an unresolved reboot/SSH disconnect, classified as a harness error—not an established model failure. OpenCode was outraced. Historical token counts predate cache-accounting fixes; missing provider costs are unknown, not free inference.</p>"#, escape(slug)),
+        );
         return page(
             &format!("{name} · Agents of Empires"),
             &format!(
                 r#"<nav class="circuit-nav"><a class="wordmark" href="../../">AoE <span>/ The cup circuit</span></a><a href="../../archive/">Archive</a></nav>
-<header class="hero circuit-hero cup-hero"><span class="eyebrow">First tournament coming soon</span><h1>{}</h1><p>{}</p></header>
+<header class="hero circuit-hero cup-hero"><span class="eyebrow">{label}</span><h1>{}</h1><p>{}</p></header>
 <main><section class="cup-intro"><div><span class="eyebrow">About this cup</span><h2>{}</h2><p>The harness is the contender: its tools, context management, and approach to the task. Model, provider, reasoning setting, and VM resources are held constant within a race. This is a spectator competition, not a controlled benchmark or a universal harness ranking.</p></div><ul class="pool-grid"><li><strong>Claux</strong><small>Harness contender</small></li><li><strong>OpenCode</strong><small>Harness contender</small></li><li><strong>term-llm</strong><small>Harness contender</small></li></ul></section>
-<section><div class="section-heading"><h2>Upcoming tournaments</h2></div><p class="empty upcoming-empty">No tournament draw has been published yet. The opening exhibition was a standalone race, not a cup championship.</p></section>
-<section><div class="section-heading"><h2>Recent tournaments</h2></div><p class="empty">The first crown is still up for grabs. Published tournaments will appear here with their brackets and replays.</p></section></main>"#,
+<section><div class="section-heading"><h2>Upcoming tournaments</h2></div><p class="empty upcoming-empty">No tournament draw has been published yet.</p></section>
+<section><div class="section-heading"><h2>Recent tournaments</h2></div>{recent}</section></main>"#,
                 escape(name),
                 escape(description),
                 escape(tagline)

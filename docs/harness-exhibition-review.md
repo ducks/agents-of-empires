@@ -2,6 +2,19 @@
 
 Evidence: `matches/harness-exhibition-20260915-225225` (unchanged).
 
+## Publication
+
+This race is published as Harness Cup #1, a three-entrant, single-round
+tournament. Its original exhibition name and artifacts are retained; no
+multi-round draw or season summary is fabricated. The cup landing page links
+directly to the final replay. Include the match directory above as the report
+input when regenerating the public homepage and Harness Cup page. The listing
+only appears when that evidence is selected and the recorded durable winner
+matches the reviewed result. Preserve the existing selected cup tournaments
+with repeated `--season` arguments.
+
+## Result
+
 term-llm won at 45.216 seconds. The external referee passed service-up at
 30.870s, write/read at 30.915s, service restart at 31.644s, and host reboot at
 45.216s. The same opaque record survived restart and reboot. All seats were
