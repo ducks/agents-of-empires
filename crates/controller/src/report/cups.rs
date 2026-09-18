@@ -21,6 +21,11 @@ pub(super) fn identity(id: &str) -> (&str, &str, &str) {
             "A wider pool. An unpredictable field.",
             "Claux agents compete through Vercel AI Gateway. A larger eligible pool brings new challengers into each sampled draw.",
         ),
+        "harness-cup" => (
+            "Harness Cup",
+            "Same model. Different tools. One finish line.",
+            "Claux, OpenCode, and term-llm race with the same model, provider, and reasoning setting. Different harnesses tackle the same infrastructure challenge under the same outside referee.",
+        ),
         _ => (
             id,
             "Another route to the crown.",
@@ -84,13 +89,21 @@ pub(super) fn home(reports: &[SeasonReport]) -> String {
     for (i, report) in reports.iter().enumerate() {
         let (name, tagline, description) = identity(&report.id);
         let count = report.weeks.iter().filter(|w| complete(w)).count();
+        let label = if report.weeks.is_empty() {
+            "First tournament coming soon".into()
+        } else {
+            format!(
+                "{count} completed tournament{}",
+                if count == 1 { "" } else { "s" }
+            )
+        };
         let _ = write!(
             cards,
-            "<a class=\"cup-card cup-{}\" href=\"seasons/{}/\"><span class=\"cup-number\" aria-hidden=\"true\">{:02}</span><span class=\"eyebrow\">{count} completed tournament{}</span><h3>{}</h3><strong>{}</strong><p>{}</p><span class=\"cup-cta\">Explore the cup <span aria-hidden=\"true\">↗</span></span></a>",
+            "<a class=\"cup-card cup-{}\" href=\"seasons/{}/\"><span class=\"cup-number\" aria-hidden=\"true\">{:02}</span><span class=\"eyebrow\">{}</span><h3>{}</h3><strong>{}</strong><p>{}</p><span class=\"cup-cta\">Explore the cup <span aria-hidden=\"true\">↗</span></span></a>",
             escape(&report.slug),
             escape(&report.slug),
             i + 1,
-            if count == 1 { "" } else { "s" },
+            escape(&label),
             escape(name),
             escape(tagline),
             escape(description)
@@ -128,6 +141,21 @@ pub(super) fn home(reports: &[SeasonReport]) -> String {
 
 pub(super) fn landing(report: &SeasonReport) -> String {
     let (name, tagline, description) = identity(&report.id);
+    if report.id == "harness-cup" && report.weeks.is_empty() {
+        return page(
+            &format!("{name} · Agents of Empires"),
+            &format!(
+                r#"<nav class="circuit-nav"><a class="wordmark" href="../../">AoE <span>/ The cup circuit</span></a><a href="../../archive/">Archive</a></nav>
+<header class="hero circuit-hero cup-hero"><span class="eyebrow">First tournament coming soon</span><h1>{}</h1><p>{}</p></header>
+<main><section class="cup-intro"><div><span class="eyebrow">About this cup</span><h2>{}</h2><p>The harness is the contender: its tools, context management, and approach to the task. Model, provider, reasoning setting, and VM resources are held constant within a race. This is a spectator competition, not a controlled benchmark or a universal harness ranking.</p></div><ul class="pool-grid"><li><strong>Claux</strong><small>Harness contender</small></li><li><strong>OpenCode</strong><small>Harness contender</small></li><li><strong>term-llm</strong><small>Harness contender</small></li></ul></section>
+<section><div class="section-heading"><h2>Upcoming tournaments</h2></div><p class="empty upcoming-empty">No tournament draw has been published yet. The opening exhibition was a standalone race, not a cup championship.</p></section>
+<section><div class="section-heading"><h2>Recent tournaments</h2></div><p class="empty">The first crown is still up for grabs. Published tournaments will appear here with their brackets and replays.</p></section></main>"#,
+                escape(name),
+                escape(description),
+                escape(tagline)
+            ),
+        );
+    }
     let weeks = ordered_weeks(report);
     let mut upcoming = String::new();
     let mut recent = String::new();

@@ -171,7 +171,17 @@ fn generates_archive_and_match_artifacts() {
     assert!(!index.contains("build-race-001"));
     assert!(index.contains("Replays &amp; experiments"));
     assert!(index.contains("No upcoming draw has been published"));
-    assert!(index.contains("Cups appear here when their first draw is published"));
+    assert!(index.contains("Harness Cup"));
+    assert!(index.contains("href=\"seasons/harness-cup/\""));
+    assert!(index.contains("First tournament coming soon"));
+    assert_eq!(summary.seasons, 0, "a listing is not a recorded season");
+    let harness = fs::read_to_string(output.join("seasons/harness-cup/index.html"))
+        .expect("harness cup landing");
+    assert!(harness.contains("term-llm"));
+    assert!(harness.contains("not a cup championship"));
+    assert!(harness.contains("No tournament draw has been published"));
+    assert!(harness.contains("og:title"));
+    assert!(!harness.contains("Champion:"));
     assert!(index.contains("How the arena works"));
     assert!(
         index.find("How the arena works").unwrap()

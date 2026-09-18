@@ -280,6 +280,21 @@ pub fn generate_reports_with_seasons(
     )?;
     let mut season_reports = Vec::new();
     append_season_reports(season_inputs, output, &mut reports, &mut season_reports)?;
+    let season_count = season_reports.len();
+    // Announce the harness circuit without inventing a draw or tournament result.
+    if !season_reports
+        .iter()
+        .any(|report| report.id == "harness-cup")
+    {
+        let report_dir = output.join("seasons/harness-cup");
+        fs::create_dir_all(&report_dir)?;
+        season_reports.push(SeasonReport {
+            id: "harness-cup".into(),
+            slug: "harness-cup".into(),
+            report_dir,
+            weeks: Vec::new(),
+        });
+    }
     reports.sort_by(|left, right| right.name.cmp(&left.name));
     series_reports.sort_by(|left, right| right.name.cmp(&left.name));
     benchmark_reports.sort_by(|left, right| right.name.cmp(&left.name));
@@ -330,7 +345,7 @@ pub fn generate_reports_with_seasons(
         matches: reports.len(),
         series: series_reports.len(),
         benchmarks: benchmark_reports.len(),
-        seasons: season_reports.len(),
+        seasons: season_count,
         index,
     })
 }
