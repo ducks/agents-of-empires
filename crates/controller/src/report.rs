@@ -300,6 +300,21 @@ pub fn generate_reports_with_seasons(
     benchmark_reports.sort_by(|left, right| right.name.cmp(&left.name));
     mark_current(&mut reports);
     mark_current_series(&mut series_reports);
+    let harness_final = reports
+        .iter()
+        .find(|report| {
+            report.name == "harness-exhibition-20260915-225225"
+                && report.state.winner.as_deref() == Some("builder-three")
+                && report
+                    .state
+                    .territories
+                    .get("builder-three")
+                    .is_some_and(|seat| {
+                        seat.agent.as_deref() == Some("term-llm")
+                            && seat.durable_at_ms == Some(45_216)
+                    })
+        })
+        .map(|report| report.slug.as_str());
     for report in &reports {
         fs::write(report.report_dir.join("index.html"), render_match(report))?;
     }
@@ -316,7 +331,7 @@ pub fn generate_reports_with_seasons(
         social::write_page(
             &report.report_dir,
             &format!("seasons/{}/", report.slug),
-            &render_season(report),
+            &render_season(report, harness_final),
             &social::Card::season(report),
         )?;
         for week in &report.weeks {
@@ -334,7 +349,7 @@ pub fn generate_reports_with_seasons(
     social::write_page(
         output,
         "",
-        &render_index(&season_reports),
+        &render_index(&season_reports, harness_final),
         &social::Card::home(),
     )?;
     fs::write(
@@ -957,8 +972,8 @@ fn copy_public_artifacts(report: &MatchReport) -> Result<(), ReportError> {
     Ok(())
 }
 
-fn render_index(seasons: &[SeasonReport]) -> String {
-    cups::home(seasons)
+fn render_index(seasons: &[SeasonReport], harness_final: Option<&str>) -> String {
+    cups::home(seasons, harness_final)
 }
 
 fn render_archive(
@@ -2303,7 +2318,7 @@ mod season_integrity_tests {
             report_dir: PathBuf::new(),
             weeks: vec![completed, upcoming],
         };
-        let html = render_index(&[report]);
+        let html = render_index(&[report], None);
         assert!(html.contains("The cup circuit"));
         assert!(html.contains("seasons/season/"));
         assert!(html.contains("seasons/season/2026-W39/"));
@@ -2320,7 +2335,7 @@ mod season_integrity_tests {
             report_dir: PathBuf::new(),
             weeks: vec![week("model/a", "claux", "high")],
         };
-        let html = render_season(&report);
+        let html = render_season(&report, None);
         assert!(html.contains("Vercel Cup"));
         assert!(html.contains("Recent tournaments"));
         assert!(html.contains("model/a"));
@@ -2395,8 +2410,8 @@ fn seat_pill(outcome: SeatOutcome) -> (&'static str, &'static str) {
     }
 }
 
-fn render_season(report: &SeasonReport) -> String {
-    cups::landing(report)
+fn render_season(report: &SeasonReport, harness_final: Option<&str>) -> String {
+    cups::landing(report, harness_final)
 }
 
 fn render_week_page(season: &SeasonReport, week: &WeekReport) -> String {

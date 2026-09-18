@@ -178,7 +178,7 @@ fn generates_archive_and_match_artifacts() {
     let harness = fs::read_to_string(output.join("seasons/harness-cup/index.html"))
         .expect("harness cup landing");
     assert!(harness.contains("term-llm"));
-    assert!(harness.contains("not a cup championship"));
+    assert!(harness.contains("The first crown is still up for grabs"));
     assert!(harness.contains("No tournament draw has been published"));
     assert!(harness.contains("og:title"));
     assert!(!harness.contains("Champion:"));
