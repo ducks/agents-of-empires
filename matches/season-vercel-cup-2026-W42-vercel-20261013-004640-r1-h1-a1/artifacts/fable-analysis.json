@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "analyzer": "aoe-controller/20260816.0.1",
+  "source_sha256": "c468f8a743b8cbfca0bb6a1618a0c24e39546cc9af4465ed3558f0e169094ada",
+  "agent": "fable",
+  "territory": "failover-two",
+  "model": "vercel/anthropic/claude-fable-5.1",
+  "outcome": "completed",
+  "metrics": {
+    "tool_calls": 5,
+    "tool_errors": 0,
+    "discoveries": 2,
+    "mutations": 1,
+    "lifecycle_actions": 1,
+    "validations": 1,
+    "first_mutation_after_ms": 20387,
+    "last_observed_after_ms": 47993
+  },
+  "architecture": {
+    "technologies": [
+      "Python",
+      "SQLite",
+      "systemd"
+    ],
+    "service_units": [],
+    "persistent_paths": [
+      "/var/lib/failover",
+      "/var/lib/failover/primary.failed",
+      "/var/lib/failover/primary.fenced",
+      "/var/lib/failover/records.sqlite3",
+      "/var/lib/failover/replica.role",
+      "/var/lib/failover/upstream"
+    ]
+  },
+  "actions": [
+    {
+      "index": 0,
+      "tool_id": "toolu_01XNFMP2FHTViNdZ7Q5jLneW",
+      "kind": "validation",
+      "started_after_ms": 5822,
+      "duration_ms": 437,
+      "description": "Inspect failover state dir, listeners, processes",
+      "command": "ls -la /var/lib/failover/ 2>&1; echo ---; for f in /var/lib/failover/*; do [ -f \"$f\" ] && [ \"${f##*.}\" != \"sqlite3\" ] && { echo \"== $f\"; cat \"$f\"; echo; }; done; echo ---; ss -ltnp 2>/dev/null || netstat -ltnp; echo ---; ps aux | grep -v grep | grep -iE 'failover|proxy|replica|primary|python|node' ",
+      "success": true,
+      "output_excerpt": "total 28\ndrwxr-xr-x 2 root root  4096 Oct 13 00:47 .\ndrwxr-xr-x 9 root root  4096 Oct 13 00:47 ..\n-rw-r--r-- 1 root root     0 Oct 13 00:47 primary.failed\n-rw-r--r-- 1 root root 12288 Oct 13 00:47 records.sqlite3\n-rw-r--r-- 1 root root     8 Oct 13 00:47 replica.role\n-rw-r--r-- 1…"
+    },
+    {
+      "index": 1,
+      "tool_id": "toolu_01BpiLGqNt8v7ZW4ioEBY17U",
+      "kind": "discovery",
+      "started_after_ms": 13808,
+      "duration_ms": 70,
+      "description": "Read service source and systemd units",
+      "command": "cat /nix/store/gy7xaavwyh9mbwz4ll8h6z3ban0s6g93-failover-proxy.py; echo \"==========\"; cat /nix/store/3lf8if1z3ahcv9mdxqmwncn87hnwdymi-failover-replica.py; echo \"==========\"; systemctl list-units --type=service --all 2>/dev/null | grep -iE 'failover|proxy|replica|primary'; echo ---; systemctl cat failover-proxy failover-replica failover-primary 2>&1 | head -120",
+      "success": true,
+      "output_excerpt": "import http.client\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\nUPSTREAM = \"/var/lib/failover/upstream\"\nclass Handler(BaseHTTPRequestHandler):\n    def forward(self):\n        try:\n            with open(UPSTREAM) as source: port = int(source.read().strip())\n …"
+    },
+    {
+      "index": 2,
+      "tool_id": "toolu_01HStAWcdVgSTWNWLhrUXTz1",
+      "kind": "mutation",
+      "started_after_ms": 20387,
+      "duration_ms": 160,
+      "description": "Inspect seed service and existing data",
+      "command": "systemctl cat failover-seed 2>&1; echo ----; f=$(systemctl show -p ExecStart failover-seed | grep -oE '/nix/store/[^ ;]+' | head -1); echo \"$f\"; cat \"$f\" 2>/dev/null; echo ----; sqlite3 /var/lib/failover/records.sqlite3 'select * from records;' 2>/dev/null || python3 -c \"import sqlite3;print(sqlite3.connect('/var/lib/failover/records.sqlite3').execute('select * from records').fetchall())\"; echo ----; systemctl is-enabled failover-proxy failover-replica failover-seed; stat -c '%U:%G %a %n' /var/lib/failover/*; mount | grep -E ' / | /var'; ",
+      "success": true,
+      "output_excerpt": "# /etc/systemd/system/failover-seed.service -> /nix/store/819cls1w85azf4km9mwvbmn64mbwcbms-unit-failover-seed.service/failover-seed.service\n[Unit]\nBefore=failover-replica.service failover-proxy.service\nDescription=Seed failed-primary topology and replicated state\n\n[Service]\nEnvir…"
+    },
+    {
+      "index": 3,
+      "tool_id": "toolu_01SqDWQkY3SQQUMV17vYLfrx",
+      "kind": "discovery",
+      "started_after_ms": 35879,
+      "duration_ms": 195,
+      "description": "Fence old primary, promote replica, switch proxy atomically",
+      "command": "cd /var/lib/failover && python3 - <<'PY'\nimport os, http.client, sys\nD=\"/var/lib/failover\"\ndef atomic_write(name, data):\n    tmp=os.path.join(D, \".\"+name+\".tmp\"); path=os.path.join(D, name)\n    with open(tmp,\"w\") as f:\n        f.write(data); f.flush(); os.fsync(f.fileno())\n    os.chmod(tmp,0o644); os.rename(tmp,path)\n    dfd=os.open(D,os.O_DIRECTORY); os.fsync(dfd); os.close(dfd)\ndef get(port,path):\n    c=http.client.HTTPConnection(\"127.0.0.1\",port,timeout=2); c.request(\"GET\",path); r=c.getresponse(); return r.status, r.read()\n# 1. preflight: replica healthy, old primary dead\nassert get(8082,\"/health\")==(200,b\"ready\"), \"replica unhealthy\"\ntry: get(8081,\"/health\"); sys.exit(\"old primary still…",
+      "success": true,
+      "output_excerpt": "failover complete\ntotal 32\ndrwxr-xr-x 2 root root  4096 Oct 13 00:48 .\ndrwxr-xr-x 9 root root  4096 Oct 13 00:47 ..\n-rw-r--r-- 1 root root     0 Oct 13 00:47 primary.failed\n-rw-r--r-- 1 root root    66 Oct 13 00:48 primary.fenced\n-rw-r--r-- 1 root root 12288 Oct 13 00:47 records.…"
+    },
+    {
+      "index": 4,
+      "tool_id": "toolu_01TpivzDuxPcrwrMnhyu5VCa",
+      "kind": "lifecycle",
+      "started_after_ms": 45831,
+      "duration_ms": 2162,
+      "description": "Verify public API, restart services, recheck",
+      "command": "cd /tmp; t(){ echo -n \"$1 $2 -> \"; curl -s -o /tmp/b -w '%{http_code} ' -X \"$1\" \"http://127.0.0.1:8080$2\" ${3+--data-binary \"$3\"}; cat /tmp/b; echo; }\nt GET /health; t GET /role; t GET /records/customer-red-4a7; t GET /records/customer-blue-8d2; t GET /records/customer-green-f31; t GET /records/missing\nt PUT /records/agent-check 'héllo-after-failover ✓'; t GET /records/agent-check\necho \"--- restart services ---\"; systemctl restart failover-seed failover-replica failover-proxy; sleep 1.5\nsystemctl is-active failover-seed failover-replica failover-proxy\nt GET /health; t GET /role; t GET /records/customer-red-4a7; t GET /records/agent-check\necho \"--- fencing ---\"; ls /var/lib/failover/primary.f…",
+      "success": true,
+      "output_excerpt": "GET /health -> 200 ready\nGET /role -> 200 primary\nGET /records/customer-red-4a7 -> 200 red-original\nGET /records/customer-blue-8d2 -> 200 blue-original\nGET /records/customer-green-f31 -> 200 green-original\nGET /records/missing -> 404 \nPUT /records/agent-check -> 204 \nGET /records…"
+    }
+  ]
+}

@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "analyzer": "aoe-controller/20260816.0.1",
+  "source_sha256": "3492b01fe15e899e6036cda4e8242f5eb72d513e0350b56ddac635b470ce375d",
+  "agent": "glm-flash",
+  "territory": "rollout-three",
+  "model": "vercel/zai/glm-5.3-flash",
+  "outcome": "completed",
+  "metrics": {
+    "tool_calls": 11,
+    "tool_errors": 0,
+    "discoveries": 4,
+    "mutations": 3,
+    "lifecycle_actions": 1,
+    "validations": 3,
+    "first_mutation_after_ms": 19920,
+    "last_observed_after_ms": 60399
+  },
+  "architecture": {
+    "technologies": [
+      "Python",
+      "SQLite",
+      "systemd"
+    ],
+    "service_units": [
+      "etc/systemd/system/rollout-v2.service",
+      "rollout-proxy.service",
+      "rollout-seed.service",
+      "rollout-v1.service",
+      "rollout-v2.service"
+    ],
+    "persistent_paths": [
+      "/etc/systemd/system",
+      "/etc/systemd/system/rollout-v2.service",
+      "/opt/rollout",
+      "/opt/rollout/v2.py",
+      "/var/lib/rollout",
+      "/var/lib/rollout/.upstream.tmp",
+      "/var/lib/rollout/records.sqlite3",
+      "/var/lib/rollout/upstream"
+    ]
+  },
+  "actions": [
+    {
+      "index": 0,
+      "tool_id": "chatcmpl-tool-b48eb248c9d6493191c261542362828d",
+      "kind": "validation",
+      "started_after_ms": 2285,
+      "duration_ms": 163,
+      "description": "Check service status and rollout files",
+      "command": "systemctl status rollout-proxy.service rollout-v1.service rollout-v2.service --no-pager 2>&1 | head -50; echo ---; cat /var/lib/rollout/upstream; echo; ls -la /opt/rollout/ /var/lib/rollout/",
+      "success": true,
+      "output_excerpt": "● rollout-proxy.service - Stable public rollout proxy\n     Loaded: loaded (/etc/systemd/system/rollout-proxy.service; enabled; preset: ignored)\n     Active: active (running) since Tue 2026-10-13 00:53:24 UTC; 10s ago\n Invocation: b473e7b0219b4534bb8bde1545579dab\n   Main PID: 561 …"
+    },
+    {
+      "index": 1,
+      "tool_id": "chatcmpl-tool-9c993cb1c6324598b0d13a687611444d",
+      "kind": "validation",
+      "started_after_ms": 2449,
+      "duration_ms": 49,
+      "description": "Check public endpoint health and version",
+      "command": "curl -s -w '\\n%{http_code}\\n' http://127.0.0.1:8080/health http://127.0.0.1:8080/version",
+      "success": true,
+      "output_excerpt": "ready\n200\nv1\n200"
+    },
+    {
+      "index": 2,
+      "tool_id": "chatcmpl-tool-85aadec2896e49caa58196aa8152dc32",
+      "kind": "discovery",
+      "started_after_ms": 13437,
+      "duration_ms": 26,
+      "description": "Read v1 and proxy source plus v2 unit",
+      "command": "cat /nix/store/13qi755lbgrlrh6c5jqjdlpf1f7nvffv-rollout-v1.py /nix/store/08ib8hkpsxizx3zrsv266idphl0r1hgb-rollout-proxy.py /etc/systemd/system/rollout-v2.service",
+      "success": true,
+      "output_excerpt": "import sqlite3\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n\nDB = \"/var/lib/rollout/records.sqlite3\"\n\ndef database():\n    connection = sqlite3.connect(DB, timeout=10)\n    connection.execute(\"CREATE TABLE IF NOT EXISTS records (id TEXT PRIMARY KEY, value TEX…"
+    },
+    {
+      "index": 3,
+      "tool_id": "chatcmpl-tool-915d07d8f10f4cc39938f9688a5a073b",
+      "kind": "discovery",
+      "started_after_ms": 13464,
+      "duration_ms": 83,
+      "description": "Inspect sqlite schema and rows",
+      "command": "python3 -c \"\nimport sqlite3\nc=sqlite3.connect('/var/lib/rollout/records.sqlite3')\nprint(c.execute('select sql from sqlite_master').fetchall())\nrows=c.execute('select id, length(value) from records').fetchall()\nprint(len(rows),'rows')\nprint(rows[:10])\n\"",
+      "success": true,
+      "output_excerpt": "[('CREATE TABLE records (id TEXT PRIMARY KEY, value TEXT NOT NULL)',), (None,)]\n2 rows\n[('customer-alpha-73c', 14), ('customer-beta-a19', 13)]"
+    },
+    {
+      "index": 4,
+      "tool_id": "chatcmpl-tool-c5d7fb6b00424be097796ebb3cd97a6b",
+      "kind": "mutation",
+      "started_after_ms": 19920,
+      "duration_ms": 0,
+      "description": null,
+      "command": "Write /opt/rollout/v2.py",
+      "success": true,
+      "output_excerpt": "Successfully wrote to /opt/rollout/v2.py"
+    },
+    {
+      "index": 5,
+      "tool_id": "chatcmpl-tool-e4ca814984054768bb5fbcb8aa55c417",
+      "kind": "lifecycle",
+      "started_after_ms": 21170,
+      "duration_ms": 1078,
+      "description": "Clear start-limit failure and start v2",
+      "command": "systemctl reset-failed rollout-v2.service && systemctl start rollout-v2.service && sleep 1 && systemctl is-active rollout-v2.service && systemctl is-enabled rollout-v2.service",
+      "success": true,
+      "output_excerpt": "active\nenabled"
+    },
+    {
+      "index": 6,
+      "tool_id": "chatcmpl-tool-c72d5d0159734abcb402561777c2fcc2",
+      "kind": "mutation",
+      "started_after_ms": 25144,
+      "duration_ms": 226,
+      "description": "Verify v2 endpoints and existing records",
+      "command": "for p in /health /version; do printf '%s: ' \"$p\"; curl -s -w ' [%{http_code}]\\n' \"http://127.0.0.1:8082$p\"; done\nfor id in customer-alpha-73c customer-beta-a19 missing-id; do printf '%s: ' \"$id\"; curl -s -w ' [%{http_code}]\\n' \"http://127.0.0.1:8082/records/$id\"; done\ncurl -s -X PUT --data-binary 'cutover-probe-üñí' -w '[%{http_code}]\\n' http://127.0.0.1:8082/records/selftest-probe\ncurl -s -w ' [%{http_code}]\\n' http://127.0.0.1:8082/records/selftest-probe\n# confirm existing v1 records are byte-identical through v1 as ground truth\ncurl -s http://127.0.0.1:8081/records/customer-alpha-73c | xxd | head -2",
+      "success": true,
+      "output_excerpt": "/health: ready [200]\n/version: v2 [200]\ncustomer-alpha-73c: alpha-original [200]\ncustomer-beta-a19: beta-original [200]\nmissing-id:  [404]\n[204]\ncutover-probe-üñí [200]\n00000000: 616c 7068 612d 6f72 6967 696e 616c       alpha-original"
+    },
+    {
+      "index": 7,
+      "tool_id": "chatcmpl-tool-ace0ed27f9e44d47aec674afd8b306e8",
+      "kind": "mutation",
+      "started_after_ms": 31199,
+      "duration_ms": 4365,
+      "description": "Atomically switch upstream and verify public endpoint",
+      "command": "printf '8082' > /var/lib/rollout/.upstream.tmp && mv -f /var/lib/rollout/.upstream.tmp /var/lib/rollout/upstream && cat /var/lib/rollout/upstream && echo\n# hammer the public endpoint across the cutover window\nfail=0\nfor i in $(seq 1 200); do\n  h=$(curl -s -w '%{http_code}' http://127.0.0.1:8080/health); [ \"$h\" = \"ready200\" ] || { echo \"FAIL health: $h\"; fail=1; }\ndone\necho \"health probes done, fail=$fail\"\nprintf 'public version: '; curl -s -w ' [%{http_code}]\\n' http://127.0.0.1:8080/version\nprintf 'alpha via public: '; curl -s -w ' [%{http_code}]\\n' http://127.0.0.1:8080/records/customer-alpha-73c\nprintf 'beta via public: '; curl -s -w ' [%{http_code}]\\n' http://127.0.0.1:8080/records/custo…",
+      "success": true,
+      "output_excerpt": "8082\nhealth probes done, fail=0\npublic version: v2 [200]\nalpha via public: alpha-original [200]\nbeta via public: beta-original [200]\n404 via public: [404]\nPUT via public: [204]\nGET back via public: public-put-ö [200]"
+    },
+    {
+      "index": 8,
+      "tool_id": "chatcmpl-tool-8575f52cb71c415fb86ef9acb587e9d9",
+      "kind": "discovery",
+      "started_after_ms": 50167,
+      "duration_ms": 196,
+      "description": "Check seed unit and boot-time upstream handling",
+      "command": "systemctl cat rollout-seed.service 2>/dev/null; echo ---\ngrep -rl 'upstream' /etc/systemd/system/ /nix/store/08ib8hkpsxizx3zrsv266idphl0r1hgb-rollout-proxy.py 2>/dev/null | grep -v '^[^/]*rollout-proxy'\necho ---\nls /etc/systemd/system/ | grep -i rollout\necho ---\nsystemctl is-enabled rollout-v1.service rollout-proxy.service rollout-v2.service\necho ---\ngrep -c 'Restart=always' /etc/systemd/system/rollout-v2.service",
+      "success": true,
+      "output_excerpt": "# /etc/systemd/system/rollout-seed.service -> /nix/store/0ky46lp0ljmkfv9y4sc1w4n2vfkydj8v-unit-rollout-seed.service/rollout-seed.service\n[Unit]\nBefore=rollout-v1.service rollout-v2.service rollout-proxy.service\nDescription=Seed live v1 state\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE…"
+    },
+    {
+      "index": 9,
+      "tool_id": "chatcmpl-tool-cd49d3a03f3f4eb2b11f64978f4148b6",
+      "kind": "discovery",
+      "started_after_ms": 51895,
+      "duration_ms": 40,
+      "description": "Read seed script contents",
+      "command": "cat /nix/store/44ql83wxi6z28pk20x4179khgs5i5anf-unit-script-rollout-seed-start/bin/rollout-seed-start",
+      "success": true,
+      "output_excerpt": "#!/nix/store/byi2zpy2bgcf3dr6y0l8m50rmjj8z7q1-bash-5.3p15/bin/bash\nset -e\n\ninstall -d -m 0755 /var/lib/rollout /opt/rollout\nif [[ ! -e /var/lib/rollout/upstream ]]; then\n  printf '8081\\n' > /var/lib/rollout/upstream\nfi\n/nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bi…"
+    },
+    {
+      "index": 10,
+      "tool_id": "chatcmpl-tool-12eb40a998034eb5a04124e41741623e",
+      "kind": "validation",
+      "started_after_ms": 60101,
+      "duration_ms": 298,
+      "description": "Final end-to-end verification",
+      "command": "echo \"== services (untouched start times = never restarted) ==\"\nsystemctl show rollout-proxy.service rollout-v1.service rollout-v2.service -p ActiveState,SubState,ExecMainStartTimestamp,UnitFileState | sed 's/^/ /'\necho \"== public endpoint final state ==\"\nfor p in /health /version; do printf ' %s: ' \"$p\"; curl -s -w ' [%{http_code}]\\n' \"http://127.0.0.1:8080$p\"; done\nfor id in customer-alpha-73c customer-beta-a19; do printf ' %s: ' \"$id\"; curl -s -w ' [%{http_code}]\\n' \"http://127.0.0.1:8080/records/$id\"; done\nprintf ' unknown: '; curl -s -o /dev/null -w '[%{http_code}]\\n' http://127.0.0.1:8080/records/absent-x\nprintf ' PUT/GET roundtrip: '; curl -s -X PUT --data-binary 'final-check-✓' http:…",
+      "success": true,
+      "output_excerpt": "== services (untouched start times = never restarted) ==\n ActiveState=active\n SubState=running\n UnitFileState=enabled\n ExecMainStartTimestamp=Tue 2026-10-13 00:53:24 UTC\n \n ActiveState=active\n SubState=running\n UnitFileState=enabled\n ExecMainStartTimestamp=Tue 2026-10-13 00:53:24…"
+    }
+  ]
+}

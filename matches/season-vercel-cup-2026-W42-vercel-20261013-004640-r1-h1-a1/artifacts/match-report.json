@@ -1,0 +1,2865 @@
+{
+  "analyses": {
+    "fable": {
+      "actions": [
+        {
+          "command": "ls -la /var/lib/failover/ 2>&1; echo ---; for f in /var/lib/failover/*; do [ -f \"$f\" ] && [ \"${f##*.}\" != \"sqlite3\" ] && { echo \"== $f\"; cat \"$f\"; echo; }; done; echo ---; ss -ltnp 2>/dev/null || netstat -ltnp; echo ---; ps aux | grep -v grep | grep -iE 'failover|proxy|replica|primary|python|node' ",
+          "description": "Inspect failover state dir, listeners, processes",
+          "duration_ms": 437,
+          "index": 0,
+          "kind": "validation",
+          "output_excerpt": "total 28\ndrwxr-xr-x 2 root root  4096 Oct 13 00:47 .\ndrwxr-xr-x 9 root root  4096 Oct 13 00:47 ..\n-rw-r--r-- 1 root root     0 Oct 13 00:47 primary.failed\n-rw-r--r-- 1 root root 12288 Oct 13 00:47 records.sqlite3\n-rw-r--r-- 1 root root     8 Oct 13 00:47 replica.role\n-rw-r--r-- 1…",
+          "started_after_ms": 5822,
+          "success": true,
+          "tool_id": "toolu_01XNFMP2FHTViNdZ7Q5jLneW"
+        },
+        {
+          "command": "cat /nix/store/gy7xaavwyh9mbwz4ll8h6z3ban0s6g93-failover-proxy.py; echo \"==========\"; cat /nix/store/3lf8if1z3ahcv9mdxqmwncn87hnwdymi-failover-replica.py; echo \"==========\"; systemctl list-units --type=service --all 2>/dev/null | grep -iE 'failover|proxy|replica|primary'; echo ---; systemctl cat failover-proxy failover-replica failover-primary 2>&1 | head -120",
+          "description": "Read service source and systemd units",
+          "duration_ms": 70,
+          "index": 1,
+          "kind": "discovery",
+          "output_excerpt": "import http.client\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\nUPSTREAM = \"/var/lib/failover/upstream\"\nclass Handler(BaseHTTPRequestHandler):\n    def forward(self):\n        try:\n            with open(UPSTREAM) as source: port = int(source.read().strip())\n …",
+          "started_after_ms": 13808,
+          "success": true,
+          "tool_id": "toolu_01BpiLGqNt8v7ZW4ioEBY17U"
+        },
+        {
+          "command": "systemctl cat failover-seed 2>&1; echo ----; f=$(systemctl show -p ExecStart failover-seed | grep -oE '/nix/store/[^ ;]+' | head -1); echo \"$f\"; cat \"$f\" 2>/dev/null; echo ----; sqlite3 /var/lib/failover/records.sqlite3 'select * from records;' 2>/dev/null || python3 -c \"import sqlite3;print(sqlite3.connect('/var/lib/failover/records.sqlite3').execute('select * from records').fetchall())\"; echo ----; systemctl is-enabled failover-proxy failover-replica failover-seed; stat -c '%U:%G %a %n' /var/lib/failover/*; mount | grep -E ' / | /var'; ",
+          "description": "Inspect seed service and existing data",
+          "duration_ms": 160,
+          "index": 2,
+          "kind": "mutation",
+          "output_excerpt": "# /etc/systemd/system/failover-seed.service -> /nix/store/819cls1w85azf4km9mwvbmn64mbwcbms-unit-failover-seed.service/failover-seed.service\n[Unit]\nBefore=failover-replica.service failover-proxy.service\nDescription=Seed failed-primary topology and replicated state\n\n[Service]\nEnvir…",
+          "started_after_ms": 20387,
+          "success": true,
+          "tool_id": "toolu_01HStAWcdVgSTWNWLhrUXTz1"
+        },
+        {
+          "command": "cd /var/lib/failover && python3 - <<'PY'\nimport os, http.client, sys\nD=\"/var/lib/failover\"\ndef atomic_write(name, data):\n    tmp=os.path.join(D, \".\"+name+\".tmp\"); path=os.path.join(D, name)\n    with open(tmp,\"w\") as f:\n        f.write(data); f.flush(); os.fsync(f.fileno())\n    os.chmod(tmp,0o644); os.rename(tmp,path)\n    dfd=os.open(D,os.O_DIRECTORY); os.fsync(dfd); os.close(dfd)\ndef get(port,path):\n    c=http.client.HTTPConnection(\"127.0.0.1\",port,timeout=2); c.request(\"GET\",path); r=c.getresponse(); return r.status, r.read()\n# 1. preflight: replica healthy, old primary dead\nassert get(8082,\"/health\")==(200,b\"ready\"), \"replica unhealthy\"\ntry: get(8081,\"/health\"); sys.exit(\"old primary still…",
+          "description": "Fence old primary, promote replica, switch proxy atomically",
+          "duration_ms": 195,
+          "index": 3,
+          "kind": "discovery",
+          "output_excerpt": "failover complete\ntotal 32\ndrwxr-xr-x 2 root root  4096 Oct 13 00:48 .\ndrwxr-xr-x 9 root root  4096 Oct 13 00:47 ..\n-rw-r--r-- 1 root root     0 Oct 13 00:47 primary.failed\n-rw-r--r-- 1 root root    66 Oct 13 00:48 primary.fenced\n-rw-r--r-- 1 root root 12288 Oct 13 00:47 records.…",
+          "started_after_ms": 35879,
+          "success": true,
+          "tool_id": "toolu_01SqDWQkY3SQQUMV17vYLfrx"
+        },
+        {
+          "command": "cd /tmp; t(){ echo -n \"$1 $2 -> \"; curl -s -o /tmp/b -w '%{http_code} ' -X \"$1\" \"http://127.0.0.1:8080$2\" ${3+--data-binary \"$3\"}; cat /tmp/b; echo; }\nt GET /health; t GET /role; t GET /records/customer-red-4a7; t GET /records/customer-blue-8d2; t GET /records/customer-green-f31; t GET /records/missing\nt PUT /records/agent-check 'héllo-after-failover ✓'; t GET /records/agent-check\necho \"--- restart services ---\"; systemctl restart failover-seed failover-replica failover-proxy; sleep 1.5\nsystemctl is-active failover-seed failover-replica failover-proxy\nt GET /health; t GET /role; t GET /records/customer-red-4a7; t GET /records/agent-check\necho \"--- fencing ---\"; ls /var/lib/failover/primary.f…",
+          "description": "Verify public API, restart services, recheck",
+          "duration_ms": 2162,
+          "index": 4,
+          "kind": "lifecycle",
+          "output_excerpt": "GET /health -> 200 ready\nGET /role -> 200 primary\nGET /records/customer-red-4a7 -> 200 red-original\nGET /records/customer-blue-8d2 -> 200 blue-original\nGET /records/customer-green-f31 -> 200 green-original\nGET /records/missing -> 404 \nPUT /records/agent-check -> 204 \nGET /records…",
+          "started_after_ms": 45831,
+          "success": true,
+          "tool_id": "toolu_01TpivzDuxPcrwrMnhyu5VCa"
+        }
+      ],
+      "agent": "fable",
+      "analyzer": "aoe-controller/20260816.0.1",
+      "architecture": {
+        "persistent_paths": [
+          "/var/lib/failover",
+          "/var/lib/failover/primary.failed",
+          "/var/lib/failover/primary.fenced",
+          "/var/lib/failover/records.sqlite3",
+          "/var/lib/failover/replica.role",
+          "/var/lib/failover/upstream"
+        ],
+        "service_units": [],
+        "technologies": [
+          "Python",
+          "SQLite",
+          "systemd"
+        ]
+      },
+      "metrics": {
+        "discoveries": 2,
+        "first_mutation_after_ms": 20387,
+        "last_observed_after_ms": 47993,
+        "lifecycle_actions": 1,
+        "mutations": 1,
+        "tool_calls": 5,
+        "tool_errors": 0,
+        "validations": 1
+      },
+      "model": "vercel/anthropic/claude-fable-5.1",
+      "outcome": "completed",
+      "schema_version": 1,
+      "source_sha256": "c468f8a743b8cbfca0bb6a1618a0c24e39546cc9af4465ed3558f0e169094ada",
+      "territory": "failover-two"
+    },
+    "glm-flash": {
+      "actions": [
+        {
+          "command": "ls -la /var/lib/failover/ 2>&1; echo ---; ps aux | grep -E '8081|8082|proxy|replica|python|node' | grep -v grep",
+          "description": "Inspect failover dir and running processes",
+          "duration_ms": 141,
+          "index": 0,
+          "kind": "discovery",
+          "output_excerpt": "total 28\ndrwxr-xr-x 2 root root  4096 Oct 13 00:47 .\ndrwxr-xr-x 9 root root  4096 Oct 13 00:47 ..\n-rw-r--r-- 1 root root     0 Oct 13 00:47 primary.failed\n-rw-r--r-- 1 root root 12288 Oct 13 00:47 records.sqlite3\n-rw-r--r-- 1 root root     8 Oct 13 00:47 replica.role\n-rw-r--r-- 1…",
+          "started_after_ms": 1808,
+          "success": true,
+          "tool_id": "chatcmpl-tool-0d58ac4cbaa84057beea3f1a19a78bff"
+        },
+        {
+          "command": "ss -tlnp | grep -E '808[0-9]'; echo ---; ls /root /etc/systemd/system 2>/dev/null",
+          "description": "Check listening ports and systemd units",
+          "duration_ms": 61,
+          "index": 1,
+          "kind": "validation",
+          "output_excerpt": "LISTEN 0      5          127.0.0.1:8082       0.0.0.0:*    users:((\"python\",pid=558,fd=3))\nLISTEN 0      5            0.0.0.0:8080       0.0.0.0:*    users:((\"python\",pid=557,fd=3))\n---\n/etc/systemd/system:\nautovt@.service\nbasic.target\nblk-availability.service\nbluetooth.target\nbo…",
+          "started_after_ms": 1950,
+          "success": true,
+          "tool_id": "chatcmpl-tool-5d10420a4abe4cd69715d9fd45889315"
+        },
+        {
+          "command": "cat /etc/systemd/system/failover-proxy.service /etc/systemd/system/failover-replica.service /etc/systemd/system/failover-seed.service; echo ---; cat /var/lib/failover/replica.role /var/lib/failover/upstream",
+          "description": "Read failover systemd units and state files",
+          "duration_ms": 164,
+          "index": 2,
+          "kind": "discovery",
+          "output_excerpt": "[Unit]\nAfter=failover-seed.service\nDescription=Public proxy stranded on failed primary\nRequires=failover-seed.service\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE=/nix/store/c59mcax29xrwyfdqs308wkmn2srnmzkn-glibc-locales-2.42-67/lib/locale/locale-archive\"\nEnvironment=\"PATH=/nix/store/9…",
+          "started_after_ms": 8069,
+          "success": true,
+          "tool_id": "chatcmpl-tool-80b9e3b4042e4b8299e9cae2b6dfcf6e"
+        },
+        {
+          "command": "cat /nix/store/gy7xaavwyh9mbwz4ll8h6z3ban0s6g93-failover-proxy.py /nix/store/3lf8if1z3ahcv9mdxqmwncn87hnwdymi-failover-replica.py",
+          "description": "Read proxy and replica scripts",
+          "duration_ms": 106,
+          "index": 3,
+          "kind": "discovery",
+          "output_excerpt": "import http.client\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\nUPSTREAM = \"/var/lib/failover/upstream\"\nclass Handler(BaseHTTPRequestHandler):\n    def forward(self):\n        try:\n            with open(UPSTREAM) as source: port = int(source.read().strip())\n …",
+          "started_after_ms": 8234,
+          "success": true,
+          "tool_id": "chatcmpl-tool-f80879e194a941c6a5f585d0aa0a9410"
+        },
+        {
+          "command": "cat /nix/store/vnsdj3nml00cykxy4dmpcsgbwp76jspz-unit-script-failover-seed-start/bin/failover-seed-start; echo ---; systemctl status failover-seed failover-replica failover-proxy --no-pager | head -40",
+          "description": "Read seed script and service status",
+          "duration_ms": 70,
+          "index": 4,
+          "kind": "validation",
+          "output_excerpt": "#!/nix/store/byi2zpy2bgcf3dr6y0l8m50rmjj8z7q1-bash-5.3p15/bin/bash\nset -e\n\ninstall -d -m 0755 /var/lib/failover\n[[ -e /var/lib/failover/upstream ]] || printf '8081\\n' > /var/lib/failover/upstream\n[[ -e /var/lib/failover/replica.role ]] || printf 'replica\\n' > /var/lib/failover/re…",
+          "started_after_ms": 13626,
+          "success": true,
+          "tool_id": "chatcmpl-tool-b60fc8f826da46b49110caa3694ce4be"
+        },
+        {
+          "command": "python3 - <<'PY'\nimport os, pathlib\nD = pathlib.Path(\"/var/lib/failover\")\ndef atomic_write(path, data):\n    tmp = D / (path.name + \".tmp\")\n    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)\n    os.write(fd, data); os.fsync(fd); os.close(fd)\n    os.replace(tmp, path)                      # atomic\n    dfd = os.open(D, os.O_RDONLY); os.fsync(dfd); os.close(dfd)  # durable dir entry\n# 1. Durably fence the old primary BEFORE writes are restored\natomic_write(D / \"primary.fenced\", b\"fenced\\n\")\n# 2. Promote replica (atomic role flip)\natomic_write(D / \"replica.role\", b\"primary\\n\")\n# 3. Atomically switch proxy upstream to the promoted replica\natomic_write(D / \"upstream\", b\"8082\\n\")\npr…",
+          "description": "Fence old primary, promote replica, switch proxy atomically",
+          "duration_ms": 254,
+          "index": 5,
+          "kind": "discovery",
+          "output_excerpt": "Traceback (most recent call last):\n  File \"<stdin>\", line 15, in <module>\nAttributeError: '_io.TextIOWrapper' object has no attribute 'exists'\n\nExit code: exit status: 1",
+          "started_after_ms": 19632,
+          "success": false,
+          "tool_id": "chatcmpl-tool-620ee87c901e4fc09dee6b748a88413d"
+        }
+      ],
+      "agent": "glm-flash",
+      "analyzer": "aoe-controller/20260816.0.1",
+      "architecture": {
+        "persistent_paths": [
+          "/etc/systemd/system",
+          "/etc/systemd/system/failover-proxy.service",
+          "/etc/systemd/system/failover-replica.service",
+          "/etc/systemd/system/failover-seed.service",
+          "/var/lib/failover",
+          "/var/lib/failover/replica.role",
+          "/var/lib/failover/upstream"
+        ],
+        "service_units": [
+          "etc/systemd/system/failover-proxy.service",
+          "etc/systemd/system/failover-replica.service",
+          "etc/systemd/system/failover-seed.service"
+        ],
+        "technologies": [
+          "Python",
+          "SQLite",
+          "systemd"
+        ]
+      },
+      "metrics": {
+        "discoveries": 4,
+        "first_mutation_after_ms": null,
+        "last_observed_after_ms": 19886,
+        "lifecycle_actions": 0,
+        "mutations": 0,
+        "tool_calls": 6,
+        "tool_errors": 1,
+        "validations": 2
+      },
+      "model": "vercel/zai/glm-5.3-flash",
+      "outcome": "running",
+      "schema_version": 1,
+      "source_sha256": "bef03af180b7805f6bc64baac0157deddad885dd535a84060871c6c1ee3b1858",
+      "territory": "failover-one"
+    },
+    "qwen": {
+      "actions": [
+        {
+          "command": "ls -la /var/lib/failover/ 2>/dev/null; echo \"---\"; cat /var/lib/failover/replica.role 2>/dev/null; echo \"---\"; cat /var/lib/failover/upstream 2>/dev/null; echo \"---\"; ls -la /var/lib/failover/primary.failed 2>/dev/null",
+          "description": "Inspect failover state directory",
+          "duration_ms": 229,
+          "index": 0,
+          "kind": "discovery",
+          "output_excerpt": "total 28\ndrwxr-xr-x 2 root root  4096 Oct 13 00:47 .\ndrwxr-xr-x 9 root root  4096 Oct 13 00:47 ..\n-rw-r--r-- 1 root root     0 Oct 13 00:47 primary.failed\n-rw-r--r-- 1 root root 12288 Oct 13 00:47 records.sqlite3\n-rw-r--r-- 1 root root     8 Oct 13 00:47 replica.role\n-rw-r--r-- 1…",
+          "started_after_ms": 3832,
+          "success": true,
+          "tool_id": "chatcmpl-tool-99247c96e05e106e"
+        },
+        {
+          "command": "ss -tlnp 2>/dev/null | head -50; echo \"---PROCESSES---\"; ps aux | grep -Ei 'failover|proxy|replica|primary|8080|8081|8082' | grep -v grep",
+          "description": "Check listening ports and related processes",
+          "duration_ms": 94,
+          "index": 1,
+          "kind": "validation",
+          "output_excerpt": "State  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess\nLISTEN 0      5            0.0.0.0:8080       0.0.0.0:*    users:((\"python\",pid=555,fd=3))\nLISTEN 0      128        127.0.0.1:18004      0.0.0.0:*    users:((\"sshd-session\",pid=645,fd=10))\nLISTEN 0      4096      1…",
+          "started_after_ms": 4061,
+          "success": true,
+          "tool_id": "chatcmpl-tool-865b947b946b42ca"
+        },
+        {
+          "command": "cat /nix/store/gy7xaavwyh9mbwz4ll8h6z3ban0s6g93-failover-proxy.py",
+          "description": "Read proxy source",
+          "duration_ms": 57,
+          "index": 2,
+          "kind": "discovery",
+          "output_excerpt": "import http.client\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\nUPSTREAM = \"/var/lib/failover/upstream\"\nclass Handler(BaseHTTPRequestHandler):\n    def forward(self):\n        try:\n            with open(UPSTREAM) as source: port = int(source.read().strip())\n …",
+          "started_after_ms": 11986,
+          "success": true,
+          "tool_id": "chatcmpl-tool-86211668cfb30cdb"
+        },
+        {
+          "command": "cat /nix/store/3lf8if1z3ahcv9mdxqmwncn87hnwdymi-failover-replica.py",
+          "description": "Read replica source",
+          "duration_ms": 53,
+          "index": 3,
+          "kind": "discovery",
+          "output_excerpt": "import sqlite3\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\nDB = \"/var/lib/failover/records.sqlite3\"\nROLE = \"/var/lib/failover/replica.role\"\ndef role():\n    with open(ROLE) as source: return source.read().strip()\ndef database():\n    connection = sqlite3.con…",
+          "started_after_ms": 12044,
+          "success": true,
+          "tool_id": "chatcmpl-tool-aed85f85ce431fed"
+        },
+        {
+          "command": "systemctl list-units --all --no-pager 2>/dev/null | grep -Ei 'failover|proxy|replica|primary'; echo \"---\"; systemctl list-unit-files --no-pager 2>/dev/null | grep -Ei 'failover|proxy|replica|primary'; echo \"---\"; ls /etc/systemd/system/ 2>/dev/null",
+          "description": "Find systemd units for the services",
+          "duration_ms": 5091,
+          "index": 4,
+          "kind": "discovery",
+          "output_excerpt": "failover-proxy.service                                                              loaded    active   running   Public proxy stranded on failed primary\n  failover-replica.service                                                            loaded    active   running   Healthy read…",
+          "started_after_ms": 12097,
+          "success": true,
+          "tool_id": "chatcmpl-tool-a09198a8b7e13e44"
+        },
+        {
+          "command": "cat /etc/systemd/system/failover-proxy.service /etc/systemd/system/failover-replica.service /etc/systemd/system/failover-seed.service",
+          "description": "Read failover unit files",
+          "duration_ms": 30,
+          "index": 5,
+          "kind": "discovery",
+          "output_excerpt": "[Unit]\nAfter=failover-seed.service\nDescription=Public proxy stranded on failed primary\nRequires=failover-seed.service\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE=/nix/store/c59mcax29xrwyfdqs308wkmn2srnmzkn-glibc-locales-2.42-67/lib/locale/locale-archive\"\nEnvironment=\"PATH=/nix/store/9…",
+          "started_after_ms": 20600,
+          "success": true,
+          "tool_id": "chatcmpl-tool-8f62cfea66cb126c"
+        },
+        {
+          "command": "cat /etc/systemd/system/post-boot.service 2>/dev/null; echo \"---\"; systemctl cat post-boot.service 2>/dev/null; echo \"---wants---\"; ls -la /etc/systemd/system/multi-user.target.wants/ 2>/dev/null; ls -la /etc/systemd/system/default.target.wants/ 2>/dev/null",
+          "description": "Inspect post-boot unit and wants symlinks",
+          "duration_ms": 70,
+          "index": 6,
+          "kind": "discovery",
+          "output_excerpt": "[Unit]\nDescription=Post-Boot Actions\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE=/nix/store/c59mcax29xrwyfdqs308wkmn2srnmzkn-glibc-locales-2.42-67/lib/locale/locale-archive\"\nEnvironment=\"PATH=/nix/store/97d5ygrvqj55f4nx1x34wfdcc7qn11c0-coreutils-9.11/bin:/nix/store/ibg16grw5is7i7ilnfl…",
+          "started_after_ms": 20631,
+          "success": true,
+          "tool_id": "chatcmpl-tool-9040d54891dbf641"
+        },
+        {
+          "command": "cat /nix/store/vnsdj3nml00cykxy4dmpcsgbwp76jspz-unit-script-failover-seed-start/bin/failover-seed-start",
+          "description": "Read failover-seed start script",
+          "duration_ms": 120,
+          "index": 7,
+          "kind": "discovery",
+          "output_excerpt": "#!/nix/store/byi2zpy2bgcf3dr6y0l8m50rmjj8z7q1-bash-5.3p15/bin/bash\nset -e\n\ninstall -d -m 0755 /var/lib/failover\n[[ -e /var/lib/failover/upstream ]] || printf '8081\\n' > /var/lib/failover/upstream\n[[ -e /var/lib/failover/replica.role ]] || printf 'replica\\n' > /var/lib/failover/re…",
+          "started_after_ms": 26870,
+          "success": true,
+          "tool_id": "chatcmpl-tool-b18b20615497d035"
+        },
+        {
+          "command": "ls -la /etc/systemd/system/failover-*.service; echo \"---\"; stat -c '%A %n' /etc/systemd/system /etc /; echo \"---mounts---\"; findmnt -no SOURCE,TARGET,FSTYPE,OPTIONS / 2>/dev/null; mount | grep -E ' / | /etc | /nix ' | head",
+          "description": "Check unit file writability and mounts",
+          "duration_ms": 278,
+          "index": 8,
+          "kind": "discovery",
+          "output_excerpt": "lrwxrwxrwx 1 root root 94 Jan  1  1970 /etc/systemd/system/failover-proxy.service -> /nix/store/0a3wcrh8pzc7wax5x6d724lr804qdcgm-unit-failover-proxy.service/failover-proxy.service\nlrwxrwxrwx 1 root root 98 Jan  1  1970 /etc/systemd/system/failover-replica.service -> /nix/store/cs…",
+          "started_after_ms": 26991,
+          "success": true,
+          "tool_id": "chatcmpl-tool-ab8a440ca959562c"
+        },
+        {
+          "command": "systemctl list-timers --all --no-pager 2>/dev/null | head -20; echo \"---CRON---\"; ls /etc/cron* /var/spool/cron 2>/dev/null; echo \"---8081 refs---\"; grep -rl '8081' /etc/systemd/system/ 2>/dev/null; grep -rl '8081' /nix/store/*unit-script* 2>/dev/null; echo \"---tmpfiles---\"; systemctl cat systemd-tmpfiles-resetup.service 2>/dev/null | head -30; grep -r 'failover' /etc/tmpfiles.d/ /usr/lib/tmpfiles.d/ 2>/dev/null",
+          "description": "Check for hidden restarters and cleanup jobs",
+          "duration_ms": 708,
+          "index": 9,
+          "kind": "discovery",
+          "output_excerpt": "NEXT                          LEFT LAST PASSED UNIT                         ACTIVATES\nTue 2026-10-13 01:00:00 UTC  11min -         - logrotate.timer              logrotate.service\nTue 2026-10-13 01:02:11 UTC  13min -         - systemd-tmpfiles-clean.timer systemd-tmpfiles-clean.s…",
+          "started_after_ms": 58476,
+          "success": false,
+          "tool_id": "chatcmpl-tool-ab00698d4dca3464"
+        },
+        {
+          "command": "/nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python -c \"\nimport sqlite3\ndb=sqlite3.connect('/var/lib/failover/records.sqlite3')\nfor row in db.execute('SELECT id,value FROM records ORDER BY id'): print(row)\nprint('journal:', db.execute('PRAGMA journal_mode').fetchone())\n\"; ls -la /var/lib/failover/; findmnt -no TARGET,SOURCE,FSTYPE /var/lib 2>/dev/null || echo \"/var/lib on root fs\"",
+          "description": "Dump current records and check persistence",
+          "duration_ms": 82,
+          "index": 10,
+          "kind": "discovery",
+          "output_excerpt": "('customer-blue-8d2', 'blue-original')\n('customer-green-f31', 'green-original')\n('customer-red-4a7', 'red-original')\njournal: ('delete',)\ntotal 28\ndrwxr-xr-x 2 root root  4096 Oct 13 00:47 .\ndrwxr-xr-x 9 root root  4096 Oct 13 00:47 ..\n-rw-r--r-- 1 root root     0 Oct 13 00:47 pr…",
+          "started_after_ms": 59185,
+          "success": true,
+          "tool_id": "chatcmpl-tool-b0aae12b338160bc"
+        }
+      ],
+      "agent": "qwen",
+      "analyzer": "aoe-controller/20260816.0.1",
+      "architecture": {
+        "persistent_paths": [
+          "/etc/cron",
+          "/etc/systemd/system",
+          "/etc/systemd/system/default.target.wants",
+          "/etc/systemd/system/failover-*.service",
+          "/etc/systemd/system/failover-proxy.service",
+          "/etc/systemd/system/failover-replica.service",
+          "/etc/systemd/system/failover-seed.service",
+          "/etc/systemd/system/multi-user.target.wants",
+          "/etc/systemd/system/post-boot.service",
+          "/etc/tmpfiles.d",
+          "/var/lib/failover",
+          "/var/lib/failover/primary.failed",
+          "/var/lib/failover/records.sqlite3",
+          "/var/lib/failover/replica.role",
+          "/var/lib/failover/upstream"
+        ],
+        "service_units": [
+          "etc/systemd/system/failover-*.service",
+          "etc/systemd/system/failover-proxy.service",
+          "etc/systemd/system/failover-replica.service",
+          "etc/systemd/system/failover-seed.service",
+          "etc/systemd/system/post-boot.service",
+          "post-boot.service",
+          "systemd-tmpfiles-resetup.service"
+        ],
+        "technologies": [
+          "Python",
+          "SQLite",
+          "systemd"
+        ]
+      },
+      "metrics": {
+        "discoveries": 10,
+        "first_mutation_after_ms": null,
+        "last_observed_after_ms": 59267,
+        "lifecycle_actions": 0,
+        "mutations": 0,
+        "tool_calls": 11,
+        "tool_errors": 1,
+        "validations": 1
+      },
+      "model": "vercel/alibaba/qwen3.8-max",
+      "outcome": "running",
+      "schema_version": 1,
+      "source_sha256": "7ef75e3bc3a89412c7a020f0699245a906d66dc6b123a7e384e09bbaf164cbcb",
+      "territory": "failover-three"
+    }
+  },
+  "arena": {
+    "agents": [
+      {
+        "adapter": "claux",
+        "budget": {
+          "max_cost_microusd": null,
+          "resource_units": 900
+        },
+        "id": "glm-flash",
+        "model": "vercel/zai/glm-5.3-flash",
+        "reasoning_effort": "high",
+        "territory": "failover-one"
+      },
+      {
+        "adapter": "claux",
+        "budget": {
+          "max_cost_microusd": null,
+          "resource_units": 900
+        },
+        "id": "qwen",
+        "model": "vercel/alibaba/qwen3.8-max",
+        "reasoning_effort": "xhigh",
+        "territory": "failover-three"
+      },
+      {
+        "adapter": "claux",
+        "budget": {
+          "max_cost_microusd": null,
+          "resource_units": 900
+        },
+        "id": "fable",
+        "model": "vercel/anthropic/claude-fable-5.1",
+        "reasoning_effort": "high",
+        "territory": "failover-two"
+      }
+    ],
+    "arena": {
+      "category": "stateful-recovery",
+      "display_name": "Stateful Primary Failover",
+      "id": "primary-failover",
+      "mode": "build_race"
+    },
+    "build": {
+      "completion_milestone": "host-reboot",
+      "milestones": [
+        {
+          "depends_on": [],
+          "display_name": "Failed Primary Preserved",
+          "id": "failed-primary-preserved",
+          "operation": "observe",
+          "points": 5,
+          "required": true,
+          "timeout_seconds": 5,
+          "verifier": "verify/incident-confirmed.sh"
+        },
+        {
+          "depends_on": [
+            "failed-primary-preserved"
+          ],
+          "display_name": "Existing Reads Restored",
+          "id": "reads-restored",
+          "operation": "observe",
+          "points": 20,
+          "required": true,
+          "timeout_seconds": 10,
+          "verifier": "verify/reads-restored.sh"
+        },
+        {
+          "depends_on": [
+            "reads-restored"
+          ],
+          "display_name": "Old Primary Fenced",
+          "id": "old-primary-fenced",
+          "operation": "observe",
+          "points": 20,
+          "required": true,
+          "timeout_seconds": 10,
+          "verifier": "verify/old-primary-fenced.sh"
+        },
+        {
+          "depends_on": [
+            "old-primary-fenced"
+          ],
+          "display_name": "Writes Restored",
+          "id": "writes-restored",
+          "operation": "observe",
+          "points": 25,
+          "required": true,
+          "timeout_seconds": 15,
+          "verifier": "verify/writes-restored.sh"
+        },
+        {
+          "depends_on": [
+            "writes-restored"
+          ],
+          "display_name": "Topology Restart",
+          "id": "service-restart",
+          "operation": "observe",
+          "points": 15,
+          "required": true,
+          "timeout_seconds": 20,
+          "verifier": "verify/service-restart.sh"
+        },
+        {
+          "depends_on": [
+            "service-restart"
+          ],
+          "display_name": "Host Reboot",
+          "id": "host-reboot",
+          "operation": "host_reboot",
+          "points": 15,
+          "required": true,
+          "timeout_seconds": 40,
+          "verifier": "verify/host-reboot.sh"
+        }
+      ],
+      "stop_on_first_durable": true
+    },
+    "classes": [
+      {
+        "display_name": "Failover Engineer",
+        "id": "failover-engineer",
+        "resources": {
+          "disk_mib": 2048,
+          "memory_mib": 768,
+          "vcpus": 1
+        },
+        "strengths": [],
+        "weaknesses": []
+      }
+    ],
+    "fog_of_war": null,
+    "network": {
+      "allow_public_internet": false,
+      "cidr": "10.81.0.0/24"
+    },
+    "rules": {
+      "duration_seconds": 900,
+      "healthy_resources_per_tick": 0,
+      "minimum_territories": 3,
+      "tick_ms": 1000
+    },
+    "schema_version": 1,
+    "territories": [
+      {
+        "class": "failover-engineer",
+        "id": "failover-one",
+        "nixos_config": "./arenas/primary-failover#nixosConfigurations.failover-one.config.system.build.vm",
+        "service": {
+          "expected_body": "ready",
+          "expected_status": 200,
+          "health": {
+            "consecutive_failures": 3,
+            "poll_interval_ms": 1000,
+            "recovery_window_seconds": 60
+          },
+          "path": "/health",
+          "port": 8080
+        }
+      },
+      {
+        "class": "failover-engineer",
+        "id": "failover-two",
+        "nixos_config": "./arenas/primary-failover#nixosConfigurations.failover-two.config.system.build.vm",
+        "service": {
+          "expected_body": "ready",
+          "expected_status": 200,
+          "health": {
+            "consecutive_failures": 3,
+            "poll_interval_ms": 1000,
+            "recovery_window_seconds": 60
+          },
+          "path": "/health",
+          "port": 8080
+        }
+      },
+      {
+        "class": "failover-engineer",
+        "id": "failover-three",
+        "nixos_config": "./arenas/primary-failover#nixosConfigurations.failover-three.config.system.build.vm",
+        "service": {
+          "expected_body": "ready",
+          "expected_status": 200,
+          "health": {
+            "consecutive_failures": 3,
+            "poll_interval_ms": 1000,
+            "recovery_window_seconds": 60
+          },
+          "path": "/health",
+          "port": 8080
+        }
+      }
+    ],
+    "visualization": {
+      "links": [
+        {
+          "from": "client",
+          "kind": "traffic",
+          "label": null,
+          "to": "router"
+        },
+        {
+          "from": "router",
+          "kind": "traffic",
+          "label": null,
+          "to": "old-primary"
+        },
+        {
+          "from": "router",
+          "kind": "traffic",
+          "label": null,
+          "to": "replica"
+        },
+        {
+          "from": "old-primary",
+          "kind": "replication",
+          "label": null,
+          "to": "replica"
+        },
+        {
+          "from": "fence",
+          "kind": "lifecycle",
+          "label": null,
+          "to": "old-primary"
+        },
+        {
+          "from": "units",
+          "kind": "lifecycle",
+          "label": null,
+          "to": "router"
+        },
+        {
+          "from": "host",
+          "kind": "lifecycle",
+          "label": null,
+          "to": "units"
+        }
+      ],
+      "nodes": [
+        {
+          "display_name": "Client",
+          "id": "client",
+          "kind": "client",
+          "milestone": null,
+          "x": 7,
+          "y": 25
+        },
+        {
+          "display_name": "Data Router",
+          "id": "router",
+          "kind": "proxy",
+          "milestone": "writes-restored",
+          "x": 31,
+          "y": 25
+        },
+        {
+          "display_name": "Old Primary",
+          "id": "old-primary",
+          "kind": "database",
+          "milestone": "failed-primary-preserved",
+          "x": 60,
+          "y": 15
+        },
+        {
+          "display_name": "Replica",
+          "id": "replica",
+          "kind": "database",
+          "milestone": "reads-restored",
+          "x": 84,
+          "y": 43
+        },
+        {
+          "display_name": "Write Fence",
+          "id": "fence",
+          "kind": "service",
+          "milestone": "old-primary-fenced",
+          "x": 58,
+          "y": 70
+        },
+        {
+          "display_name": "Service Units",
+          "id": "units",
+          "kind": "service",
+          "milestone": "service-restart",
+          "x": 31,
+          "y": 76
+        },
+        {
+          "display_name": "NixOS Host",
+          "id": "host",
+          "kind": "host",
+          "milestone": "host-reboot",
+          "x": 84,
+          "y": 79
+        }
+      ]
+    }
+  },
+  "artifact_type": "agents-of-empires.match",
+  "events": [
+    {
+      "elapsed_ms": 0,
+      "from": "preparing",
+      "kind": "match_state_changed",
+      "schema_version": 1,
+      "sequence": 0,
+      "to": "running"
+    },
+    {
+      "elapsed_ms": 0,
+      "from": "preparing",
+      "kind": "competitor_state_changed",
+      "reason": "SSH preflight passed",
+      "schema_version": 1,
+      "sequence": 1,
+      "territory": "failover-one",
+      "to": "building"
+    },
+    {
+      "elapsed_ms": 0,
+      "from": "preparing",
+      "kind": "competitor_state_changed",
+      "reason": "SSH preflight passed",
+      "schema_version": 1,
+      "sequence": 2,
+      "territory": "failover-three",
+      "to": "building"
+    },
+    {
+      "elapsed_ms": 0,
+      "from": "preparing",
+      "kind": "competitor_state_changed",
+      "reason": "SSH preflight passed",
+      "schema_version": 1,
+      "sequence": 3,
+      "territory": "failover-two",
+      "to": "building"
+    },
+    {
+      "agent": "glm-flash",
+      "class": "failover-engineer",
+      "elapsed_ms": 0,
+      "kind": "territory_registered",
+      "schema_version": 1,
+      "sequence": 4,
+      "territory": "failover-one"
+    },
+    {
+      "agent": "fable",
+      "class": "failover-engineer",
+      "elapsed_ms": 0,
+      "kind": "territory_registered",
+      "schema_version": 1,
+      "sequence": 5,
+      "territory": "failover-two"
+    },
+    {
+      "agent": "qwen",
+      "class": "failover-engineer",
+      "elapsed_ms": 0,
+      "kind": "territory_registered",
+      "schema_version": 1,
+      "sequence": 6,
+      "territory": "failover-three"
+    },
+    {
+      "agent": "glm-flash",
+      "elapsed_ms": 0,
+      "kind": "agent_started",
+      "model": "vercel/zai/glm-5.3-flash",
+      "schema_version": 1,
+      "sequence": 7,
+      "territory": "failover-one"
+    },
+    {
+      "agent": "qwen",
+      "elapsed_ms": 0,
+      "kind": "agent_started",
+      "model": "vercel/alibaba/qwen3.8-max",
+      "schema_version": 1,
+      "sequence": 8,
+      "territory": "failover-three"
+    },
+    {
+      "agent": "fable",
+      "elapsed_ms": 0,
+      "kind": "agent_started",
+      "model": "vercel/anthropic/claude-fable-5.1",
+      "schema_version": 1,
+      "sequence": 9,
+      "territory": "failover-two"
+    },
+    {
+      "elapsed_ms": 1001,
+      "from": "building",
+      "kind": "competitor_state_changed",
+      "reason": "milestone verification began",
+      "schema_version": 1,
+      "sequence": 10,
+      "territory": "failover-one",
+      "to": "verifying"
+    },
+    {
+      "elapsed_ms": 1001,
+      "kind": "milestone_evaluation_started",
+      "milestone": "failed-primary-preserved",
+      "schema_version": 1,
+      "sequence": 11,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 1001,
+      "from": "building",
+      "kind": "competitor_state_changed",
+      "reason": "milestone verification began",
+      "schema_version": 1,
+      "sequence": 12,
+      "territory": "failover-two",
+      "to": "verifying"
+    },
+    {
+      "elapsed_ms": 1001,
+      "kind": "milestone_evaluation_started",
+      "milestone": "failed-primary-preserved",
+      "schema_version": 1,
+      "sequence": 13,
+      "territory": "failover-two"
+    },
+    {
+      "elapsed_ms": 1001,
+      "from": "building",
+      "kind": "competitor_state_changed",
+      "reason": "milestone verification began",
+      "schema_version": 1,
+      "sequence": 14,
+      "territory": "failover-three",
+      "to": "verifying"
+    },
+    {
+      "elapsed_ms": 1001,
+      "kind": "milestone_evaluation_started",
+      "milestone": "failed-primary-preserved",
+      "schema_version": 1,
+      "sequence": 15,
+      "territory": "failover-three"
+    },
+    {
+      "elapsed_ms": 1271,
+      "evidence": {
+        "failed_primary": 8081,
+        "listening": false,
+        "preserved": true
+      },
+      "kind": "milestone_passed",
+      "milestone": "failed-primary-preserved",
+      "points": 5,
+      "schema_version": 1,
+      "sequence": 16,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 1299,
+      "evidence": {
+        "failed_primary": 8081,
+        "listening": false,
+        "preserved": true
+      },
+      "kind": "milestone_passed",
+      "milestone": "failed-primary-preserved",
+      "points": 5,
+      "schema_version": 1,
+      "sequence": 17,
+      "territory": "failover-three"
+    },
+    {
+      "elapsed_ms": 1322,
+      "evidence": {
+        "failed_primary": 8081,
+        "listening": false,
+        "preserved": true
+      },
+      "kind": "milestone_passed",
+      "milestone": "failed-primary-preserved",
+      "points": 5,
+      "schema_version": 1,
+      "sequence": 18,
+      "territory": "failover-two"
+    },
+    {
+      "elapsed_ms": 1322,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 19,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 1322,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 20,
+      "territory": "failover-two"
+    },
+    {
+      "elapsed_ms": 1322,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 21,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 1337,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 22,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 1337,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 23,
+      "territory": "failover-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 1337,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 24,
+      "territory": "failover-two"
+    },
+    {
+      "elapsed_ms": 2339,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 25,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 2339,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 26,
+      "territory": "failover-two"
+    },
+    {
+      "elapsed_ms": 2339,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 27,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 2379,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 28,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 2379,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 29,
+      "territory": "failover-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 2380,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 30,
+      "territory": "failover-two"
+    },
+    {
+      "elapsed_ms": 3381,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 31,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 3381,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 32,
+      "territory": "failover-two"
+    },
+    {
+      "elapsed_ms": 3381,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 33,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 3437,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 34,
+      "territory": "failover-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 3438,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 35,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 3438,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 36,
+      "territory": "failover-two"
+    },
+    {
+      "elapsed_ms": 4439,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 37,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 4439,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 38,
+      "territory": "failover-two"
+    },
+    {
+      "elapsed_ms": 4439,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 39,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 4469,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 40,
+      "territory": "failover-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 4472,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 41,
+      "territory": "failover-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 4473,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 42,
+      "territory": "failover-three"
+    },
+    {
+      "elapsed_ms": 5474,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 43,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 5474,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 44,
+      "territory": "failover-two"
+    },
+    {
+      "elapsed_ms": 5474,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 45,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 5526,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 46,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 5527,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 47,
+      "territory": "failover-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 5532,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 48,
+      "territory": "failover-two"
+    },
+    {
+      "elapsed_ms": 6533,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 49,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 6533,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 50,
+      "territory": "failover-two"
+    },
+    {
+      "elapsed_ms": 6533,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 51,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 6548,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 52,
+      "territory": "failover-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 6549,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 53,
+      "territory": "failover-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 6549,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 54,
+      "territory": "failover-three"
+    },
+    {
+      "agent": "fable",
+      "cost_microusd": null,
+      "elapsed_ms": 6549,
+      "input_tokens": 0,
+      "kind": "usage_charged",
+      "output_tokens": 0,
+      "resource_units": 1,
+      "schema_version": 1,
+      "sequence": 55
+    },
+    {
+      "agent": "glm-flash",
+      "cost_microusd": 554,
+      "elapsed_ms": 6549,
+      "input_tokens": 3257,
+      "kind": "usage_charged",
+      "output_tokens": 131,
+      "resource_units": 1,
+      "schema_version": 1,
+      "sequence": 56
+    },
+    {
+      "agent": "qwen",
+      "cost_microusd": null,
+      "elapsed_ms": 6549,
+      "input_tokens": 0,
+      "kind": "usage_charged",
+      "output_tokens": 0,
+      "resource_units": 1,
+      "schema_version": 1,
+      "sequence": 57
+    },
+    {
+      "elapsed_ms": 7551,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 58,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 7551,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 59,
+      "territory": "failover-two"
+    },
+    {
+      "elapsed_ms": 7551,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 60,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 7575,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 61,
+      "territory": "failover-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 7576,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 62,
+      "territory": "failover-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 7576,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 63,
+      "territory": "failover-three"
+    },
+    {
+      "elapsed_ms": 8578,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 64,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 8578,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 65,
+      "territory": "failover-two"
+    },
+    {
+      "elapsed_ms": 8578,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 66,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 8625,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 67,
+      "territory": "failover-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 8626,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 68,
+      "territory": "failover-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 8629,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 69,
+      "territory": "failover-three"
+    },
+    {
+      "agent": "qwen",
+      "cost_microusd": 8516,
+      "elapsed_ms": 8629,
+      "input_tokens": 3579,
+      "kind": "usage_charged",
+      "output_tokens": 236,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 70
+    },
+    {
+      "elapsed_ms": 9631,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 71,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 9631,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 72,
+      "territory": "failover-two"
+    },
+    {
+      "elapsed_ms": 9631,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 73,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 9665,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 74,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 9667,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 75,
+      "territory": "failover-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 9667,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 76,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 10669,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 77,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 10669,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 78,
+      "territory": "failover-two"
+    },
+    {
+      "elapsed_ms": 10669,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 79,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 10727,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 80,
+      "territory": "failover-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 10731,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 81,
+      "territory": "failover-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 10733,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 82,
+      "territory": "failover-three"
+    },
+    {
+      "agent": "fable",
+      "cost_microusd": 64420,
+      "elapsed_ms": 10733,
+      "input_tokens": 5017,
+      "kind": "usage_charged",
+      "output_tokens": 285,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 83
+    },
+    {
+      "elapsed_ms": 11734,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 84,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 11734,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 85,
+      "territory": "failover-two"
+    },
+    {
+      "elapsed_ms": 11734,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 86,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 11798,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 87,
+      "territory": "failover-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 11799,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 88,
+      "territory": "failover-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 11800,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 89,
+      "territory": "failover-three"
+    },
+    {
+      "elapsed_ms": 12802,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 90,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 12802,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 91,
+      "territory": "failover-two"
+    },
+    {
+      "elapsed_ms": 12802,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 92,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 12828,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 93,
+      "territory": "failover-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 12829,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 94,
+      "territory": "failover-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 12830,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 95,
+      "territory": "failover-three"
+    },
+    {
+      "elapsed_ms": 13832,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 96,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 13832,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 97,
+      "territory": "failover-two"
+    },
+    {
+      "elapsed_ms": 13832,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 98,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 13890,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 99,
+      "territory": "failover-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 13893,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 100,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 13895,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 101,
+      "territory": "failover-two"
+    },
+    {
+      "agent": "glm-flash",
+      "cost_microusd": 1207,
+      "elapsed_ms": 13895,
+      "input_tokens": 7395,
+      "kind": "usage_charged",
+      "output_tokens": 195,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 102
+    },
+    {
+      "elapsed_ms": 14895,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 103,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 14896,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 104,
+      "territory": "failover-two"
+    },
+    {
+      "elapsed_ms": 14896,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 105,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 14939,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 106,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 14939,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 107,
+      "territory": "failover-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 14941,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 108,
+      "territory": "failover-two"
+    },
+    {
+      "elapsed_ms": 15942,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 109,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 15942,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 110,
+      "territory": "failover-two"
+    },
+    {
+      "elapsed_ms": 15942,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 111,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 15971,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 112,
+      "territory": "failover-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 15972,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 113,
+      "territory": "failover-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 15975,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 114,
+      "territory": "failover-three"
+    },
+    {
+      "elapsed_ms": 16977,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 115,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 16977,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 116,
+      "territory": "failover-two"
+    },
+    {
+      "elapsed_ms": 16977,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 117,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 16989,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 118,
+      "territory": "failover-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 16989,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 119,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 16989,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 120,
+      "territory": "failover-two"
+    },
+    {
+      "elapsed_ms": 17991,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 121,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 17991,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 122,
+      "territory": "failover-two"
+    },
+    {
+      "elapsed_ms": 17991,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 123,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 18002,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 124,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 18002,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 125,
+      "territory": "failover-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 18002,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 126,
+      "territory": "failover-two"
+    },
+    {
+      "elapsed_ms": 19004,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 127,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 19004,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 128,
+      "territory": "failover-two"
+    },
+    {
+      "elapsed_ms": 19004,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 129,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 19014,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 130,
+      "territory": "failover-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 19015,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 131,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 19017,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 132,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 20018,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 133,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 20018,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 134,
+      "territory": "failover-two"
+    },
+    {
+      "elapsed_ms": 20018,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 135,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 20029,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 136,
+      "territory": "failover-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 20029,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 137,
+      "territory": "failover-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 20030,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 138,
+      "territory": "failover-three"
+    },
+    {
+      "agent": "fable",
+      "cost_microusd": 100160,
+      "elapsed_ms": 20030,
+      "input_tokens": 8571,
+      "kind": "usage_charged",
+      "output_tokens": 289,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 139
+    },
+    {
+      "agent": "glm-flash",
+      "cost_microusd": 1672,
+      "elapsed_ms": 20030,
+      "input_tokens": 9928,
+      "kind": "usage_charged",
+      "output_tokens": 365,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 140
+    },
+    {
+      "elapsed_ms": 21031,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 141,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 21031,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 142,
+      "territory": "failover-two"
+    },
+    {
+      "elapsed_ms": 21031,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 143,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 21041,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 144,
+      "territory": "failover-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 21042,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 145,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 21042,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 146,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 22043,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 147,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 22043,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 148,
+      "territory": "failover-two"
+    },
+    {
+      "elapsed_ms": 22043,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 149,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 22065,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 150,
+      "territory": "failover-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 22068,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 151,
+      "territory": "failover-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 22068,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 152,
+      "territory": "failover-three"
+    },
+    {
+      "agent": "qwen",
+      "cost_microusd": 11317,
+      "elapsed_ms": 22068,
+      "input_tokens": 6392,
+      "kind": "usage_charged",
+      "output_tokens": 799,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 153
+    },
+    {
+      "elapsed_ms": 23069,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 154,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 23069,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 155,
+      "territory": "failover-two"
+    },
+    {
+      "elapsed_ms": 23069,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 156,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 23086,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 157,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 23086,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 158,
+      "territory": "failover-one"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 23086,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 159,
+      "territory": "failover-two"
+    },
+    {
+      "elapsed_ms": 24087,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 160,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 24087,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 161,
+      "territory": "failover-two"
+    },
+    {
+      "elapsed_ms": 24087,
+      "kind": "milestone_evaluation_started",
+      "milestone": "reads-restored",
+      "schema_version": 1,
+      "sequence": 162,
+      "territory": "failover-three"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 24099,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 163,
+      "territory": "failover-two"
+    },
+    {
+      "category": "verification_failed",
+      "detail": "curl: (22) The requested URL returned error: 502",
+      "elapsed_ms": 24099,
+      "kind": "milestone_failed",
+      "milestone": "reads-restored",
+      "retryable": true,
+      "schema_version": 1,
+      "sequence": 164,
+      "territory": "failover-three"
+    },
+    {
+      "elapsed_ms": 24143,
+      "evidence": {
+        "reads": true,
+        "records": [
+          "customer-red-4a7",
+          "customer-blue-8d2",
+          "customer-green-f31"
+        ],
+        "role": "primary"
+      },
+      "kind": "milestone_passed",
+      "milestone": "reads-restored",
+      "points": 20,
+      "schema_version": 1,
+      "sequence": 165,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 24143,
+      "kind": "milestone_evaluation_started",
+      "milestone": "old-primary-fenced",
+      "schema_version": 1,
+      "sequence": 166,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 24358,
+      "evidence": {
+        "old_port": 8081,
+        "old_primary": "fenced",
+        "promoted_port": 8082
+      },
+      "kind": "milestone_passed",
+      "milestone": "old-primary-fenced",
+      "points": 20,
+      "schema_version": 1,
+      "sequence": 167,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 24358,
+      "kind": "milestone_evaluation_started",
+      "milestone": "writes-restored",
+      "schema_version": 1,
+      "sequence": 168,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 24389,
+      "evidence": {
+        "record": "post-failover-dfde832a467bb373",
+        "value": "opaque-3fef32a926d267ed5b8a0a46",
+        "writes": true
+      },
+      "kind": "milestone_passed",
+      "milestone": "writes-restored",
+      "points": 25,
+      "schema_version": 1,
+      "sequence": 169,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 24389,
+      "kind": "milestone_evaluation_started",
+      "milestone": "service-restart",
+      "schema_version": 1,
+      "sequence": 170,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 25122,
+      "evidence": {
+        "record": "post-failover-dfde832a467bb373",
+        "restart": true,
+        "value": "opaque-3fef32a926d267ed5b8a0a46"
+      },
+      "kind": "milestone_passed",
+      "milestone": "service-restart",
+      "points": 15,
+      "schema_version": 1,
+      "sequence": 171,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 25122,
+      "kind": "milestone_evaluation_started",
+      "milestone": "host-reboot",
+      "schema_version": 1,
+      "sequence": 172,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 38987,
+      "evidence": {
+        "old_primary": "fenced",
+        "reboot": true,
+        "record": "post-failover-dfde832a467bb373",
+        "role": "primary",
+        "value": "opaque-3fef32a926d267ed5b8a0a46"
+      },
+      "kind": "milestone_passed",
+      "milestone": "host-reboot",
+      "points": 15,
+      "schema_version": 1,
+      "sequence": 173,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 38987,
+      "from": "verifying",
+      "kind": "competitor_state_changed",
+      "reason": "completion milestone passed",
+      "schema_version": 1,
+      "sequence": 174,
+      "territory": "failover-one",
+      "to": "durable"
+    },
+    {
+      "elapsed_ms": 38987,
+      "kind": "durable_deployment_completed",
+      "schema_version": 1,
+      "sequence": 175,
+      "territory": "failover-one"
+    },
+    {
+      "elapsed_ms": 38987,
+      "from": "running",
+      "kind": "match_state_changed",
+      "schema_version": 1,
+      "sequence": 176,
+      "to": "finished"
+    },
+    {
+      "elapsed_ms": 38987,
+      "kind": "match_finished",
+      "reason": "first durable deployment",
+      "schema_version": 1,
+      "sequence": 177,
+      "winner": "failover-one"
+    },
+    {
+      "agent": "fable",
+      "cost_microusd": 136420,
+      "elapsed_ms": 38991,
+      "input_tokens": 11792,
+      "kind": "usage_charged",
+      "output_tokens": 370,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 178
+    },
+    {
+      "agent": "glm-flash",
+      "cost_microusd": 1980,
+      "elapsed_ms": 38991,
+      "input_tokens": 11285,
+      "kind": "usage_charged",
+      "output_tokens": 575,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 179
+    },
+    {
+      "agent": "qwen",
+      "cost_microusd": 24275,
+      "elapsed_ms": 38991,
+      "input_tokens": 24135,
+      "kind": "usage_charged",
+      "output_tokens": 770,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 180
+    },
+    {
+      "elapsed_ms": 38991,
+      "kind": "post_match_drain_started",
+      "pending_agents": 3,
+      "schema_version": 1,
+      "sequence": 181,
+      "timeout_ms": 30000
+    },
+    {
+      "agent": "glm-flash",
+      "detail": "agent session was interrupted by the referee's host reboot",
+      "elapsed_ms": 38991,
+      "kind": "agent_interrupted",
+      "schema_version": 1,
+      "sequence": 182,
+      "source": "arena"
+    },
+    {
+      "agent": "glm-flash",
+      "cost_microusd": 0,
+      "elapsed_ms": 38991,
+      "input_tokens": 0,
+      "kind": "usage_charged",
+      "output_tokens": 0,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 183
+    },
+    {
+      "agent": "fable",
+      "detail": "I'll start by inspecting the current state of the host.Now let me read the proxy and replica source, and see how they're managed (systemd?).The seed service is the critical piece — it may reset the topology on reboot. Let me check it.Now verifying the public API through port 8080, then restarting the services to confirm the topology survives a restart.Failover is complete and the service is running for the referee.\n\n**What was done** (in split-brain-safe order, all state file writes via tmp + `fsync` + `rename` + directory `fsync`):\n\n1. **Preflight** – confirmed replica on 8082 was healthy and 8081 was refusing connections.\n2. **Fenced** – created `/var/lib/failover/primary.fenced` *before* enabling any writes; `primary.failed` preserved. No systemd unit exists for the old primary, so 8081 cannot come back on reboot.\n3. **Promoted** – `replica.role` → `primary` (replica re-reads it per request, no restart needed).\n4. **Switched proxy** – `upstream` → `8082` atomically via rename.\n\n**Verification through public port 8080:**\n- `/health` → `200 ready`, `/role` → `200 primary`\n- All 3 original records intact (`red/blue/green-original`), missing id → `404`\n- `PUT` → `204`, read-back exact (incl. UTF-8)\n- After `systemctl restart` of seed + replica + proxy: role/upstream/records/new write all persisted\n- 8081 not listening; `primary.failed` and `primary.fenced` both present\n\n**Reboot durability:** the seed script (`failover-seed-start`) only writes defaults when files are absent and uses `INSERT OR IGNORE`, so it won't revert `replica.role`/`upstream` or clobber records; `failover-replica` and `failover-proxy` are both `enabled` with `Restart=always`. The original SQLite file was never replaced — only appended to via the service's own commit path.",
+      "elapsed_ms": 38991,
+      "kind": "agent_finished",
+      "schema_version": 1,
+      "sequence": 184,
+      "source": "player",
+      "success": true
+    },
+    {
+      "agent": "fable",
+      "cost_microusd": 560260,
+      "elapsed_ms": 38991,
+      "input_tokens": 44636,
+      "kind": "usage_charged",
+      "output_tokens": 2278,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 185
+    },
+    {
+      "agent": "fable",
+      "elapsed_ms": 38991,
+      "kind": "agent_outraced",
+      "reason": "failover-one reached durable first; build ended at the frozen clock",
+      "schema_version": 1,
+      "sequence": 186
+    },
+    {
+      "agent": "qwen",
+      "cost_microusd": 25474,
+      "elapsed_ms": 38991,
+      "input_tokens": 15256,
+      "kind": "usage_charged",
+      "output_tokens": 3294,
+      "resource_units": 0,
+      "schema_version": 1,
+      "sequence": 187
+    },
+    {
+      "agent": "qwen",
+      "elapsed_ms": 38991,
+      "kind": "agent_outraced",
+      "reason": "failover-one reached durable first; build ended at the frozen clock",
+      "schema_version": 1,
+      "sequence": 188
+    },
+    {
+      "captured_agents": 2,
+      "elapsed_ms": 38991,
+      "kind": "post_match_drain_finished",
+      "schema_version": 1,
+      "sequence": 189,
+      "terminated_agents": 1
+    }
+  ],
+  "match": {
+    "fog_of_war": false,
+    "listed": false,
+    "name": "vercel-cup · 2026-W42-vercel-20261013-004640 · round 1 heat 1 · attempt 1",
+    "slug": "season-vercel-cup-2026-W42-vercel-20261013-004640-r1-h1-a1"
+  },
+  "provenance": {
+    "adapter_sha256": {
+      "claux": "392e89e646422aba3bbae836093e9cf6d5f47020c863b2620d88457b982ffd84"
+    },
+    "arena_id": "primary-failover",
+    "arena_mode": "buildrace",
+    "compatibility_key": "25e7cdc8e6e8ae1d047df767b89191bb186fc29e47aa9825195330616757e774",
+    "controller_version": "20260816.0.1",
+    "manifest_sha256": "f3a07b65344037b3375bcca556e9be4655ef44e3103aa405b4b3229737fd5668",
+    "player_artifacts_sha256": {},
+    "player_brief_sha256": null,
+    "schema_version": 1,
+    "source_revision": "d2af5c898807b9bf526164ee8d4f3e70495b9b4c",
+    "verifier_sha256": "d5dccffaa9e21dce8f541a0147103134ab2fc8bf2634b14c71e135c153577fc6"
+  },
+  "schema_version": 1,
+  "visualization": {
+    "links": [
+      {
+        "from": "client",
+        "kind": "traffic",
+        "label": null,
+        "to": "router"
+      },
+      {
+        "from": "router",
+        "kind": "traffic",
+        "label": null,
+        "to": "old-primary"
+      },
+      {
+        "from": "router",
+        "kind": "traffic",
+        "label": null,
+        "to": "replica"
+      },
+      {
+        "from": "old-primary",
+        "kind": "replication",
+        "label": null,
+        "to": "replica"
+      },
+      {
+        "from": "fence",
+        "kind": "lifecycle",
+        "label": null,
+        "to": "old-primary"
+      },
+      {
+        "from": "units",
+        "kind": "lifecycle",
+        "label": null,
+        "to": "router"
+      },
+      {
+        "from": "host",
+        "kind": "lifecycle",
+        "label": null,
+        "to": "units"
+      }
+    ],
+    "nodes": [
+      {
+        "display_name": "Client",
+        "id": "client",
+        "kind": "client",
+        "milestone": null,
+        "x": 7,
+        "y": 25
+      },
+      {
+        "display_name": "Data Router",
+        "id": "router",
+        "kind": "proxy",
+        "milestone": "writes-restored",
+        "x": 31,
+        "y": 25
+      },
+      {
+        "display_name": "Old Primary",
+        "id": "old-primary",
+        "kind": "database",
+        "milestone": "failed-primary-preserved",
+        "x": 60,
+        "y": 15
+      },
+      {
+        "display_name": "Replica",
+        "id": "replica",
+        "kind": "database",
+        "milestone": "reads-restored",
+        "x": 84,
+        "y": 43
+      },
+      {
+        "display_name": "Write Fence",
+        "id": "fence",
+        "kind": "service",
+        "milestone": "old-primary-fenced",
+        "x": 58,
+        "y": 70
+      },
+      {
+        "display_name": "Service Units",
+        "id": "units",
+        "kind": "service",
+        "milestone": "service-restart",
+        "x": 31,
+        "y": 76
+      },
+      {
+        "display_name": "NixOS Host",
+        "id": "host",
+        "kind": "host",
+        "milestone": "host-reboot",
+        "x": 84,
+        "y": 79
+      }
+    ]
+  },
+  "world": {
+    "agents": {
+      "fable": {
+        "cost_complete": true,
+        "cost_microusd": 861260,
+        "failure_source": "player",
+        "input_tokens": 70016,
+        "model": "vercel/anthropic/claude-fable-5.1",
+        "output_tokens": 3222,
+        "resource_units_used": 1,
+        "running": false,
+        "successful": false,
+        "terminal_detail": "failover-one reached durable first; build ended at the frozen clock",
+        "terminal_state": "incomplete",
+        "territory": "failover-two"
+      },
+      "glm-flash": {
+        "cost_complete": true,
+        "cost_microusd": 5413,
+        "failure_source": "arena",
+        "input_tokens": 31865,
+        "model": "vercel/zai/glm-5.3-flash",
+        "output_tokens": 1266,
+        "resource_units_used": 1,
+        "running": false,
+        "successful": null,
+        "terminal_detail": "agent session was interrupted by the referee's host reboot",
+        "terminal_state": "interrupted",
+        "territory": "failover-one"
+      },
+      "qwen": {
+        "cost_complete": true,
+        "cost_microusd": 69582,
+        "failure_source": "player",
+        "input_tokens": 49362,
+        "model": "vercel/alibaba/qwen3.8-max",
+        "output_tokens": 5099,
+        "resource_units_used": 1,
+        "running": false,
+        "successful": false,
+        "terminal_detail": "failover-one reached durable first; build ended at the frozen clock",
+        "terminal_state": "incomplete",
+        "territory": "failover-three"
+      }
+    },
+    "elapsed_ms": 38991,
+    "finish_reason": "first durable deployment",
+    "infrastructure_failures": 0,
+    "last_sequence": 189,
+    "match_state": "finished",
+    "territories": {
+      "failover-one": {
+        "agent": "glm-flash",
+        "class": "failover-engineer",
+        "competitor_state": "durable",
+        "durable_at_ms": 38987,
+        "elimination_detail": null,
+        "elimination_source": null,
+        "last_health": null,
+        "milestone_points": 100,
+        "milestones": {
+          "failed-primary-preserved": {
+            "evaluating": false,
+            "evidence": {
+              "failed_primary": 8081,
+              "listening": false,
+              "preserved": true
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 5
+          },
+          "host-reboot": {
+            "evaluating": false,
+            "evidence": {
+              "old_primary": "fenced",
+              "reboot": true,
+              "record": "post-failover-dfde832a467bb373",
+              "role": "primary",
+              "value": "opaque-3fef32a926d267ed5b8a0a46"
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 15
+          },
+          "old-primary-fenced": {
+            "evaluating": false,
+            "evidence": {
+              "old_port": 8081,
+              "old_primary": "fenced",
+              "promoted_port": 8082
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 20
+          },
+          "reads-restored": {
+            "evaluating": false,
+            "evidence": {
+              "reads": true,
+              "records": [
+                "customer-red-4a7",
+                "customer-blue-8d2",
+                "customer-green-f31"
+              ],
+              "role": "primary"
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 20
+          },
+          "service-restart": {
+            "evaluating": false,
+            "evidence": {
+              "record": "post-failover-dfde832a467bb373",
+              "restart": true,
+              "value": "opaque-3fef32a926d267ed5b8a0a46"
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 15
+          },
+          "writes-restored": {
+            "evaluating": false,
+            "evidence": {
+              "record": "post-failover-dfde832a467bb373",
+              "value": "opaque-3fef32a926d267ed5b8a0a46",
+              "writes": true
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 25
+          }
+        },
+        "resources": 0,
+        "state": "provisioning"
+      },
+      "failover-three": {
+        "agent": "qwen",
+        "class": "failover-engineer",
+        "competitor_state": "verifying",
+        "durable_at_ms": null,
+        "elimination_detail": null,
+        "elimination_source": null,
+        "last_health": null,
+        "milestone_points": 5,
+        "milestones": {
+          "failed-primary-preserved": {
+            "evaluating": false,
+            "evidence": {
+              "failed_primary": 8081,
+              "listening": false,
+              "preserved": true
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 5
+          },
+          "reads-restored": {
+            "evaluating": false,
+            "evidence": null,
+            "failure_category": "verification_failed",
+            "failure_detail": "curl: (22) The requested URL returned error: 502",
+            "passed": false,
+            "points": 0
+          }
+        },
+        "resources": 0,
+        "state": "provisioning"
+      },
+      "failover-two": {
+        "agent": "fable",
+        "class": "failover-engineer",
+        "competitor_state": "verifying",
+        "durable_at_ms": null,
+        "elimination_detail": null,
+        "elimination_source": null,
+        "last_health": null,
+        "milestone_points": 5,
+        "milestones": {
+          "failed-primary-preserved": {
+            "evaluating": false,
+            "evidence": {
+              "failed_primary": 8081,
+              "listening": false,
+              "preserved": true
+            },
+            "failure_category": null,
+            "failure_detail": null,
+            "passed": true,
+            "points": 5
+          },
+          "reads-restored": {
+            "evaluating": false,
+            "evidence": null,
+            "failure_category": "verification_failed",
+            "failure_detail": "curl: (22) The requested URL returned error: 502",
+            "passed": false,
+            "points": 0
+          }
+        },
+        "resources": 0,
+        "state": "provisioning"
+      }
+    },
+    "winner": "failover-one"
+  }
+}

@@ -1,0 +1,175 @@
+{
+  "schema_version": 1,
+  "analyzer": "aoe-controller/20260816.0.1",
+  "source_sha256": "7ef75e3bc3a89412c7a020f0699245a906d66dc6b123a7e384e09bbaf164cbcb",
+  "agent": "qwen",
+  "territory": "failover-three",
+  "model": "vercel/alibaba/qwen3.8-max",
+  "outcome": "running",
+  "metrics": {
+    "tool_calls": 11,
+    "tool_errors": 1,
+    "discoveries": 10,
+    "mutations": 0,
+    "lifecycle_actions": 0,
+    "validations": 1,
+    "first_mutation_after_ms": null,
+    "last_observed_after_ms": 59267
+  },
+  "architecture": {
+    "technologies": [
+      "Python",
+      "SQLite",
+      "systemd"
+    ],
+    "service_units": [
+      "etc/systemd/system/failover-*.service",
+      "etc/systemd/system/failover-proxy.service",
+      "etc/systemd/system/failover-replica.service",
+      "etc/systemd/system/failover-seed.service",
+      "etc/systemd/system/post-boot.service",
+      "post-boot.service",
+      "systemd-tmpfiles-resetup.service"
+    ],
+    "persistent_paths": [
+      "/etc/cron",
+      "/etc/systemd/system",
+      "/etc/systemd/system/default.target.wants",
+      "/etc/systemd/system/failover-*.service",
+      "/etc/systemd/system/failover-proxy.service",
+      "/etc/systemd/system/failover-replica.service",
+      "/etc/systemd/system/failover-seed.service",
+      "/etc/systemd/system/multi-user.target.wants",
+      "/etc/systemd/system/post-boot.service",
+      "/etc/tmpfiles.d",
+      "/var/lib/failover",
+      "/var/lib/failover/primary.failed",
+      "/var/lib/failover/records.sqlite3",
+      "/var/lib/failover/replica.role",
+      "/var/lib/failover/upstream"
+    ]
+  },
+  "actions": [
+    {
+      "index": 0,
+      "tool_id": "chatcmpl-tool-99247c96e05e106e",
+      "kind": "discovery",
+      "started_after_ms": 3832,
+      "duration_ms": 229,
+      "description": "Inspect failover state directory",
+      "command": "ls -la /var/lib/failover/ 2>/dev/null; echo \"---\"; cat /var/lib/failover/replica.role 2>/dev/null; echo \"---\"; cat /var/lib/failover/upstream 2>/dev/null; echo \"---\"; ls -la /var/lib/failover/primary.failed 2>/dev/null",
+      "success": true,
+      "output_excerpt": "total 28\ndrwxr-xr-x 2 root root  4096 Oct 13 00:47 .\ndrwxr-xr-x 9 root root  4096 Oct 13 00:47 ..\n-rw-r--r-- 1 root root     0 Oct 13 00:47 primary.failed\n-rw-r--r-- 1 root root 12288 Oct 13 00:47 records.sqlite3\n-rw-r--r-- 1 root root     8 Oct 13 00:47 replica.role\n-rw-r--r-- 1…"
+    },
+    {
+      "index": 1,
+      "tool_id": "chatcmpl-tool-865b947b946b42ca",
+      "kind": "validation",
+      "started_after_ms": 4061,
+      "duration_ms": 94,
+      "description": "Check listening ports and related processes",
+      "command": "ss -tlnp 2>/dev/null | head -50; echo \"---PROCESSES---\"; ps aux | grep -Ei 'failover|proxy|replica|primary|8080|8081|8082' | grep -v grep",
+      "success": true,
+      "output_excerpt": "State  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess\nLISTEN 0      5            0.0.0.0:8080       0.0.0.0:*    users:((\"python\",pid=555,fd=3))\nLISTEN 0      128        127.0.0.1:18004      0.0.0.0:*    users:((\"sshd-session\",pid=645,fd=10))\nLISTEN 0      4096      1…"
+    },
+    {
+      "index": 2,
+      "tool_id": "chatcmpl-tool-86211668cfb30cdb",
+      "kind": "discovery",
+      "started_after_ms": 11986,
+      "duration_ms": 57,
+      "description": "Read proxy source",
+      "command": "cat /nix/store/gy7xaavwyh9mbwz4ll8h6z3ban0s6g93-failover-proxy.py",
+      "success": true,
+      "output_excerpt": "import http.client\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\nUPSTREAM = \"/var/lib/failover/upstream\"\nclass Handler(BaseHTTPRequestHandler):\n    def forward(self):\n        try:\n            with open(UPSTREAM) as source: port = int(source.read().strip())\n …"
+    },
+    {
+      "index": 3,
+      "tool_id": "chatcmpl-tool-aed85f85ce431fed",
+      "kind": "discovery",
+      "started_after_ms": 12044,
+      "duration_ms": 53,
+      "description": "Read replica source",
+      "command": "cat /nix/store/3lf8if1z3ahcv9mdxqmwncn87hnwdymi-failover-replica.py",
+      "success": true,
+      "output_excerpt": "import sqlite3\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\nDB = \"/var/lib/failover/records.sqlite3\"\nROLE = \"/var/lib/failover/replica.role\"\ndef role():\n    with open(ROLE) as source: return source.read().strip()\ndef database():\n    connection = sqlite3.con…"
+    },
+    {
+      "index": 4,
+      "tool_id": "chatcmpl-tool-a09198a8b7e13e44",
+      "kind": "discovery",
+      "started_after_ms": 12097,
+      "duration_ms": 5091,
+      "description": "Find systemd units for the services",
+      "command": "systemctl list-units --all --no-pager 2>/dev/null | grep -Ei 'failover|proxy|replica|primary'; echo \"---\"; systemctl list-unit-files --no-pager 2>/dev/null | grep -Ei 'failover|proxy|replica|primary'; echo \"---\"; ls /etc/systemd/system/ 2>/dev/null",
+      "success": true,
+      "output_excerpt": "failover-proxy.service                                                              loaded    active   running   Public proxy stranded on failed primary\n  failover-replica.service                                                            loaded    active   running   Healthy read…"
+    },
+    {
+      "index": 5,
+      "tool_id": "chatcmpl-tool-8f62cfea66cb126c",
+      "kind": "discovery",
+      "started_after_ms": 20600,
+      "duration_ms": 30,
+      "description": "Read failover unit files",
+      "command": "cat /etc/systemd/system/failover-proxy.service /etc/systemd/system/failover-replica.service /etc/systemd/system/failover-seed.service",
+      "success": true,
+      "output_excerpt": "[Unit]\nAfter=failover-seed.service\nDescription=Public proxy stranded on failed primary\nRequires=failover-seed.service\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE=/nix/store/c59mcax29xrwyfdqs308wkmn2srnmzkn-glibc-locales-2.42-67/lib/locale/locale-archive\"\nEnvironment=\"PATH=/nix/store/9…"
+    },
+    {
+      "index": 6,
+      "tool_id": "chatcmpl-tool-9040d54891dbf641",
+      "kind": "discovery",
+      "started_after_ms": 20631,
+      "duration_ms": 70,
+      "description": "Inspect post-boot unit and wants symlinks",
+      "command": "cat /etc/systemd/system/post-boot.service 2>/dev/null; echo \"---\"; systemctl cat post-boot.service 2>/dev/null; echo \"---wants---\"; ls -la /etc/systemd/system/multi-user.target.wants/ 2>/dev/null; ls -la /etc/systemd/system/default.target.wants/ 2>/dev/null",
+      "success": true,
+      "output_excerpt": "[Unit]\nDescription=Post-Boot Actions\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE=/nix/store/c59mcax29xrwyfdqs308wkmn2srnmzkn-glibc-locales-2.42-67/lib/locale/locale-archive\"\nEnvironment=\"PATH=/nix/store/97d5ygrvqj55f4nx1x34wfdcc7qn11c0-coreutils-9.11/bin:/nix/store/ibg16grw5is7i7ilnfl…"
+    },
+    {
+      "index": 7,
+      "tool_id": "chatcmpl-tool-b18b20615497d035",
+      "kind": "discovery",
+      "started_after_ms": 26870,
+      "duration_ms": 120,
+      "description": "Read failover-seed start script",
+      "command": "cat /nix/store/vnsdj3nml00cykxy4dmpcsgbwp76jspz-unit-script-failover-seed-start/bin/failover-seed-start",
+      "success": true,
+      "output_excerpt": "#!/nix/store/byi2zpy2bgcf3dr6y0l8m50rmjj8z7q1-bash-5.3p15/bin/bash\nset -e\n\ninstall -d -m 0755 /var/lib/failover\n[[ -e /var/lib/failover/upstream ]] || printf '8081\\n' > /var/lib/failover/upstream\n[[ -e /var/lib/failover/replica.role ]] || printf 'replica\\n' > /var/lib/failover/re…"
+    },
+    {
+      "index": 8,
+      "tool_id": "chatcmpl-tool-ab8a440ca959562c",
+      "kind": "discovery",
+      "started_after_ms": 26991,
+      "duration_ms": 278,
+      "description": "Check unit file writability and mounts",
+      "command": "ls -la /etc/systemd/system/failover-*.service; echo \"---\"; stat -c '%A %n' /etc/systemd/system /etc /; echo \"---mounts---\"; findmnt -no SOURCE,TARGET,FSTYPE,OPTIONS / 2>/dev/null; mount | grep -E ' / | /etc | /nix ' | head",
+      "success": true,
+      "output_excerpt": "lrwxrwxrwx 1 root root 94 Jan  1  1970 /etc/systemd/system/failover-proxy.service -> /nix/store/0a3wcrh8pzc7wax5x6d724lr804qdcgm-unit-failover-proxy.service/failover-proxy.service\nlrwxrwxrwx 1 root root 98 Jan  1  1970 /etc/systemd/system/failover-replica.service -> /nix/store/cs…"
+    },
+    {
+      "index": 9,
+      "tool_id": "chatcmpl-tool-ab00698d4dca3464",
+      "kind": "discovery",
+      "started_after_ms": 58476,
+      "duration_ms": 708,
+      "description": "Check for hidden restarters and cleanup jobs",
+      "command": "systemctl list-timers --all --no-pager 2>/dev/null | head -20; echo \"---CRON---\"; ls /etc/cron* /var/spool/cron 2>/dev/null; echo \"---8081 refs---\"; grep -rl '8081' /etc/systemd/system/ 2>/dev/null; grep -rl '8081' /nix/store/*unit-script* 2>/dev/null; echo \"---tmpfiles---\"; systemctl cat systemd-tmpfiles-resetup.service 2>/dev/null | head -30; grep -r 'failover' /etc/tmpfiles.d/ /usr/lib/tmpfiles.d/ 2>/dev/null",
+      "success": false,
+      "output_excerpt": "NEXT                          LEFT LAST PASSED UNIT                         ACTIVATES\nTue 2026-10-13 01:00:00 UTC  11min -         - logrotate.timer              logrotate.service\nTue 2026-10-13 01:02:11 UTC  13min -         - systemd-tmpfiles-clean.timer systemd-tmpfiles-clean.s…"
+    },
+    {
+      "index": 10,
+      "tool_id": "chatcmpl-tool-b0aae12b338160bc",
+      "kind": "discovery",
+      "started_after_ms": 59185,
+      "duration_ms": 82,
+      "description": "Dump current records and check persistence",
+      "command": "/nix/store/3n4qphl9s728sz8frmpqqrv9b1m87g68-python3-3.14.7/bin/python -c \"\nimport sqlite3\ndb=sqlite3.connect('/var/lib/failover/records.sqlite3')\nfor row in db.execute('SELECT id,value FROM records ORDER BY id'): print(row)\nprint('journal:', db.execute('PRAGMA journal_mode').fetchone())\n\"; ls -la /var/lib/failover/; findmnt -no TARGET,SOURCE,FSTYPE /var/lib 2>/dev/null || echo \"/var/lib on root fs\"",
+      "success": true,
+      "output_excerpt": "('customer-blue-8d2', 'blue-original')\n('customer-green-f31', 'green-original')\n('customer-red-4a7', 'red-original')\njournal: ('delete',)\ntotal 28\ndrwxr-xr-x 2 root root  4096 Oct 13 00:47 .\ndrwxr-xr-x 9 root root  4096 Oct 13 00:47 ..\n-rw-r--r-- 1 root root     0 Oct 13 00:47 pr…"
+    }
+  ]
+}

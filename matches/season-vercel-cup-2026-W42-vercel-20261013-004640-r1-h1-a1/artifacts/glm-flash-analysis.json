@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "analyzer": "aoe-controller/20260816.0.1",
+  "source_sha256": "bef03af180b7805f6bc64baac0157deddad885dd535a84060871c6c1ee3b1858",
+  "agent": "glm-flash",
+  "territory": "failover-one",
+  "model": "vercel/zai/glm-5.3-flash",
+  "outcome": "running",
+  "metrics": {
+    "tool_calls": 6,
+    "tool_errors": 1,
+    "discoveries": 4,
+    "mutations": 0,
+    "lifecycle_actions": 0,
+    "validations": 2,
+    "first_mutation_after_ms": null,
+    "last_observed_after_ms": 19886
+  },
+  "architecture": {
+    "technologies": [
+      "Python",
+      "SQLite",
+      "systemd"
+    ],
+    "service_units": [
+      "etc/systemd/system/failover-proxy.service",
+      "etc/systemd/system/failover-replica.service",
+      "etc/systemd/system/failover-seed.service"
+    ],
+    "persistent_paths": [
+      "/etc/systemd/system",
+      "/etc/systemd/system/failover-proxy.service",
+      "/etc/systemd/system/failover-replica.service",
+      "/etc/systemd/system/failover-seed.service",
+      "/var/lib/failover",
+      "/var/lib/failover/replica.role",
+      "/var/lib/failover/upstream"
+    ]
+  },
+  "actions": [
+    {
+      "index": 0,
+      "tool_id": "chatcmpl-tool-0d58ac4cbaa84057beea3f1a19a78bff",
+      "kind": "discovery",
+      "started_after_ms": 1808,
+      "duration_ms": 141,
+      "description": "Inspect failover dir and running processes",
+      "command": "ls -la /var/lib/failover/ 2>&1; echo ---; ps aux | grep -E '8081|8082|proxy|replica|python|node' | grep -v grep",
+      "success": true,
+      "output_excerpt": "total 28\ndrwxr-xr-x 2 root root  4096 Oct 13 00:47 .\ndrwxr-xr-x 9 root root  4096 Oct 13 00:47 ..\n-rw-r--r-- 1 root root     0 Oct 13 00:47 primary.failed\n-rw-r--r-- 1 root root 12288 Oct 13 00:47 records.sqlite3\n-rw-r--r-- 1 root root     8 Oct 13 00:47 replica.role\n-rw-r--r-- 1…"
+    },
+    {
+      "index": 1,
+      "tool_id": "chatcmpl-tool-5d10420a4abe4cd69715d9fd45889315",
+      "kind": "validation",
+      "started_after_ms": 1950,
+      "duration_ms": 61,
+      "description": "Check listening ports and systemd units",
+      "command": "ss -tlnp | grep -E '808[0-9]'; echo ---; ls /root /etc/systemd/system 2>/dev/null",
+      "success": true,
+      "output_excerpt": "LISTEN 0      5          127.0.0.1:8082       0.0.0.0:*    users:((\"python\",pid=558,fd=3))\nLISTEN 0      5            0.0.0.0:8080       0.0.0.0:*    users:((\"python\",pid=557,fd=3))\n---\n/etc/systemd/system:\nautovt@.service\nbasic.target\nblk-availability.service\nbluetooth.target\nbo…"
+    },
+    {
+      "index": 2,
+      "tool_id": "chatcmpl-tool-80b9e3b4042e4b8299e9cae2b6dfcf6e",
+      "kind": "discovery",
+      "started_after_ms": 8069,
+      "duration_ms": 164,
+      "description": "Read failover systemd units and state files",
+      "command": "cat /etc/systemd/system/failover-proxy.service /etc/systemd/system/failover-replica.service /etc/systemd/system/failover-seed.service; echo ---; cat /var/lib/failover/replica.role /var/lib/failover/upstream",
+      "success": true,
+      "output_excerpt": "[Unit]\nAfter=failover-seed.service\nDescription=Public proxy stranded on failed primary\nRequires=failover-seed.service\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE=/nix/store/c59mcax29xrwyfdqs308wkmn2srnmzkn-glibc-locales-2.42-67/lib/locale/locale-archive\"\nEnvironment=\"PATH=/nix/store/9…"
+    },
+    {
+      "index": 3,
+      "tool_id": "chatcmpl-tool-f80879e194a941c6a5f585d0aa0a9410",
+      "kind": "discovery",
+      "started_after_ms": 8234,
+      "duration_ms": 106,
+      "description": "Read proxy and replica scripts",
+      "command": "cat /nix/store/gy7xaavwyh9mbwz4ll8h6z3ban0s6g93-failover-proxy.py /nix/store/3lf8if1z3ahcv9mdxqmwncn87hnwdymi-failover-replica.py",
+      "success": true,
+      "output_excerpt": "import http.client\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\nUPSTREAM = \"/var/lib/failover/upstream\"\nclass Handler(BaseHTTPRequestHandler):\n    def forward(self):\n        try:\n            with open(UPSTREAM) as source: port = int(source.read().strip())\n …"
+    },
+    {
+      "index": 4,
+      "tool_id": "chatcmpl-tool-b60fc8f826da46b49110caa3694ce4be",
+      "kind": "validation",
+      "started_after_ms": 13626,
+      "duration_ms": 70,
+      "description": "Read seed script and service status",
+      "command": "cat /nix/store/vnsdj3nml00cykxy4dmpcsgbwp76jspz-unit-script-failover-seed-start/bin/failover-seed-start; echo ---; systemctl status failover-seed failover-replica failover-proxy --no-pager | head -40",
+      "success": true,
+      "output_excerpt": "#!/nix/store/byi2zpy2bgcf3dr6y0l8m50rmjj8z7q1-bash-5.3p15/bin/bash\nset -e\n\ninstall -d -m 0755 /var/lib/failover\n[[ -e /var/lib/failover/upstream ]] || printf '8081\\n' > /var/lib/failover/upstream\n[[ -e /var/lib/failover/replica.role ]] || printf 'replica\\n' > /var/lib/failover/re…"
+    },
+    {
+      "index": 5,
+      "tool_id": "chatcmpl-tool-620ee87c901e4fc09dee6b748a88413d",
+      "kind": "discovery",
+      "started_after_ms": 19632,
+      "duration_ms": 254,
+      "description": "Fence old primary, promote replica, switch proxy atomically",
+      "command": "python3 - <<'PY'\nimport os, pathlib\nD = pathlib.Path(\"/var/lib/failover\")\ndef atomic_write(path, data):\n    tmp = D / (path.name + \".tmp\")\n    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)\n    os.write(fd, data); os.fsync(fd); os.close(fd)\n    os.replace(tmp, path)                      # atomic\n    dfd = os.open(D, os.O_RDONLY); os.fsync(dfd); os.close(dfd)  # durable dir entry\n# 1. Durably fence the old primary BEFORE writes are restored\natomic_write(D / \"primary.fenced\", b\"fenced\\n\")\n# 2. Promote replica (atomic role flip)\natomic_write(D / \"replica.role\", b\"primary\\n\")\n# 3. Atomically switch proxy upstream to the promoted replica\natomic_write(D / \"upstream\", b\"8082\\n\")\npr…",
+      "success": false,
+      "output_excerpt": "Traceback (most recent call last):\n  File \"<stdin>\", line 15, in <module>\nAttributeError: '_io.TextIOWrapper' object has no attribute 'exists'\n\nExit code: exit status: 1"
+    }
+  ]
+}

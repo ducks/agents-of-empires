@@ -1,0 +1,249 @@
+{
+  "schema_version": 1,
+  "draw_digest": "2ded5f4809c9ea626a307c2580f62d82f221b14e164395d2d9be15c0a939e7da",
+  "season_id": "vercel-cup",
+  "week": "2026-W42-vercel-20261013-004640",
+  "draw_seed": "vercel-cup/2026-W42-vercel-20261013-004640",
+  "variation_seed_commitment": "d089f4fc4256315f2ebceea06ff25ca392a1300147ab01145ed539c2c4508812",
+  "variation_seed": "326b5b03ecef8b4d15667c7a7b7fbfc29932aa517df886f85966ce5fa1111bbd",
+  "completed": true,
+  "rounds": [
+    {
+      "round": 1,
+      "arena_id": "primary-failover",
+      "heats": [
+        {
+          "heat": 1,
+          "output": "seasons/vercel-cup/2026-W42-vercel-20261013-004640/round-01/heat-01",
+          "attempts": 1,
+          "prior_attempts": [],
+          "seats": {
+            "failover-one": "glm-flash",
+            "failover-three": "qwen",
+            "failover-two": "fable"
+          },
+          "winner": "glm-flash",
+          "standings": [
+            {
+              "fleet_id": "glm-flash",
+              "territory": "failover-one",
+              "outcome": "durable",
+              "milestone_points": 100,
+              "durable_at_ms": 38987,
+              "cost_microusd": 5413,
+              "cost_complete": true,
+              "failure_source": "arena",
+              "detail": "agent session was interrupted by the referee's host reboot"
+            },
+            {
+              "fleet_id": "qwen",
+              "territory": "failover-three",
+              "outcome": "incomplete",
+              "milestone_points": 5,
+              "durable_at_ms": null,
+              "cost_microusd": 69582,
+              "cost_complete": true,
+              "failure_source": "player",
+              "detail": "failover-one reached durable first; build ended at the frozen clock"
+            },
+            {
+              "fleet_id": "fable",
+              "territory": "failover-two",
+              "outcome": "incomplete",
+              "milestone_points": 5,
+              "durable_at_ms": null,
+              "cost_microusd": 861260,
+              "cost_complete": true,
+              "failure_source": "player",
+              "detail": "failover-one reached durable first; build ended at the frozen clock"
+            }
+          ],
+          "aborted": false
+        },
+        {
+          "heat": 2,
+          "output": "seasons/vercel-cup/2026-W42-vercel-20261013-004640/round-01/heat-02",
+          "attempts": 1,
+          "prior_attempts": [],
+          "seats": {
+            "failover-one": "minimax",
+            "failover-three": "deepseek",
+            "failover-two": "gemini"
+          },
+          "winner": "minimax",
+          "standings": [
+            {
+              "fleet_id": "minimax",
+              "territory": "failover-one",
+              "outcome": "durable",
+              "milestone_points": 100,
+              "durable_at_ms": 207909,
+              "cost_microusd": 29303,
+              "cost_complete": true,
+              "failure_source": "arena",
+              "detail": "agent session was interrupted by the referee's host reboot"
+            },
+            {
+              "fleet_id": "deepseek",
+              "territory": "failover-three",
+              "outcome": "incomplete",
+              "milestone_points": 5,
+              "durable_at_ms": null,
+              "cost_microusd": 29120,
+              "cost_complete": true,
+              "failure_source": "player",
+              "detail": "failover-one reached durable first; build ended at the frozen clock"
+            },
+            {
+              "fleet_id": "gemini",
+              "territory": "failover-two",
+              "outcome": "incomplete",
+              "milestone_points": 5,
+              "durable_at_ms": null,
+              "cost_microusd": 127352,
+              "cost_complete": true,
+              "failure_source": "player",
+              "detail": "failover-one reached durable first; build ended at the frozen clock"
+            }
+          ],
+          "aborted": false
+        }
+      ],
+      "byes": [],
+      "wildcards": [
+        "gemini"
+      ]
+    },
+    {
+      "round": 2,
+      "arena_id": "zero-downtime-rollout",
+      "heats": [
+        {
+          "heat": 1,
+          "output": "seasons/vercel-cup/2026-W42-vercel-20261013-004640/round-02/heat-01",
+          "attempts": 1,
+          "prior_attempts": [],
+          "seats": {
+            "rollout-one": "minimax",
+            "rollout-three": "glm-flash",
+            "rollout-two": "gemini"
+          },
+          "winner": "glm-flash",
+          "standings": [
+            {
+              "fleet_id": "glm-flash",
+              "territory": "rollout-three",
+              "outcome": "durable",
+              "milestone_points": 100,
+              "durable_at_ms": 120421,
+              "cost_microusd": 12670,
+              "cost_complete": true,
+              "failure_source": "player",
+              "detail": "I'll start by investigating the current state of the system.The proxy and v1 are healthy on 8080/8081. The v2 slot exists but fails because `/opt/rollout/v2.py` doesn't exist yet. Let me inspect v1's schema and the unit files.Clear picture now. The proxy re-reads `/var/lib/rollout/upstream` per request, so a cutover is just an atomic file swap. I'll write v2.py, get the failing v2 unit running, verify against the live DB, then flip the file.v2 is up. Now verifying it directly against the live database — including the two existing customer records — before any cutover.v2 fully verified, including byte-identical existing records. Now the cutover: atomic rename of the upstream pointer, then immediate verification through the public endpoint with a rapid probe loop spanning the switch.Cutover is clean — 200/200 health probes with zero failures, version now `v2`, all existing records intact through the public endpoint. Now I'll verify reboot/restart durability without touching the running services — in particular checking that nothing at boot resets the upstream pointer back to 8081.The seed unit runs before everything at boot — I need to see whether it resets the upstream pointer.The seed script is reboot-safe: it only writes `8081` **if the upstream file is absent** (`[[ ! -e ]]`) and uses `INSERT OR IGNORE` for records. My `8082` file and all records will persist across reboot untouched. Final verification sweep:Rollout complete. All services green, v2 live on the public endpoint, zero downtime.\n\n## What was done\n\n1. **Diagnosed** the dormant `rollout-v2.service` — it was in `start-limit-hit` failure because `/opt/rollout/v2.py` didn't exist.\n2. **Implemented v2** at `/opt/rollout/v2.py` (mirroring v1's contract, bound to `127.0.0.1:8082`, same SQLite schema):\n   - `GET /health` → `200 ready`, `GET /version` → `200 v2`\n   - `PUT /records/<id>` → `204`, `GET /records/<id>` → exact stored body or `404`\n3. **Started v2** (`reset-failed` + `start`) and pre-cutover verified it against the live DB: health, version, both existing customer records returned byte-identical values, UTF-8 PUT/GET round-trip, 404 for absent IDs.\n4. **Cutover** — wrote `8082` to a temp file and `mv`-renamed it over `/var/lib/rollout/upstream` (atomic; the proxy re-reads the file per request, so no proxy restart and no traffic gap). 200/200 public `/health` probes across the switch window, zero failures.\n5. **Post-cutover public verification**: `/version` → `v2`, both original records intact (`alpha-original`, `beta-original`), 404 path works, PUT/GET round-trip through port 8080.\n\n## Durability (verified without disturbing the running services)\n\n- `rollout-v2.service`: **enabled** + `Restart=always` → auto-recovers from a restart/crash and comes up at boot, no agent help.\n- The boot-time `rollout-seed.service` only writes `8081` **if the upstream file is absent** — my `8082` pointer survives reboot, and its `INSERT OR IGNORE` can't clobber records.\n- Records live in `/var/lib/rollout/records.sqlite3` (persistent disk).\n\n## Untouched, as required\n\n- `rollout-proxy.service` and `rollout-v1.service`: never stopped or restarted — both show the same start timestamp (`00:53:24`, before the rollout began) and remain enabled and running.\n- No reboot/shutdown was performed or scheduled — the deployment is left running for the referee's reboot test."
+            },
+            {
+              "fleet_id": "minimax",
+              "territory": "rollout-one",
+              "outcome": "incomplete",
+              "milestone_points": 50,
+              "durable_at_ms": null,
+              "cost_microusd": 33880,
+              "cost_complete": true,
+              "failure_source": "player",
+              "detail": "rollout-three reached durable first; build ended at the frozen clock"
+            },
+            {
+              "fleet_id": "gemini",
+              "territory": "rollout-two",
+              "outcome": "incomplete",
+              "milestone_points": 5,
+              "durable_at_ms": null,
+              "cost_microusd": 129548,
+              "cost_complete": true,
+              "failure_source": "player",
+              "detail": "rollout-three reached durable first; build ended at the frozen clock"
+            }
+          ],
+          "aborted": false
+        }
+      ],
+      "byes": [],
+      "wildcards": []
+    }
+  ],
+  "champion": "glm-flash",
+  "standings": [
+    {
+      "fleet_id": "glm-flash",
+      "model": "vercel/zai/glm-5.3-flash",
+      "reached_round": 3,
+      "heats": 2,
+      "wins": 2,
+      "durable_deployments": 2,
+      "milestone_points": 200,
+      "forfeits": 0,
+      "cost_microusd": 18083,
+      "cost_complete": true
+    },
+    {
+      "fleet_id": "minimax",
+      "model": "vercel/minimax/minimax-m3",
+      "reached_round": 2,
+      "heats": 2,
+      "wins": 1,
+      "durable_deployments": 1,
+      "milestone_points": 150,
+      "forfeits": 0,
+      "cost_microusd": 63183,
+      "cost_complete": true
+    },
+    {
+      "fleet_id": "gemini",
+      "model": "vercel/google/gemini-3.8-flash",
+      "reached_round": 2,
+      "heats": 2,
+      "wins": 0,
+      "durable_deployments": 0,
+      "milestone_points": 10,
+      "forfeits": 0,
+      "cost_microusd": 256900,
+      "cost_complete": true
+    },
+    {
+      "fleet_id": "deepseek",
+      "model": "vercel/deepseek/deepseek-v4.1-flash",
+      "reached_round": 1,
+      "heats": 1,
+      "wins": 0,
+      "durable_deployments": 0,
+      "milestone_points": 5,
+      "forfeits": 0,
+      "cost_microusd": 29120,
+      "cost_complete": true
+    },
+    {
+      "fleet_id": "qwen",
+      "model": "vercel/alibaba/qwen3.8-max",
+      "reached_round": 1,
+      "heats": 1,
+      "wins": 0,
+      "durable_deployments": 0,
+      "milestone_points": 5,
+      "forfeits": 0,
+      "cost_microusd": 69582,
+      "cost_complete": true
+    },
+    {
+      "fleet_id": "fable",
+      "model": "vercel/anthropic/claude-fable-5.1",
+      "reached_round": 1,
+      "heats": 1,
+      "wins": 0,
+      "durable_deployments": 0,
+      "milestone_points": 5,
+      "forfeits": 0,
+      "cost_microusd": 861260,
+      "cost_complete": true
+    }
+  ]
+}

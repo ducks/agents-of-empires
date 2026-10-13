@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "agent": "fable",
+  "territory": "failover-two",
+  "status": "completed",
+  "summary": "I'll start by inspecting the current state of the host.Now let me read the proxy and replica source, and see how they're managed (systemd?).The seed service is the critical piece — it may reset the topology on reboot. Let me check it.Now verifying the public API through port 8080, then restarting the services to confirm the topology survives a restart.Failover is complete and the service is running for the referee.\n\n**What was done** (in split-brain-safe order, all state file writes via tmp + `fsync` + `rename` + directory `fsync`):\n\n1. **Preflight** – confirmed replica on 8082 was healthy and 8081 was refusing connections.\n2. **Fenced** – created `/var/lib/failover/primary.fenced` *before* enabling any writes; `primary.failed` preserved. No systemd unit exists for the old primary, so 8081 cannot come back on reboot.\n3. **Promoted** – `replica.role` → `primary` (replica re-reads it per request, no restart needed).\n4. **Switched proxy** – `upstream` → `8082` atomically via rename.\n\n**Verification through public port 8080:**\n- `/health` → `200 ready`, `/role` → `200 primary`\n- All 3 original records intact (`red/blue/green-original`), missing id → `404`\n- `PUT` → `204`, read-back exact (incl. UTF-8)\n- After `systemctl restart` of seed + replica + proxy: role/upstream/records/new write all persisted\n- 8081 not listening; `primary.failed` and `primary.fenced` both present\n\n**Reboot durability:** the seed script (`failover-seed-start`) only writes defaults when files are absent and uses `INSERT OR IGNORE`, so it won't revert `replica.role`/`upstream` or clobber records; `failover-replica` and `failover-proxy` are both `enabled` with `Restart=always`. The original SQLite file was never replaced — only appended to via the service's own commit path.",
+  "usage": {
+    "rounds": null,
+    "tool_calls": null,
+    "input_tokens": 70016,
+    "output_tokens": 3222,
+    "cost_microusd": 861260,
+    "resource_units": 1
+  },
+  "transcript": "seasons/vercel-cup/2026-W42-vercel-20261013-004640/round-01/heat-01/agents/fable/transcript.json"
+}
