@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "analyzer": "aoe-controller/20260816.0.1",
+  "source_sha256": "bad2be330713a327d4074a2681131bbd383f49dedeb2f13ac03ea2d612bb5741",
+  "agent": "deepseek",
+  "territory": "failover-one",
+  "model": "deepseek/deepseek-v4.1-flash",
+  "outcome": "running",
+  "metrics": {
+    "tool_calls": 9,
+    "tool_errors": 0,
+    "discoveries": 4,
+    "mutations": 3,
+    "lifecycle_actions": 0,
+    "validations": 2,
+    "first_mutation_after_ms": 7457,
+    "last_observed_after_ms": 50415
+  },
+  "architecture": {
+    "technologies": [
+      "Python",
+      "SQLite",
+      "systemd"
+    ],
+    "service_units": [
+      "failover-proxy.service",
+      "failover-replica.service",
+      "failover-seed.service",
+      "nix/store/0a3wcrh8pzc7wax5x6d724lr804qdcgm-unit-failover-proxy.service/failover-proxy.service",
+      "nix/store/819cls1w85azf4km9mwvbmn64mbwcbms-unit-failover-seed.service/failover-seed.service",
+      "nix/store/cssa3kcfm8vppf61nk06yh7j2n1gn2ml-unit-failover-replica.service/failover-replica.service"
+    ],
+    "persistent_paths": [
+      "/etc/systemd/system",
+      "/var/lib/failover",
+      "/var/lib/failover/*.role",
+      "/var/lib/failover/primary.failed",
+      "/var/lib/failover/primary.fenced",
+      "/var/lib/failover/records.sqlite3",
+      "/var/lib/failover/upstream"
+    ]
+  },
+  "actions": [
+    {
+      "index": 0,
+      "tool_id": "call-078de9ac-ec27-4eec-8bed-b1af2950e8b2",
+      "kind": "discovery",
+      "started_after_ms": 2952,
+      "duration_ms": 71,
+      "description": "Inspect failover state and processes",
+      "command": "ls -la /var/lib/failover/ 2>&1; echo \"---\"; cat /var/lib/failover/*.role /var/lib/failover/upstream /var/lib/failover/primary.failed 2>&1; echo \"---PROCS---\"; ps aux | grep -Ei 'failover|proxy|replica|primary|8081|8082|8080' | grep -v grep",
+      "success": true,
+      "output_excerpt": "total 28\ndrwxr-xr-x 2 root root  4096 Oct 13 22:58 .\ndrwxr-xr-x 9 root root  4096 Oct 13 22:58 ..\n-rw-r--r-- 1 root root     0 Oct 13 22:58 primary.failed\n-rw-r--r-- 1 root root 12288 Oct 13 22:58 records.sqlite3\n-rw-r--r-- 1 root root     8 Oct 13 22:58 replica.role\n-rw-r--r-- 1…"
+    },
+    {
+      "index": 1,
+      "tool_id": "call-5233fef3-1728-4193-b36d-518712a343e6",
+      "kind": "validation",
+      "started_after_ms": 3023,
+      "duration_ms": 103,
+      "description": "Check listening ports and health",
+      "command": "ss -ltnp 2>/dev/null || netstat -ltnp 2>/dev/null; echo \"---\"; curl -s -m 3 http://127.0.0.1:8080/health; echo \" <-8080\"; curl -s -m 3 http://127.0.0.1:8082/health; echo \" <-8082\"; curl -s -m 3 http://127.0.0.1:8081/health; echo \" <-8081\"",
+      "success": true,
+      "output_excerpt": "State  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess\nLISTEN 0      128        127.0.0.1:18000      0.0.0.0:*    users:((\"sshd-session\",pid=618,fd=10))\nLISTEN 0      5            0.0.0.0:8080       0.0.0.0:*    users:((\"python\",pid=554,fd=3))\nLISTEN 0      128        …"
+    },
+    {
+      "index": 2,
+      "tool_id": "call-978b6ccd-2bac-4ebd-813d-bba210c29d41",
+      "kind": "discovery",
+      "started_after_ms": 7431,
+      "duration_ms": 25,
+      "description": "Read proxy and replica source",
+      "command": "cat /nix/store/gy7xaavwyh9mbwz4ll8h6z3ban0s6g93-failover-proxy.py; echo \"=====REPLICA=====\"; cat /nix/store/3lf8if1z3ahcv9mdxqmwncn87hnwdymi-failover-replica.py",
+      "success": true,
+      "output_excerpt": "import http.client\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\nUPSTREAM = \"/var/lib/failover/upstream\"\nclass Handler(BaseHTTPRequestHandler):\n    def forward(self):\n        try:\n            with open(UPSTREAM) as source: port = int(source.read().strip())\n …"
+    },
+    {
+      "index": 3,
+      "tool_id": "call-e9d4fb40-85fe-40d5-ad9d-0a62b2978869",
+      "kind": "mutation",
+      "started_after_ms": 7457,
+      "duration_ms": 4951,
+      "description": "Check systemd units and DB",
+      "command": "systemctl list-units --type=service --all 2>/dev/null | grep -Ei 'fail|proxy|replica|primary'; echo \"---UNITFILES---\"; ls -la /etc/systemd/system/ 2>/dev/null; systemctl list-unit-files 2>/dev/null | grep -Ei 'fail|proxy|replica|primary'; echo \"---\"; sqlite3 /var/lib/failover/records.sqlite3 '.tables' 2>&1; sqlite3 /var/lib/failover/records.sqlite3 '.dump' 2>&1",
+      "success": true,
+      "output_excerpt": "failover-proxy.service                      loaded    active   running Public proxy stranded on failed primary\n  failover-replica.service                    loaded    active   running Healthy read-only failover replica\n  failover-seed.service                       loaded    activ…"
+    },
+    {
+      "index": 4,
+      "tool_id": "call-f6a4e5ab-bf95-4132-9676-9f3b4c32444e",
+      "kind": "discovery",
+      "started_after_ms": 15887,
+      "duration_ms": 37,
+      "description": "Read systemd unit files",
+      "command": "for f in /nix/store/0a3wcrh8pzc7wax5x6d724lr804qdcgm-unit-failover-proxy.service/failover-proxy.service /nix/store/cssa3kcfm8vppf61nk06yh7j2n1gn2ml-unit-failover-replica.service/failover-replica.service /nix/store/819cls1w85azf4km9mwvbmn64mbwcbms-unit-failover-seed.service/failover-seed.service; do echo \"===== $f =====\"; cat \"$f\"; done",
+      "success": true,
+      "output_excerpt": "===== /nix/store/0a3wcrh8pzc7wax5x6d724lr804qdcgm-unit-failover-proxy.service/failover-proxy.service =====\n[Unit]\nAfter=failover-seed.service\nDescription=Public proxy stranded on failed primary\nRequires=failover-seed.service\n\n[Service]\nEnvironment=\"LOCALE_ARCHIVE=/nix/store/c59mc…"
+    },
+    {
+      "index": 5,
+      "tool_id": "call-399951af-a835-45d7-b6ca-020cc4f9367f",
+      "kind": "validation",
+      "started_after_ms": 15924,
+      "duration_ms": 3029,
+      "description": "Status and seed script",
+      "command": "systemctl status failover-seed.service failover-proxy.service failover-replica.service --no-pager 2>&1 | head -60; echo \"---seed script?---\"; ls -la /nix/store/*seed*/ 2>/dev/null; find /nix/store -maxdepth 1 -iname '*seed*' 2>/dev/null | head",
+      "success": true,
+      "output_excerpt": "● failover-seed.service - Seed failed-primary topology and replicated state\n     Loaded: loaded (/etc/systemd/system/failover-seed.service; enabled; preset: ignored)\n     Active: active (exited) since Tue 2026-10-13 22:58:38 UTC; 22s ago\n Invocation: e0246b97a56f44bd84d44fce516ac…"
+    },
+    {
+      "index": 6,
+      "tool_id": "call-c30e666d-aec0-4959-93ec-c6a90c1731db",
+      "kind": "discovery",
+      "started_after_ms": 21057,
+      "duration_ms": 48,
+      "description": "Read seed scripts",
+      "command": "cat /nix/store/vnsdj3nml00cykxy4dmpcsgbwp76jspz-unit-script-failover-seed-start/bin/failover-seed-start; echo \"===ROLLOUT===\"; cat /nix/store/44ql83wxi6z28pk20x4179khgs5i5anf-unit-script-rollout-seed-start/bin/* 2>/dev/null; echo \"===TRAFFIC===\"; cat /nix/store/2zm0hvwn29vj0dyw0jm9k3i0mim150wx-unit-script-traffic-surge-seed-start/bin/* 2>/dev/null",
+      "success": true,
+      "output_excerpt": "#!/nix/store/byi2zpy2bgcf3dr6y0l8m50rmjj8z7q1-bash-5.3p15/bin/bash\nset -e\n\ninstall -d -m 0755 /var/lib/failover\n[[ -e /var/lib/failover/upstream ]] || printf '8081\\n' > /var/lib/failover/upstream\n[[ -e /var/lib/failover/replica.role ]] || printf 'replica\\n' > /var/lib/failover/re…"
+    },
+    {
+      "index": 8,
+      "tool_id": "call-bd106bbb-5ecb-4860-8015-3512909455be",
+      "kind": "mutation",
+      "started_after_ms": 45477,
+      "duration_ms": 59,
+      "description": "Create durable fence marker",
+      "command": "set -e\n# Step 1: DURABLE FENCE of old primary. Preserve primary.failed; create primary.fenced.\n[ -e /var/lib/failover/primary.failed ] && echo \"primary.failed present (preserved)\"\nprintf 'fenced by agent at %s: old primary 127.0.0.1:8081 remains failed\\n' \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" > /var/lib/failover/primary.fenced\n# fsync the directory and file durably\nsync /var/lib/failover/primary.fenced /var/lib/failover/primary.failed 2>/dev/null || sync\nls -la /var/lib/failover/\necho \"--- confirm no 8081 listener ---\"\nss -ltn 2>/dev/null | grep -E ':8081\\b' || echo \"8081 not listening (good)\"",
+      "success": true,
+      "output_excerpt": "primary.failed present (preserved)\ntotal 32\ndrwxr-xr-x 2 root root  4096 Oct 13 22:59 .\ndrwxr-xr-x 9 root root  4096 Oct 13 22:58 ..\n-rw-r--r-- 1 root root     0 Oct 13 22:58 primary.failed\n-rw-r--r-- 1 root root    83 Oct 13 22:59 primary.fenced\n-rw-r--r-- 1 root root 12288 Oct …"
+    },
+    {
+      "index": 9,
+      "tool_id": "call-2361e8ad-eb61-45f2-ba94-0b0b35bf8251",
+      "kind": "mutation",
+      "started_after_ms": 50324,
+      "duration_ms": 91,
+      "description": "Promote replica and switch upstream atomically",
+      "command": "set -e\ncd /var/lib/failover\n# Promote replica -> primary (atomic write)\nprintf 'primary\\n' > replica.role.tmp && sync replica.role.tmp && mv -f replica.role.tmp replica.role\n# Switch proxy upstream -> 8082 (atomic write)\nprintf '8082\\n' > upstream.tmp && sync upstream.tmp && mv -f upstream.tmp upstream\nsync\necho \"replica.role = $(cat replica.role)\"; echo \"upstream = $(cat upstream)\"\nls -la /var/lib/failover/",
+      "success": true,
+      "output_excerpt": "replica.role = primary\nupstream = 8082\ntotal 32\ndrwxr-xr-x 2 root root  4096 Oct 13 22:59 .\ndrwxr-xr-x 9 root root  4096 Oct 13 22:58 ..\n-rw-r--r-- 1 root root     0 Oct 13 22:58 primary.failed\n-rw-r--r-- 1 root root    83 Oct 13 22:59 primary.fenced\n-rw-r--r-- 1 root root 12288 …"
+    }
+  ]
+}

@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "analyzer": "aoe-controller/20260816.0.1",
+  "source_sha256": "f21077c8d577d9664cad0866fdde313dff75fadad8fcc323f0ab9d949d3e780e",
+  "agent": "qwen-flash",
+  "territory": "failover-two",
+  "model": "qwen/qwen3.8-flash",
+  "outcome": "running",
+  "metrics": {
+    "tool_calls": 8,
+    "tool_errors": 0,
+    "discoveries": 5,
+    "mutations": 1,
+    "lifecycle_actions": 0,
+    "validations": 2,
+    "first_mutation_after_ms": 17943,
+    "last_observed_after_ms": 85366
+  },
+  "architecture": {
+    "technologies": [
+      "Python",
+      "SQLite",
+      "systemd"
+    ],
+    "service_units": [
+      "$u.service"
+    ],
+    "persistent_paths": [
+      "/etc/cron",
+      "/etc/cron.d",
+      "/etc/init.d",
+      "/etc/rc.local",
+      "/etc/systemd/system",
+      "/etc/systemd/system/*.wants",
+      "/var/lib/failover",
+      "/var/lib/failover/primary.failed",
+      "/var/lib/failover/records.sqlite3",
+      "/var/lib/failover/replica.role",
+      "/var/lib/failover/upstream"
+    ]
+  },
+  "actions": [
+    {
+      "index": 0,
+      "tool_id": "call_dd102eb8683340d096260c27",
+      "kind": "discovery",
+      "started_after_ms": 8802,
+      "duration_ms": 61,
+      "description": "Inspect failover state directory and running processes",
+      "command": "ls -la /var/lib/failover/ 2>&1; echo ---; cat /var/lib/failover/replica.role /var/lib/failover/upstream /var/lib/failover/primary.failed 2>&1; echo ---; ps aux | grep -iE 'failover|proxy|replica|8081|8082|8080|primary' | grep -v grep",
+      "success": true,
+      "output_excerpt": "total 28\ndrwxr-xr-x 2 root root  4096 Oct 13 22:58 .\ndrwxr-xr-x 9 root root  4096 Oct 13 22:58 ..\n-rw-r--r-- 1 root root     0 Oct 13 22:58 primary.failed\n-rw-r--r-- 1 root root 12288 Oct 13 22:58 records.sqlite3\n-rw-r--r-- 1 root root     8 Oct 13 22:58 replica.role\n-rw-r--r-- 1…"
+    },
+    {
+      "index": 1,
+      "tool_id": "call_fdd9120edaac403c820b071d",
+      "kind": "validation",
+      "started_after_ms": 8864,
+      "duration_ms": 101,
+      "description": "Check listening ports and probe service health endpoints",
+      "command": "(ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null) | grep -E '808[012]'; echo ---; for p in 8080 8081 8082; do echo \"== $p ==\"; curl -s -m 3 http://127.0.0.1:$p/health; echo; done",
+      "success": true,
+      "output_excerpt": "LISTEN 0      5          127.0.0.1:8082       0.0.0.0:*    users:((\"python\",pid=557,fd=3))\nLISTEN 0      5            0.0.0.0:8080       0.0.0.0:*    users:((\"python\",pid=556,fd=3))\n---\n== 8080 ==\n\n== 8081 ==\n\n== 8082 ==\nready"
+    },
+    {
+      "index": 2,
+      "tool_id": "call_0d89d3fcb9724abfb05a1c26",
+      "kind": "discovery",
+      "started_after_ms": 17892,
+      "duration_ms": 51,
+      "description": "Read replica and proxy scripts",
+      "command": "cat /nix/store/3lf8if1z3ahcv9mdxqmwncn87hnwdymi-failover-replica.py; echo ===PROXY===; cat /nix/store/gy7xaavwyh9mbwz4ll8h6z3ban0s6g93-failover-proxy.py",
+      "success": true,
+      "output_excerpt": "import sqlite3\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\nDB = \"/var/lib/failover/records.sqlite3\"\nROLE = \"/var/lib/failover/replica.role\"\ndef role():\n    with open(ROLE) as source: return source.read().strip()\ndef database():\n    connection = sqlite3.con…"
+    },
+    {
+      "index": 3,
+      "tool_id": "call_1264980f4edd4840be7c7a21",
+      "kind": "mutation",
+      "started_after_ms": 17943,
+      "duration_ms": 276,
+      "description": "Inspect init system, service units, cron, proxy status, sqlite state",
+      "command": "echo \"== init ==\"; ps -p 1 -o comm=; systemctl is-system-running 2>&1 | head -1; echo \"== units mentioning failover ==\"; systemctl list-units --all 2>/dev/null | grep -iE 'failover|record|replica|proxy' ; grep -rliE 'failover' /etc/systemd/system /lib/systemd/system /etc/init.d /etc/rc.local /etc/cron* 2>/dev/null; echo \"== cron ==\"; crontab -l 2>&1; ls /etc/cron.d 2>/dev/null; echo \"== proxy 8080 detail ==\"; curl -s -m 3 -o /dev/null -w '%{http_code}\\n' http://127.0.0.1:8080/health; echo \"== sqlite ==\"; sqlite3 /var/lib/failover/records.sqlite3 '.tables' '.schema' 'select count(*) from records;' 2>&1 || python3 -c \"import sqlite3;c=sqlite3.connect('/var/lib/failover/records.sqlite3');print(…",
+      "success": true,
+      "output_excerpt": "== init ==\nsystemd\nrunning\n== units mentioning failover ==\n  failover-proxy.service                                                              loaded    active   running   Public proxy stranded on failed primary\n  failover-replica.service                                        …"
+    },
+    {
+      "index": 4,
+      "tool_id": "call_882fb94c041c428dacfac37d",
+      "kind": "validation",
+      "started_after_ms": 24945,
+      "duration_ms": 70,
+      "description": "Show failover systemd unit definitions",
+      "command": "for u in failover-proxy failover-replica failover-seed; do echo \"=== $u ===\"; systemctl cat $u.service 2>&1; done; echo \"=== seed service status/logs ===\"; systemctl status failover-seed --no-pager -l 2>&1 | head -20",
+      "success": true,
+      "output_excerpt": "=== failover-proxy ===\n# /etc/systemd/system/failover-proxy.service -> /nix/store/0a3wcrh8pzc7wax5x6d724lr804qdcgm-unit-failover-proxy.service/failover-proxy.service\n[Unit]\nAfter=failover-seed.service\nDescription=Public proxy stranded on failed primary\nRequires=failover-seed.serv…"
+    },
+    {
+      "index": 5,
+      "tool_id": "call_dc42490204454498a93c0ffd",
+      "kind": "discovery",
+      "started_after_ms": 25015,
+      "duration_ms": 79,
+      "description": "Snapshot existing customer records",
+      "command": "python3 -c \"\nimport sqlite3\nc=sqlite3.connect('file:/var/lib/failover/records.sqlite3?mode=ro',uri=True)\nprint(c.execute('select id,value from records order by id').fetchall())\n\"; ls -la /var/lib/failover/; md5sum /var/lib/failover/records.sqlite3",
+      "success": true,
+      "output_excerpt": "[('customer-blue-8d2', 'blue-original'), ('customer-green-f31', 'green-original'), ('customer-red-4a7', 'red-original')]\ntotal 28\ndrwxr-xr-x 2 root root  4096 Oct 13 22:58 .\ndrwxr-xr-x 9 root root  4096 Oct 13 22:58 ..\n-rw-r--r-- 1 root root     0 Oct 13 22:58 primary.failed\n-rw-…"
+    },
+    {
+      "index": 6,
+      "tool_id": "call_7516c0d549c04a74b0cf1f5f",
+      "kind": "discovery",
+      "started_after_ms": 31635,
+      "duration_ms": 1861,
+      "description": "Read seed unit script",
+      "command": "cat /nix/store/vnsdj3nml00cykxy4dmpcsgbwp76jspz-unit-script-failover-seed-start/bin/failover-seed-start; echo ===; ls -la /var/lib/failover 2>/dev/null; find /nix/store -maxdepth 1 -name '*failover*' 2>/dev/null",
+      "success": true,
+      "output_excerpt": "#!/nix/store/byi2zpy2bgcf3dr6y0l8m50rmjj8z7q1-bash-5.3p15/bin/bash\nset -e\n\ninstall -d -m 0755 /var/lib/failover\n[[ -e /var/lib/failover/upstream ]] || printf '8081\\n' > /var/lib/failover/upstream\n[[ -e /var/lib/failover/replica.role ]] || printf 'replica\\n' > /var/lib/failover/re…"
+    },
+    {
+      "index": 7,
+      "tool_id": "call_7493e5f057c840fb9aab5c54",
+      "kind": "discovery",
+      "started_after_ms": 79806,
+      "duration_ms": 5560,
+      "description": "Check enabled state, other units referencing ports/role files, timers, failures",
+      "command": "systemctl is-enabled failover-proxy failover-replica failover-seed; echo ---; systemctl list-unit-files 2>/dev/null | grep -iE 'failover|primary|8081'; echo ---; grep -rl '8081\\|replica.role\\|upstream' /etc/systemd/system/ 2>/dev/null | while read f; do echo \"== $f\"; done; echo ---; systemctl list-timers --all --no-pager 2>/dev/null | head -8; echo ---; systemctl --failed --no-pager | head -8; echo ---; ls /etc/systemd/system/ /etc/systemd/system/*.wants 2>/dev/null | head -40",
+      "success": true,
+      "output_excerpt": "enabled\nenabled\nenabled\n---\nfailover-proxy.service                      enabled         ignored\nfailover-replica.service                    enabled         ignored\nfailover-seed.service                       enabled         ignored\n---\n---\nNEXT                          LEFT LAST …"
+    }
+  ]
+}

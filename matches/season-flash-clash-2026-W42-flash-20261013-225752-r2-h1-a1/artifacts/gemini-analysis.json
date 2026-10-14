@@ -1,0 +1,183 @@
+{
+  "schema_version": 1,
+  "analyzer": "aoe-controller/20260816.0.1",
+  "source_sha256": "cbce1ebb7c69a2a84cf1ad78b8305407ef0e07542009163059ebe992daeb9059",
+  "agent": "gemini",
+  "territory": "failover-two",
+  "model": "google/gemini-3.8-flash",
+  "outcome": "running",
+  "metrics": {
+    "tool_calls": 13,
+    "tool_errors": 2,
+    "discoveries": 12,
+    "mutations": 0,
+    "lifecycle_actions": 0,
+    "validations": 1,
+    "first_mutation_after_ms": null,
+    "last_observed_after_ms": 53938
+  },
+  "architecture": {
+    "technologies": [
+      "Python",
+      "SQLite",
+      "systemd"
+    ],
+    "service_units": [
+      "failover-proxy.service",
+      "failover-replica.service",
+      "failover-seed.service"
+    ],
+    "persistent_paths": [
+      "/etc",
+      "/etc/nixos",
+      "/var/lib/failover",
+      "/var/lib/failover/replica.role",
+      "/var/lib/failover/upstream"
+    ]
+  },
+  "actions": [
+    {
+      "index": 1,
+      "tool_id": "call_782414",
+      "kind": "discovery",
+      "started_after_ms": 7588,
+      "duration_ms": 32,
+      "description": "List files in /var/lib/failover",
+      "command": "ls -la /var/lib/failover",
+      "success": true,
+      "output_excerpt": "total 28\ndrwxr-xr-x 2 root root  4096 Oct 13 23:02 .\ndrwxr-xr-x 9 root root  4096 Oct 13 23:02 ..\n-rw-r--r-- 1 root root     0 Oct 13 23:02 primary.failed\n-rw-r--r-- 1 root root 12288 Oct 13 23:02 records.sqlite3\n-rw-r--r-- 1 root root     8 Oct 13 23:02 replica.role\n-rw-r--r-- 1…"
+    },
+    {
+      "index": 2,
+      "tool_id": "call_1562875",
+      "kind": "discovery",
+      "started_after_ms": 9654,
+      "duration_ms": 74,
+      "description": "Check file contents and running processes",
+      "command": "cat /var/lib/failover/replica.role && echo \"---\" && cat /var/lib/failover/upstream && echo \"---\" && ps aux",
+      "success": true,
+      "output_excerpt": "replica\n---\n8081\n---\nUSER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND\nroot           1  5.3  1.6  19064 11812 ?        Ss   23:02   0:01 /run/current-system/systemd/lib/systemd/systemd --switched-root --system --deserialize=46\nroot           2  0.0  0.0 …"
+    },
+    {
+      "index": 3,
+      "tool_id": "call_1430548",
+      "kind": "discovery",
+      "started_after_ms": 12309,
+      "duration_ms": 27,
+      "description": "Find failover systemd services",
+      "command": "systemctl list-units --type=service | grep -i failover",
+      "success": true,
+      "output_excerpt": "failover-proxy.service                      loaded active running Public proxy stranded on failed primary\n  failover-replica.service                    loaded active running Healthy read-only failover replica\n  failover-seed.service                       loaded active exited  See…"
+    },
+    {
+      "index": 4,
+      "tool_id": "call_1020804",
+      "kind": "discovery",
+      "started_after_ms": 14877,
+      "duration_ms": 35,
+      "description": "Cat failover systemd service units",
+      "command": "systemctl cat failover-proxy.service failover-replica.service failover-seed.service",
+      "success": true,
+      "output_excerpt": "# /etc/systemd/system/failover-proxy.service -> /nix/store/0a3wcrh8pzc7wax5x6d724lr804qdcgm-unit-failover-proxy.service/failover-proxy.service\n[Unit]\nAfter=failover-seed.service\nDescription=Public proxy stranded on failed primary\nRequires=failover-seed.service\n\n[Service]\nEnvironm…"
+    },
+    {
+      "index": 5,
+      "tool_id": "call_1100708",
+      "kind": "discovery",
+      "started_after_ms": 17711,
+      "duration_ms": 37,
+      "description": "Inspect failover-seed-start script",
+      "command": "cat /nix/store/vnsdj3nml00cykxy4dmpcsgbwp76jspz-unit-script-failover-seed-start/bin/failover-seed-start",
+      "success": true,
+      "output_excerpt": "#!/nix/store/byi2zpy2bgcf3dr6y0l8m50rmjj8z7q1-bash-5.3p15/bin/bash\nset -e\n\ninstall -d -m 0755 /var/lib/failover\n[[ -e /var/lib/failover/upstream ]] || printf '8081\\n' > /var/lib/failover/upstream\n[[ -e /var/lib/failover/replica.role ]] || printf 'replica\\n' > /var/lib/failover/re…"
+    },
+    {
+      "index": 6,
+      "tool_id": "call_1104185",
+      "kind": "discovery",
+      "started_after_ms": 21415,
+      "duration_ms": 40,
+      "description": "Inspect failover-proxy.py",
+      "command": "cat /nix/store/gy7xaavwyh9mbwz4ll8h6z3ban0s6g93-failover-proxy.py",
+      "success": true,
+      "output_excerpt": "import http.client\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\nUPSTREAM = \"/var/lib/failover/upstream\"\nclass Handler(BaseHTTPRequestHandler):\n    def forward(self):\n        try:\n            with open(UPSTREAM) as source: port = int(source.read().strip())\n …"
+    },
+    {
+      "index": 7,
+      "tool_id": "call_74018",
+      "kind": "discovery",
+      "started_after_ms": 23742,
+      "duration_ms": 26,
+      "description": "Inspect failover-replica.py",
+      "command": "cat /nix/store/3lf8if1z3ahcv9mdxqmwncn87hnwdymi-failover-replica.py",
+      "success": true,
+      "output_excerpt": "import sqlite3\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\nDB = \"/var/lib/failover/records.sqlite3\"\nROLE = \"/var/lib/failover/replica.role\"\ndef role():\n    with open(ROLE) as source: return source.read().strip()\ndef database():\n    connection = sqlite3.con…"
+    },
+    {
+      "index": 8,
+      "tool_id": "call_989310",
+      "kind": "discovery",
+      "started_after_ms": 26182,
+      "duration_ms": 12716,
+      "description": "Check all systemd unit files for failover/primary",
+      "command": "systemctl list-unit-files | grep -i failover; systemctl list-unit-files | grep -i primary",
+      "success": false,
+      "output_excerpt": "failover-proxy.service                      enabled         ignored\nfailover-replica.service                    enabled         ignored\nfailover-seed.service                       enabled         ignored\n\nExit code: exit status: 1"
+    },
+    {
+      "index": 9,
+      "tool_id": "call_1741396",
+      "kind": "discovery",
+      "started_after_ms": 41620,
+      "duration_ms": 24,
+      "description": "Search for 8081 references in /etc and profiles",
+      "command": "grep -rn \"8081\" /etc /nix/var/nix/profiles 2>/dev/null",
+      "success": false,
+      "output_excerpt": "Exit code: exit status: 1"
+    },
+    {
+      "index": 10,
+      "tool_id": "call_980841",
+      "kind": "discovery",
+      "started_after_ms": 43749,
+      "duration_ms": 37,
+      "description": "Search failover in /etc and /root",
+      "command": "grep -rn \"failover\" /etc/ /root/ 2>/dev/null",
+      "success": true,
+      "output_excerpt": "/etc/ssh/ssh_host_rsa_key.pub:1:ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDYuWVSCb476SOtKCanX+xqfaq7AZ0ZfcdRDRo3QyZPO/PqbFcIcfURbGx/i2dI7nFi9rXwi1wi1ZCHyI26HmLSOMD1pqSPyPyfXXgakydYI3+MOy6GY/9IW81TmWdrBvbVaRuNxt+qOqxiiJMOZ2BAWpEJe2Cihes0OxY5O4VVMtsPJc5krD/ySvSxp4D0IiVQFsLjwGcrJDGGJ15d…"
+    },
+    {
+      "index": 11,
+      "tool_id": "call_1049432",
+      "kind": "validation",
+      "started_after_ms": 45658,
+      "duration_ms": 49,
+      "description": "Check listening ports",
+      "command": "ss -tulpn",
+      "success": true,
+      "output_excerpt": "Netid State  Recv-Q Send-Q Local Address:Port  Peer Address:PortProcess\nudp   UNCONN 0      0         127.0.0.54:53         0.0.0.0:*    users:((\"systemd-resolve\",pid=296,fd=24))\nudp   UNCONN 0      0      127.0.0.53%lo:53         0.0.0.0:*    users:((\"systemd-resolve\",pid=296,fd…"
+    },
+    {
+      "index": 12,
+      "tool_id": "call_1029148",
+      "kind": "discovery",
+      "started_after_ms": 51588,
+      "duration_ms": 52,
+      "description": "Check firewall rules",
+      "command": "iptables -L -n 2>/dev/null || true; nft list ruleset 2>/dev/null || true",
+      "success": true,
+      "output_excerpt": "Chain INPUT (policy ACCEPT)\ntarget     prot opt source               destination         \nnixos-fw   all  --  0.0.0.0/0            0.0.0.0/0           \n\nChain FORWARD (policy ACCEPT)\ntarget     prot opt source               destination         \n\nChain OUTPUT (policy ACCEPT)\ntarge…"
+    },
+    {
+      "index": 13,
+      "tool_id": "call_33444",
+      "kind": "discovery",
+      "started_after_ms": 53900,
+      "duration_ms": 38,
+      "description": "Check NixOS configuration directory and system links",
+      "command": "ls -la /etc/nixos 2>/dev/null || true; ls -la /run/current-system",
+      "success": true,
+      "output_excerpt": "total 8\ndrwxr-xr-x  2 root root 4096 Oct 13 23:02 .\ndrwxr-xr-x 21 root root 4096 Oct 13 23:02 ..\nlrwxrwxrwx 1 root root 92 Oct 13 23:02 /run/current-system -> /nix/store/rn4ambqqvxbb2ng23l9f088xhdn2ham9-nixos-system-failover-two-26.11.20260813.0e251e2"
+    }
+  ]
+}
